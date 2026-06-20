@@ -32,7 +32,9 @@ SCOPE_TOPIC_IDS: list[str] = ["T11338", "T10299", "T11429", "T10502"]
 _PUB_YEAR_FILTER = "2012-2024"
 _BASE_URL = "https://api.openalex.org"
 _PAGE_SIZE = 200
-_INTER_PAGE_SLEEP_S = 0.05
+_INTER_PAGE_SLEEP_S = 0.2
+_MAX_RETRIES = 6
+_RETRY_BASE_S = 10
 
 
 # ---------------------------------------------------------------------------
@@ -102,17 +104,27 @@ def _paginate_works(
     cursor: str | None = "*"
 
     while cursor is not None:
-        resp = client.get(
-            f"{_BASE_URL}/works",
-            params={
-                "filter": filter_str,
-                "per-page": str(_PAGE_SIZE),
-                "cursor": cursor,
-                "select": select_fields,
-            },
-            headers=headers,
-        )
-        resp.raise_for_status()
+        for attempt in range(_MAX_RETRIES):
+            resp = client.get(
+                f"{_BASE_URL}/works",
+                params={
+                    "filter": filter_str,
+                    "per-page": str(_PAGE_SIZE),
+                    "cursor": cursor,
+                    "select": select_fields,
+                },
+                headers=headers,
+            )
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", _RETRY_BASE_S * (2**attempt)))
+                logger.warning("OpenAlex 429; retrying in %ds (attempt %d)", wait, attempt + 1)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            break
+        else:
+            raise RuntimeError(f"OpenAlex 429 after {_MAX_RETRIES} retries; giving up.")
+
         data: dict[str, Any] = resp.json()
         results: list[Any] = data.get("results") or []
         yield from results
