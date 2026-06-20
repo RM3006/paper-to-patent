@@ -35,7 +35,7 @@ _PAGE_SIZE = 200
 _INTER_PAGE_SLEEP_S = 0.2
 _MAX_RETRIES = 3
 _RETRY_BASE_S = 10
-_MAX_RETRY_WAIT_S = 120  # refuse to sleep longer than this; surface the rate-limit instead
+MAX_RETRY_WAIT_S = 120  # refuse to sleep longer than this; surface the rate-limit instead
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ def parse_work(work: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _paginate_works(
+def paginate_works(
     client: httpx.Client,
     filter_str: str,
     mailto: str,
@@ -118,7 +118,7 @@ def _paginate_works(
             )
             if resp.status_code == 429:
                 wait = int(resp.headers.get("Retry-After", _RETRY_BASE_S * (2**attempt)))
-                if wait > _MAX_RETRY_WAIT_S:
+                if wait > MAX_RETRY_WAIT_S:
                     raise RuntimeError(
                         f"OpenAlex rate-limited for {wait}s (Retry-After header). "
                         "Wait for the cooldown to expire then re-run the asset."
@@ -192,7 +192,7 @@ def openalex_works_raw(
     records: list[dict[str, Any]] = []
 
     with httpx.Client(timeout=30) as client:
-        for i, work in enumerate(_paginate_works(client, filter_str, mailto)):
+        for i, work in enumerate(paginate_works(client, filter_str, mailto)):
             records.append(parse_work(work))
             if (i + 1) % 5000 == 0:
                 context.log.info(f"Fetched {i + 1:,} works so far…")

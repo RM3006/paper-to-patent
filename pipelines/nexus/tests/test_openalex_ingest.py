@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock, patch
 
-from nexus.assets.ingest.openalex import parse_work, reconstruct_abstract
+import httpx
+
+from nexus.assets.ingest.openalex import (
+    MAX_RETRY_WAIT_S,
+    paginate_works,
+    parse_work,
+    reconstruct_abstract,
+)
 
 # ---------------------------------------------------------------------------
 # reconstruct_abstract
@@ -129,3 +137,85 @@ def test_parse_work_no_topic() -> None:
     record = parse_work(work)
     assert record["primary_topic_id"] is None
     assert record["primary_topic_name"] is None
+
+
+# ---------------------------------------------------------------------------
+# paginate_works — HTTP layer (mocked)
+# ---------------------------------------------------------------------------
+
+
+def _make_page(results: list[dict[str, Any]], next_cursor: str | None) -> MagicMock:
+    """Build a mock httpx Response for one OpenAlex page."""
+    resp: MagicMock = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"results": results, "meta": {"next_cursor": next_cursor}}
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+def test_paginate_works_single_page() -> None:
+    """Single page with null cursor yields results then stops."""
+    client: MagicMock = MagicMock(spec=httpx.Client)
+    client.get.return_value = _make_page([FIXTURE_WORK], next_cursor=None)
+
+    with patch("nexus.assets.ingest.openalex.time.sleep"):
+        works = list(paginate_works(client, "test-filter", "test@example.com"))
+
+    assert len(works) == 1
+    assert works[0]["id"] == FIXTURE_WORK["id"]
+    assert client.get.call_count == 1
+
+
+def test_paginate_works_two_pages() -> None:
+    """Cursor is threaded across pages; stops when next_cursor is None."""
+    client: MagicMock = MagicMock(spec=httpx.Client)
+    client.get.side_effect = [
+        _make_page([FIXTURE_WORK], next_cursor="cursor-abc"),
+        _make_page([FIXTURE_WORK], next_cursor=None),
+    ]
+
+    with patch("nexus.assets.ingest.openalex.time.sleep"):
+        works = list(paginate_works(client, "test-filter", "test@example.com"))
+
+    assert len(works) == 2
+    assert client.get.call_count == 2
+    # Second call must carry the cursor from the first response
+    second_call_params: dict[str, Any] = client.get.call_args_list[1].kwargs["params"]
+    assert second_call_params["cursor"] == "cursor-abc"
+
+
+def test_paginate_works_429_short_wait_retries() -> None:
+    """429 with Retry-After below threshold sleeps then retries successfully."""
+    client: MagicMock = MagicMock(spec=httpx.Client)
+
+    rate_limited: MagicMock = MagicMock(spec=httpx.Response)
+    rate_limited.status_code = 429
+    rate_limited.headers = {"Retry-After": "5"}
+
+    ok: MagicMock = _make_page([FIXTURE_WORK], next_cursor=None)
+
+    client.get.side_effect = [rate_limited, ok]
+
+    with patch("nexus.assets.ingest.openalex.time.sleep") as mock_sleep:
+        works = list(paginate_works(client, "test-filter", "test@example.com"))
+
+    assert len(works) == 1
+    mock_sleep.assert_called_once_with(5)
+    assert client.get.call_count == 2
+
+
+def test_paginate_works_429_long_wait_raises() -> None:
+    """429 with Retry-After above threshold raises RuntimeError immediately."""
+    client: MagicMock = MagicMock(spec=httpx.Client)
+
+    rate_limited: MagicMock = MagicMock(spec=httpx.Response)
+    rate_limited.status_code = 429
+    rate_limited.headers = {"Retry-After": str(MAX_RETRY_WAIT_S + 1)}
+
+    client.get.return_value = rate_limited
+
+    import pytest as _pytest
+
+    with patch("nexus.assets.ingest.openalex.time.sleep"):
+        with _pytest.raises(RuntimeError, match="rate-limited|cooldown"):
+            list(paginate_works(client, "test-filter", "test@example.com"))
