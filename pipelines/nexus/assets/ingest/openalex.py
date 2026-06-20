@@ -9,6 +9,8 @@ Output: r2://p2p-lake/raw/openalex/v{snapshot_date}/works.parquet
 
 import datetime
 import os
+import pathlib
+import tempfile
 import time
 from collections.abc import Iterator
 from typing import Any, cast
@@ -181,9 +183,20 @@ def openalex_works_raw(
 
     df = pl.DataFrame(records)
 
-    with duckdb.get_connection() as con:
-        con.register("works_df", df)
-        con.execute(f"COPY (SELECT * FROM works_df) TO '{r2_path}' (FORMAT PARQUET)")
+    # Polars writes Parquet natively (no pyarrow). DuckDB reads the local file
+    # and uploads to R2 via httpfs — avoiding the polars→Arrow→DuckDB bridge
+    # that would require pyarrow.
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as _f:
+        tmp = pathlib.Path(_f.name)
+    try:
+        df.write_parquet(tmp)
+        with duckdb.get_connection() as con:
+            con.execute(
+                f"COPY (SELECT * FROM read_parquet('{tmp.as_posix()}')) "
+                f"TO '{r2_path}' (FORMAT PARQUET)"
+            )
+    finally:
+        tmp.unlink(missing_ok=True)
 
     context.log.info(f"Written {len(records):,} rows → {r2_path}")
     context.add_output_metadata(
