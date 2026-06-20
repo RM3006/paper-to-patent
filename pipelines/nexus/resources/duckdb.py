@@ -7,7 +7,7 @@ import duckdb
 from dagster import ConfigurableResource
 
 
-class DuckDBR2Resource(ConfigurableResource):
+class DuckDBR2Resource(ConfigurableResource):  # pyright: ignore[reportMissingTypeArgument]
     """DuckDB connection with the Cloudflare R2 httpfs secret pre-configured.
 
     Credentials are declared once here and never re-stated per query,

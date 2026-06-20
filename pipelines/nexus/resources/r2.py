@@ -1,7 +1,7 @@
 from dagster import ConfigurableResource
 
 
-class R2Resource(ConfigurableResource):
+class R2Resource(ConfigurableResource):  # pyright: ignore[reportMissingTypeArgument]
     """Cloudflare R2 bucket coordinates.
 
     Passed to assets that write Parquet via DuckDB httpfs. The DuckDB secret

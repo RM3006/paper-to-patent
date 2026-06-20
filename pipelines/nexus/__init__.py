@@ -1,5 +1,6 @@
 from dagster import Definitions, EnvVar
 
+from nexus.assets.ingest.openalex import openalex_works_raw
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
 
@@ -16,7 +17,7 @@ _duckdb = DuckDBR2Resource(
 )
 
 defs = Definitions(
-    assets=[],
+    assets=[openalex_works_raw],
     resources={
         "r2": _r2,
         "duckdb": _duckdb,
