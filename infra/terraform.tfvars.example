@@ -1,0 +1,2 @@
+# Copy this to terraform.tfvars (gitignored) and fill in your values.
+cloudflare_account_id = "your-account-id-here"

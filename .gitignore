@@ -1,0 +1,38 @@
+# Environment
+.env.local
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+
+# Data (raw and reference files — large, gitignored)
+data/raw/
+data/reference/
+
+# DuckDB local warehouse
+*.duckdb
+*.duckdb.wal
+
+# Terraform state and secrets
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/*.tfvars
+
+# Notebooks output
+notebooks/.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+.python-version
