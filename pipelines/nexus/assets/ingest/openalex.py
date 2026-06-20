@@ -33,8 +33,9 @@ _PUB_YEAR_FILTER = "2012-2024"
 _BASE_URL = "https://api.openalex.org"
 _PAGE_SIZE = 200
 _INTER_PAGE_SLEEP_S = 0.2
-_MAX_RETRIES = 6
+_MAX_RETRIES = 3
 _RETRY_BASE_S = 10
+_MAX_RETRY_WAIT_S = 120  # refuse to sleep longer than this; surface the rate-limit instead
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +118,11 @@ def _paginate_works(
             )
             if resp.status_code == 429:
                 wait = int(resp.headers.get("Retry-After", _RETRY_BASE_S * (2**attempt)))
+                if wait > _MAX_RETRY_WAIT_S:
+                    raise RuntimeError(
+                        f"OpenAlex rate-limited for {wait}s (Retry-After header). "
+                        "Wait for the cooldown to expire then re-run the asset."
+                    )
                 logger.warning("OpenAlex 429; retrying in %ds (attempt %d)", wait, attempt + 1)
                 time.sleep(wait)
                 continue
