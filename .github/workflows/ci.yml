@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Lint · Type · Test · Definitions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-caching: true
+          cache-dependency-glob: "uv.lock"
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Lint (ruff)
+        run: uv run ruff check pipelines/nexus/
+
+      - name: Type check (pyright)
+        run: uv run pyright pipelines/nexus/
+
+      - name: Test (pytest)
+        run: uv run pytest
+
+      - name: Dagster definitions validate (dry run)
+        run: uv run dagster definitions validate -m nexus
+        env:
+          CLOUDFLARE_ACCOUNT_ID: dummy
+          CLOUDFLARE_R2_ACCESS_KEY_ID: dummy
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: dummy
+          OPENALEX_MAILTO: ci@example.com
