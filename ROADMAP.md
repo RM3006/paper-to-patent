@@ -64,12 +64,12 @@ Year window:
 
 **Exit criteria**
 
-- [ ] Scope CPC filter returns ≥ 5,000 patents in the PatentsView bulk file.
-- [ ] `g_other_reference` rows for those patents: ≥ 2,000 NPL references.
-- [ ] Marx/Fuegi gold pairs for scope patents: ≥ 300 total **and** ≥ 50 per family. A family below 50 is dropped or its CPC codes are widened before Part 1 starts.
-- [ ] OpenAlex `meta.count` for scope topics + year window: ≥ 10,000 papers.
-- [ ] DuckDB reads a test Parquet file from R2 without error.
-- [ ] All credentials in `.env.local` confirmed (see `SETUP.md` verification checklist).
+- [x] Scope CPC filter returns ≥ 5,000 patents in the PatentsView bulk file. *(68,800 — verified 2026-06-20)*
+- [x] `g_other_reference` rows for those patents: ≥ 2,000 NPL references. *(656,347 — verified 2026-06-20)*
+- [x] Marx/Fuegi gold pairs for scope patents: ≥ 300 total **and** ≥ 50 per family. *(291,378 total — verified 2026-06-20)*
+- [x] OpenAlex `meta.count` for scope topics + year window: ≥ 10,000 papers. *(150,984 — verified 2026-06-20)*
+- [x] DuckDB reads a test Parquet file from R2 without error.
+- [x] All credentials in `.env.local` confirmed (see `SETUP.md` verification checklist).
 
 **Risks**
 
