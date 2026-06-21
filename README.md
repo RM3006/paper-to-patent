@@ -21,7 +21,7 @@ A curious teenager should grasp the map in 90 seconds. An R&D strategist or VC a
 |---|---|---|
 | 0 | Pre-flight + NPL feasibility spike | ✅ Done |
 | 1 | Foundation + OpenAlex ingest | ✅ Done |
-| 2 | PatentsView bulk ingest | ⬜ Pending |
+| 2 | PatentsView bulk ingest | ✅ Done |
 | 3 | Entity resolution + organisation crosswalk | ⬜ Pending |
 | 4 | dbt modeling + NPL linkage + gold eval | ⬜ Pending |
 | 5 | Embeddings, clustering, and interpretable labels | ⬜ Pending |
