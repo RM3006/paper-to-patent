@@ -9,6 +9,7 @@ import httpx
 
 from nexus.assets.ingest.openalex import (
     MAX_RETRY_WAIT_S,
+    delete_r2_object,
     paginate_works,
     parse_work,
     reconstruct_abstract,
@@ -202,6 +203,40 @@ def test_paginate_works_429_short_wait_retries() -> None:
     assert len(works) == 1
     mock_sleep.assert_called_once_with(5)
     assert client.get.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# delete_r2_object
+# ---------------------------------------------------------------------------
+
+
+def test_delete_r2_object_success() -> None:
+    """200 response does not raise."""
+    mock_resp: MagicMock = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    with patch("nexus.assets.ingest.openalex.httpx.delete", return_value=mock_resp) as mock_del:
+        delete_r2_object("acct", "token", "bucket", "raw/works.parquet")
+    mock_del.assert_called_once()
+
+
+def test_delete_r2_object_404_is_ok() -> None:
+    """404 (already gone) is treated as success."""
+    mock_resp: MagicMock = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 404
+    with patch("nexus.assets.ingest.openalex.httpx.delete", return_value=mock_resp):
+        delete_r2_object("acct", "token", "bucket", "raw/works.parquet")  # must not raise
+
+
+def test_delete_r2_object_error_raises() -> None:
+    """Non-200/204/404 status raises RuntimeError."""
+    mock_resp: MagicMock = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 403
+    mock_resp.text = "Forbidden"
+    with patch("nexus.assets.ingest.openalex.httpx.delete", return_value=mock_resp):
+        import pytest as _pytest
+
+        with _pytest.raises(RuntimeError, match="Failed to delete"):
+            delete_r2_object("acct", "token", "bucket", "raw/works.parquet")
 
 
 def test_paginate_works_429_long_wait_raises() -> None:
