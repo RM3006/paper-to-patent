@@ -1,8 +1,9 @@
 """OpenAlex ingestion asset.
 
 Paginates the OpenAlex /works endpoint filtered to scope topic IDs and the
-2012-2024 year window. Reconstructs abstracts from the inverted index.
-Writes a single Parquet snapshot to R2.
+2012-2025 year window. Reconstructs abstracts from the inverted index.
+Writes a single Parquet snapshot to R2 using a stage-then-promote pattern
+so a failed run never destroys an existing good snapshot.
 
 Output: r2://p2p-lake/raw/openalex/v{snapshot_date}/works.parquet
 """
@@ -29,7 +30,7 @@ from nexus.resources.r2 import R2Resource
 
 SCOPE_TOPIC_IDS: list[str] = ["T11338", "T10299", "T11429", "T10502"]
 
-_PUB_YEAR_FILTER = "2012-2024"
+_PUB_YEAR_FILTER = "2012-2025"
 _BASE_URL = "https://api.openalex.org"
 _PAGE_SIZE = 200
 _INTER_PAGE_SLEEP_S = 0.2
@@ -141,6 +142,19 @@ def paginate_works(
             time.sleep(_INTER_PAGE_SLEEP_S)
 
 
+def delete_r2_object(account_id: str, api_token: str, bucket: str, key: str) -> None:
+    """Delete one R2 object via the Cloudflare REST API. 404 is treated as success."""
+    url = (
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}"
+        f"/r2/buckets/{bucket}/objects/{key}"
+    )
+    resp = httpx.delete(url, headers={"Authorization": f"Bearer {api_token}"}, timeout=30)
+    if resp.status_code not in (200, 204, 404):
+        raise RuntimeError(
+            f"Failed to delete R2 object '{key}': {resp.status_code} {resp.text[:200]}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Dagster asset
 # ---------------------------------------------------------------------------
@@ -200,10 +214,10 @@ def openalex_works_raw(
     context.log.info(f"Pagination complete: {len(records):,} works. Writing to {r2_path}")
 
     df = pl.DataFrame(records)
+    staging_path = f"{r2_path}.staging"
+    staging_key = f"raw/openalex/v{snapshot_date}/works.parquet.staging"
 
-    # Polars writes Parquet natively (no pyarrow). DuckDB reads the local file
-    # and uploads to R2 via httpfs — avoiding the polars→Arrow→DuckDB bridge
-    # that would require pyarrow.
+    # Stage: polars → local temp → R2 staging (old final untouched if this fails)
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as _f:
         tmp = pathlib.Path(_f.name)
     try:
@@ -211,12 +225,27 @@ def openalex_works_raw(
         with duckdb.get_connection() as con:
             con.execute(
                 f"COPY (SELECT * FROM read_parquet('{tmp.as_posix()}')) "
-                f"TO '{r2_path}' (FORMAT PARQUET)"
+                f"TO '{staging_path}' (FORMAT PARQUET)"
             )
     finally:
         tmp.unlink(missing_ok=True)
 
-    context.log.info(f"Written {len(records):,} rows → {r2_path}")
+    # Promote: staging → final (window where no good data exists is just this COPY)
+    context.log.info("Staging complete. Promoting to final path.")
+    with duckdb.get_connection() as con:
+        con.execute(
+            f"COPY (SELECT * FROM read_parquet('{staging_path}')) "
+            f"TO '{r2_path}' (FORMAT PARQUET)"
+        )
+
+    # Clean up staging
+    api_token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    if api_token:
+        delete_r2_object(r2.account_id, api_token, r2.bucket, staging_key)
+    else:
+        logger.warning("CLOUDFLARE_API_TOKEN not set; staging file left in R2: %s", staging_key)
+
+    context.log.info(f"Written {len(records):,} rows -> {r2_path}")
     context.add_output_metadata(
         {
             "snapshot_date": snapshot_date,
