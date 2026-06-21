@@ -44,8 +44,8 @@ Sub-families and CPC codes:
 | Neuromorphic & In-Memory Compute | G06N 3/049, G11C 11/54, G11C 13/00, H10N 70/00 | `T10502` "Advanced Memory and Neural Computing" |
 
 Year window:
-- Papers (OpenAlex `publication_date`): **2012–2024** — starts at the deep-learning inflection; captures the full AI hardware research wave.
-- Patents (PatentsView `filing_date`): **2014–2024** — two-year lag from paper window; patents citing 2012+ papers appear from ~2014.
+- Papers (OpenAlex `publication_date`): **2012–2025** — starts at the deep-learning inflection; captures the full AI hardware research wave.
+- Patents (PatentsView `filing_date`): **2014–2025** — two-year lag from paper window; patents citing 2012+ papers appear from ~2014.
 
 **Tasks**
 

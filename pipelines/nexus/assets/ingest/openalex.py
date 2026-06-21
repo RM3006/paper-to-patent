@@ -29,7 +29,7 @@ from nexus.resources.r2 import R2Resource
 
 SCOPE_TOPIC_IDS: list[str] = ["T11338", "T10299", "T11429", "T10502"]
 
-_PUB_YEAR_FILTER = "2012-2024"
+_PUB_YEAR_FILTER = "2012-2025"
 _BASE_URL = "https://api.openalex.org"
 _PAGE_SIZE = 200
 _INTER_PAGE_SLEEP_S = 0.2
