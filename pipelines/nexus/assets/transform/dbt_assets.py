@@ -22,9 +22,8 @@ dbt_resource = DbtCliResource(
 )
 
 
-_EXCLUDE = "fact_npl_link idea_journey"
-
-
 @dbt_assets(manifest=_DBT_PROJECT_DIR / "target" / "manifest.json")
 def paper_to_patent_dbt_assets(context, dbt: DbtCliResource):  # type: ignore[no-untyped-def]
-    yield from dbt.cli(["build", "--exclude", _EXCLUDE], context=context).stream()
+    # npl_links source is registered by the on-run-start macro only when present;
+    # fact_npl_link and idea_journey build cleanly once npl_links_raw has run.
+    yield from dbt.cli(["build"], context=context).stream()

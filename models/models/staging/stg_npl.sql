@@ -15,13 +15,20 @@ select
     n.patent_id,
     n.other_reference_sequence::integer   as ref_sequence,
     n.other_reference_text                as ref_text,
-    -- Pre-extract DOI pattern where present (high-confidence match path)
-    lower(
-        regexp_extract(
-            n.other_reference_text,
-            '10\.\d{4,9}/[-._;()/:A-Za-z0-9]+',
-            0
-        )
+    -- Pre-extract DOI and strip trailing punctuation (trailing periods/commas
+    -- are common in citation strings and would break exact-join matching)
+    nullif(
+        rtrim(
+            lower(
+                regexp_extract(
+                    n.other_reference_text,
+                    '10\.\d{4,9}/[-._;()/:A-Za-z0-9]+',
+                    0
+                )
+            ),
+            '.,;:'
+        ),
+        ''
     )                                     as doi_extracted
 
 from {{ source('patentsview_raw', 'npl') }} n
