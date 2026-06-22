@@ -1,5 +1,12 @@
 from dagster import Definitions, EnvVar
 
+from nexus.assets.entity_resolution.assemble import org_crosswalk
+from nexus.assets.entity_resolution.crosswalk import (
+    openalex_institutions_staging,
+    patentsview_orgs_staging,
+)
+from nexus.assets.entity_resolution.fuzzy_bridge import fuzzy_org_bridge
+from nexus.assets.entity_resolution.seed import seed_crosswalk_matched, seed_crosswalk_oa_matched
 from nexus.assets.ingest.openalex import openalex_works_raw
 from nexus.assets.ingest.patentsview import (
     patents_scoped,
@@ -37,6 +44,12 @@ defs = Definitions(
         patentsview_citations_raw,
         patentsview_inventors_raw,
         patents_scoped,
+        patentsview_orgs_staging,
+        openalex_institutions_staging,
+        seed_crosswalk_matched,
+        seed_crosswalk_oa_matched,
+        fuzzy_org_bridge,
+        org_crosswalk,
     ],
     resources={
         "r2": _r2,

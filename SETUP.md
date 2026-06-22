@@ -136,7 +136,7 @@ One-time install on the development machine.
   2. Save as `data/reference/marx_fuegi_pcs.csv` (gitignored — 2 GB).
   3. In the Part 0 spike, DuckDB joins on `REGEXP_EXTRACT(patent, '^us-([0-9]+)-', 1)` to match PatentsView `patent_number`.
 - **Secrets**: none.
-- **Note**: This version of the dataset uses OpenAlex IDs directly — no MAG bridge is required. The `oaid` column maps straight to `https://openalex.org/W{oaid}`. Patent coverage runs through ~2023; OpenAlex coverage through 2024 is an extension our own matcher adds.
+- **Note**: This version of the dataset uses OpenAlex IDs directly — no MAG bridge is required. The `oaid` column maps straight to `https://openalex.org/W{oaid}`. Patent coverage runs through ~2023; OpenAlex coverage through 2025 is an extension our own matcher adds.
 
 ---
 

@@ -16,7 +16,7 @@ Theme: **"The Chips Behind AI"** — three science-adjacent microchip sub-famili
 | Silicon Photonics | `G02B6/12`, `G02B6/122`, `H01S5/0224`, `H01S5/10` | `T10299` "Photonic and Optical Devices", `T11429` "Semiconductor Lasers and Optical Devices" |
 | Neuromorphic & In-Memory Compute | `G06N3/049`, `G11C11/54`, `G11C13/00`, `H10N70/00` | `T10502` "Advanced Memory and Neural Computing" |
 
-**Year windows:** papers (OpenAlex `publication_date`) **2012–2024**; patents (PatentsView `filing_date`) **2014–2024**.
+**Year windows:** papers (OpenAlex `publication_date`) **2012–2025**; patents (PatentsView `filing_date`) **2014–2025**.
 
 **Topic-ID verification (2026-06-20):** the four scope topic IDs above resolve live and match the ROADMAP table — no update required. Several descriptive search terms collapse onto the same four canonical topics (e.g. "Memristors", "In-Memory Computing", "Spiking Neural Networks" all resolve to `T10502`); the search terms "EUV photomask / pellicle" and "Plasma-based EUV light source" return no dedicated topic and are covered by `T11338`.
 
@@ -27,7 +27,7 @@ Theme: **"The Chips Behind AI"** — three science-adjacent microchip sub-famili
 Produced by `notebooks/part0_npl_spike.py` and `notebooks/part0_openalex_count.py`.
 
 > **Important caveat — these are CPC-only counts, with NO filing-date filter applied.**
-> `g_patent.tsv` carries the grant date only; the `filing_date` filter (2014–2024) requires `g_application.tsv` and is applied in **Part 2**, not in the spike. The Part 2 `patents_scoped` corpus will therefore be **smaller** than the 68,800 below — the ROADMAP Part 2 "within 5% of the spike count" check must compare against a *re-run of this CPC filter*, not against the date-filtered corpus.
+> `g_patent.tsv` carries the grant date only; the `filing_date` filter (2014–2025) requires `g_application.tsv` and is applied in **Part 2**, not in the spike. The Part 2 `patents_scoped` corpus will therefore be **smaller** than the 68,800 below — the ROADMAP Part 2 "within 5% of the spike count" check must compare against a *re-run of this CPC filter*, not against the date-filtered corpus.
 
 ### Patent side (PatentsView bulk, all grant years)
 
@@ -56,7 +56,7 @@ Produced by `notebooks/part0_npl_spike.py` and `notebooks/part0_openalex_count.p
 
 | Metric | Value | Kill criterion | Status |
 |---|---|---|---|
-| Works in scope (4 topics, 2012–2024, `language:en`, `has_abstract:true`) | **150,984** | ≥ 10,000 | ✅ |
+| Works in scope (4 topics, 2012–2025, `language:en`, `has_abstract:true`) | **164,072** *(verified 2026-06-22 after 2025 extension re-ingest)* | ≥ 10,000 | ✅ |
 
 **Verdict: all six kill criteria pass with wide margins. No family dropped; no CPC widening required. Part 0 feasibility confirmed.**
 
@@ -242,11 +242,96 @@ LIMIT 20;
 
 ### OpenAlex raw schema (Part 1 / Part 4 — stub)
 
-- `works` raw Parquet schema and reconstructed abstract — to be documented in Part 4 when dbt staging models are built.
+`works` raw Parquet at `r2://p2p-lake/raw/openalex/v{snapshot_date}/works.parquet`. Key columns (full column dictionary deferred to Part 4 when dbt staging models are built):
+
+| Column | Type | Meaning |
+|---|---|---|
+| `openalex_id` | String | OpenAlex work URL (e.g. `https://openalex.org/W…`) |
+| `doi` | String | DOI URL — primary join key for NPL matcher (Part 4) |
+| `title` | String | Paper title |
+| `publication_date` | String | Publication date (YYYY-MM-DD) — **time-metric anchor** for citation lag |
+| `publication_year` | Int64 | Year (redundant with date; kept for fast filtering) |
+| `language` | String | Language code (`en` only in scope) |
+| `abstract` | String | Reconstructed from `abstract_inverted_index`; NULL if absent |
+| `primary_topic_id` | String | OpenAlex topic URL (one of the 4 scope topic IDs) |
+| `primary_topic_name` | String | Human-readable topic name |
+| `institution_ids` | List[String] | OpenAlex institution URLs from all authorships |
+| `institution_rors` | List[String] | ROR URLs from all authorships — paper-side identity for ER (Part 3) |
+| `institution_display_names` | List[String] | Institution display names from all authorships — used in `openalex_institutions_staging` (Part 3) |
 
 ---
 
-### NPL matcher and entity resolution (Parts 3–4 — stub)
+### Entity resolution intermediate tables (Part 3)
+
+**`patentsview_orgs_staging`** — deduped PatentsView assignees in scope (R2: `intermediate/er/patentsview_orgs_staging/`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `assignee_id` | String | PatentsView disambiguated assignee UUID — patent-side identity |
+| `display_name` | String | Original disambiguated organisation name |
+| `normalized_name` | String | Lower-cased, legal-suffix-stripped, punctuation-cleaned name (see `normalize_org_name()`) |
+| `match_method` | String | Always `native_id` — within-source disambiguation, no cross-source link yet |
+| `confidence` | String | Always `high` |
+
+**`openalex_institutions_staging`** — deduped OA institutions from scoped works (R2: `intermediate/er/openalex_institutions_staging/`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `institution_id` | String | OpenAlex institution URL (e.g. `https://openalex.org/I…`) — paper-side identity |
+| `display_name` | String | Original institution display name |
+| `normalized_name` | String | Same normalizer as PV side |
+| `match_method` | String | Always `ror` |
+| `confidence` | String | Always `high` |
+
+**`seed_crosswalk_matched`** — PV side of the seed crosswalk (R2: `intermediate/er/seed_crosswalk_matched/`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `org_id` | String | Canonical identifier (slug, e.g. `org_tsmc`) |
+| `canonical_name` | String | Human-readable name |
+| `assignee_id` | String | Matched PV assignee UUID |
+| `display_name` | String | PV display name |
+| `match_method` | String | `seed_crosswalk` |
+| `confidence` | String | `high` |
+
+**`seed_crosswalk_oa_matched`** — OA side of the seed crosswalk, matched by `openalex_institution_id` (R2: `intermediate/er/seed_crosswalk_oa_matched/`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `org_id` | String | Same `org_id` as the PV seed entry |
+| `canonical_name` | String | Human-readable name |
+| `institution_id` | String | Matched OA institution URL |
+| `display_name` | String | OA display name |
+| `match_method` | String | `seed_crosswalk` |
+| `confidence` | String | `high` |
+
+**`fuzzy_org_bridge`** — cross-source links via `rapidfuzz` token-set ratio = 100 (R2: `intermediate/er/fuzzy_org_bridge/`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `institution_id` | String | OA institution URL |
+| `assignee_id` | String | PV assignee UUID |
+| `similarity` | Float64 | `token_set_ratio` score — always exactly 100.0 at the accepted threshold |
+| `match_method` | String | `fuzzy_high` only (no `fuzzy_review` band at score=100 threshold) |
+| `confidence` | String | `high` |
+
+**`org_crosswalk`** — final `int_organization_crosswalk` (R2: `intermediate/er/org_crosswalk/`)
+
+One row per (source, source_id). Every org in both sources gets exactly one row. Cross-source links share an `org_id`; unlinked orgs get a unique slug.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `org_id` | String | Canonical identifier. Prefix: `org_{slug}` (seed), `org_pv_{slug}` (PV-only), `org_oa_{slug}` (OA-only) |
+| `source` | String | `patentsview` or `openalex` |
+| `source_id` | String | `assignee_id` (PV) or `institution_id` (OA) |
+| `canonical_name` | String | Human-readable name |
+| `match_method` | String | One of: `native_id`, `seed_crosswalk`, `fuzzy_high`, `ror` |
+| `confidence` | String | `high` (medium / low not present — `fuzzy_review` band was eliminated) |
+
+> **Verified 2026-06-22:** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record.
+
+---
+
+### NPL matcher (Part 4 — stub)
 
 - **NPL matcher** — `fact_npl_link` (`match_method = npl_citation`, `confidence`), and `ref_npl_gold_eval`; precision/recall vs Marx & Fuegi gold set _(Part 4)_
-- **Entity resolution** — `int_organization_crosswalk` (`org_id`, source IDs, `match_method`, `confidence`); see `docs/er_eval_set.md` _(Part 3)_

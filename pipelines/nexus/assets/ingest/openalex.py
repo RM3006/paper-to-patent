@@ -66,6 +66,7 @@ def parse_work(work: dict[str, Any]) -> dict[str, Any]:
 
     institution_ids: list[str] = []
     institution_rors: list[str] = []
+    institution_display_names: list[str] = []
     authorships = cast(list[dict[str, Any]], work.get("authorships") or [])
     for authorship in authorships:
         institutions = cast(list[dict[str, Any]], authorship.get("institutions") or [])
@@ -74,6 +75,8 @@ def parse_work(work: dict[str, Any]) -> dict[str, Any]:
                 institution_ids.append(inst_id)
             if ror := cast(str | None, inst.get("ror")):
                 institution_rors.append(ror)
+            if name := cast(str | None, inst.get("display_name")):
+                institution_display_names.append(name)
 
     primary_topic: dict[str, Any] = work.get("primary_topic") or {}
 
@@ -89,6 +92,7 @@ def parse_work(work: dict[str, Any]) -> dict[str, Any]:
         "primary_topic_name": primary_topic.get("display_name"),
         "institution_ids": institution_ids,
         "institution_rors": institution_rors,
+        "institution_display_names": institution_display_names,
     }
 
 

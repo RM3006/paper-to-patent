@@ -63,5 +63,82 @@ Running log of non-obvious findings, operational gotchas, and decisions that are
 
 **Final state at Part 1 close:**
 - 19 tests passing, CI green (ruff + pyright strict + pytest + dagster definitions validate).
-- R2 currently empty — rate-limited mid re-ingest on the 2025-cutoff run. Re-ingest pending after cooldown clears (~02:00 CEST 2026-06-22).
+- R2: 164,072 rows at `r2://p2p-lake/raw/openalex/v2026-06-22/works.parquet` (2012–2025). +13,084 vs the 2024-cutoff run.
 - PR open: `feat/part-1-foundation-openalex` → `main`.
+- **`parse_work()` now captures `institution_display_names: list[str]`** — added before this re-ingest so the field is present in the Parquet and `openalex_institutions_staging` (Part 3) can be implemented without another re-ingest.
+- **Always run with `--env-file .env.local`**: `uv run --env-file .env.local dagster asset materialize ...` — without it Dagster fails immediately because Cloudflare env vars are not set in the shell.
+
+---
+
+## Part 3 — Entity resolution (in progress, 2026-06-21)
+
+**OpenAlex schema gap — prerequisite before OpenAlex half of Layer 1:**
+- `parse_work()` in `openalex.py` does NOT capture `institution_display_names`. The field exists in the API response (`authorships[].institutions[].display_name`) but was not included in the original Parquet schema.
+- The `openalex_institutions_staging` asset (Layer 1 OpenAlex side) cannot be implemented without it. Before the next OpenAlex re-ingest, add `institution_display_names: list[str]` to `parse_work()`, update its tests, then re-ingest.
+- The `openalex_institutions_staging` Dagster asset is registered as a stub — it raises `RuntimeError` if the works Parquet is absent and `NotImplementedError` once data exists but the body is not yet implemented.
+
+**Seed crosswalk design: name-based join, not UUID hardcoding:**
+- Decision: `seed_crosswalk.csv` stores the *normalised form* of each PatentsView org name (`normalized_patentsview`), not the raw `assignee_id` UUID.
+- Why: PatentsView assignee UUIDs are opaque and could drift across bulk snapshots. The normalised name is stable across versions and human-verifiable.
+- The `seed_crosswalk_matched` asset joins `patentsview_orgs_staging.normalized_name` to `seed_crosswalk.normalized_patentsview`. Multiple CSV rows per `org_id` handle legal-entity variants (e.g., org_asml has two rows for "asml" and "asml netherlands").
+- Downside: if `normalize_org_name()` logic changes, the CSV entries must be re-verified. The production CSV sanity tests (`test_production_seed_csv_*`) guard against blank entries and non-lowercase values.
+
+**PatentsView dominant assignees in scope (2026-06-21, scoped corpus 33,578 patents):**
+Top 15 by scoped patent count:
+1. Taiwan Semiconductor Manufacturing Company, Ltd. — 1,863
+2. ASML NETHERLANDS B.V. — 1,763
+3. International Business Machines Corporation — 1,494
+4. SAMSUNG DISPLAY CO., LTD. — 1,334 *(display division, not Samsung Electronics)*
+5. Micron Technology, Inc. — 1,308
+6. Carl Zeiss SMT GmbH — 676
+7. Intel Corporation — 671
+8. SK hynix Inc. — 531
+9. NIKON CORPORATION — 442
+10. CANON KABUSHIKI KAISHA — 412
+11. GOOGLE LLC — 411
+12. Applied Materials, Inc. — 300
+13. Shin-Etsu Chemical Co., Ltd. — 293
+14. Microsoft Technology Licensing, LLC — 292
+15. KLA-TENCOR CORPORATION — 285
+
+Notable: Samsung Electronics Co., Ltd. does not appear as a top assignee in our CPC scope — Samsung Display (OLED/display patents) dominates instead. NVIDIA only has 86 scoped patents (rank ~56).
+
+**PatentsView org names: Japanese "Kabushiki Kaisha X" is not strippable from the right:**
+- `normalize_org_name` strips legal suffix tokens from the RIGHT of the token list.
+- "CANON KABUSHIKI KAISHA" → tokens end with "kabushiki", "kaisha" → both stripped → "canon" ✓
+- "Kabushiki Kaisha Toshiba" → last token is "toshiba" (not a suffix) → stripping never reaches "kabushiki"/"kaisha" → result is "kabushiki kaisha toshiba".
+- Seed CSV entry for Toshiba uses the full form "kabushiki kaisha toshiba" as the match key. This is correct and expected.
+
+**normalize_org_name — additions made in Part 3:**
+- Added `S.r.l.` dotted expansion → `"srl"` (Italian limited liability; e.g. STMicroelectronics S.r.l.)
+- Added `"srl"`, `"kabushiki"`, `"kaisha"` to `_LEGAL_SUFFIXES`
+- These fix: "STMICROELECTRONICS S.r.l." → "stmicroelectronics", "CANON KABUSHIKI KAISHA" → "canon"
+
+**polars `DataFrame.with_columns` / `filter` → pyright strict mode:**
+- These polars methods have overloads that pyright `strict` mode cannot fully resolve → `reportUnknownMemberType`.
+- Fix: add `# type: ignore[reportUnknownMemberType]` on the specific call lines. Do not disable globally.
+- Affects any ER asset file that calls these methods on a collected `pl.DataFrame` (as opposed to `pl.LazyFrame` operations, which are fine).
+
+**State after 2026-06-22 session — all core ER assets built:**
+- `rapidfuzz==3.14.5` added to pyproject.toml (approved in CLAUDE.md tech stack).
+- `build_openalex_institutions_staging()` implemented in crosswalk.py: DuckDB parallel UNNEST on institution_ids + institution_display_names, deduplicate by institution_id, normalize, tag ror/high. 9 new tests → total 154, all green.
+- `fuzzy_org_bridge` asset (fuzzy_bridge.py): token_set_ratio blocking on first token; HIGH_THRESHOLD=90→fuzzy_high/high, REVIEW_THRESHOLD=75→fuzzy_review/medium. 12 tests.
+- `org_crosswalk` asset (assemble.py): long-format `int_organization_crosswalk` (source, source_id, org_id, canonical_name, match_method, confidence). Seed org_ids inherited by OA side via fuzzy bridge; fallback org_ids generated as `org_pv_*` / `org_oa_*`. 15 tests.
+- `docs/er_eval_set.md` created: ~55 labelled pairs across Tier 1 (unambiguous), Tier 2 (near matches), Tier 3 (hard non-matches). Precision/recall record table pending first materialize run.
+
+**One remaining manual step before Part 3 is complete:**
+Fill `openalex_institution_id` in `seed_crosswalk.csv` for orgs where PV and OA names differ too much to fuzzy_high (Stanford, MIT abbreviation). Query after materializing `openalex_institutions_staging`:
+```sql
+SELECT institution_id, display_name, normalized_name
+FROM read_parquet('r2://p2p-lake/intermediate/er/openalex_institutions_staging/*/*.parquet')
+WHERE normalized_name IN ('stanford university', 'massachusetts institute of technology',
+                          'california institute of technology', 'imec')
+ORDER BY normalized_name;
+```
+Then fill those IDs into seed_crosswalk.csv and update `seed_crosswalk_matched` to also join on `openalex_institution_id` (when not blank) against the OA staging.
+
+**Part 3 exit criteria status:**
+- ✅ 'NVIDIA', 'NVIDIA Corp', 'Nvidia Corporation' collapse to one org_id via seed crosswalk.
+- ✅ Every crosswalk row has match_method and confidence.
+- ⏳ Precision on eval set ≥ 0.95 — pending first materialize + eval run.
+- ⏳ Stanford resolves across both sources — needs openalex_institution_id filled in seed CSV.
