@@ -76,6 +76,7 @@ FIXTURE_WORK: dict[str, Any] = {
                 {
                     "id": "https://openalex.org/I136199984",
                     "ror": "https://ror.org/01nrxwf90",
+                    "display_name": "MIT",
                 }
             ]
         },
@@ -84,6 +85,7 @@ FIXTURE_WORK: dict[str, Any] = {
                 {
                     "id": "https://openalex.org/I63966007",
                     "ror": "https://ror.org/042nb2s44",
+                    "display_name": "Stanford University",
                 }
             ]
         },
@@ -116,8 +118,11 @@ def test_parse_work_institutions_collected() -> None:
     record = parse_work(FIXTURE_WORK)
     assert len(record["institution_ids"]) == 2
     assert len(record["institution_rors"]) == 2
+    assert len(record["institution_display_names"]) == 2
     assert "https://openalex.org/I136199984" in record["institution_ids"]
     assert "https://ror.org/042nb2s44" in record["institution_rors"]
+    assert "MIT" in record["institution_display_names"]
+    assert "Stanford University" in record["institution_display_names"]
 
 
 def test_parse_work_missing_abstract() -> None:
@@ -131,6 +136,7 @@ def test_parse_work_no_institutions() -> None:
     record = parse_work(work)
     assert record["institution_ids"] == []
     assert record["institution_rors"] == []
+    assert record["institution_display_names"] == []
 
 
 def test_parse_work_no_topic() -> None:

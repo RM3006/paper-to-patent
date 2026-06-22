@@ -22,7 +22,7 @@ A curious teenager should grasp the map in 90 seconds. An R&D strategist or VC a
 | 0 | Pre-flight + NPL feasibility spike | ✅ Done |
 | 1 | Foundation + OpenAlex ingest | ✅ Done |
 | 2 | PatentsView bulk ingest | ✅ Done |
-| 3 | Entity resolution + organisation crosswalk | ⬜ Pending |
+| 3 | Entity resolution + organisation crosswalk | ✅ Done |
 | 4 | dbt modeling + NPL linkage + gold eval | ⬜ Pending |
 | 5 | Embeddings, clustering, and interpretable labels | ⬜ Pending |
 | 6 | Citation-lag & competitive-intelligence analytics | ⬜ Pending |
@@ -58,7 +58,7 @@ notebooks/     Exploratory; never imported by pipelines
 ```bash
 cp .env.example .env.local   # fill in credentials
 uv sync
-uv run dagster asset materialize -m nexus --select openalex_works_raw
+uv run --env-file .env.local dagster asset materialize -m nexus --select openalex_works_raw
 uv run pytest
 uv run ruff check pipelines/nexus/
 uv run pyright pipelines/nexus/
