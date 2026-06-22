@@ -18,6 +18,7 @@ from nexus.assets.ingest.patentsview import (
     patentsview_npl_raw,
     patentsview_patents_raw,
 )
+from nexus.assets.transform.dbt_assets import dbt_resource, paper_to_patent_dbt_assets
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
 
@@ -50,9 +51,11 @@ defs = Definitions(
         seed_crosswalk_oa_matched,
         fuzzy_org_bridge,
         org_crosswalk,
+        paper_to_patent_dbt_assets,
     ],
     resources={
         "r2": _r2,
         "duckdb": _duckdb,
+        "dbt": dbt_resource,
     },
 )

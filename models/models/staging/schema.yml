@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: stg_openalex_works
+    description: OpenAlex scope works, type-cast and cleaned.
+    columns:
+      - name: work_id
+        tests: [not_null, unique]
+      - name: publication_date
+        tests: [not_null]
+      - name: title
+        tests: [not_null]
+
+  - name: stg_patents_scoped
+    description: Scope-filtered patents (CPC + filing_date 2014–2025), type-cast.
+    columns:
+      - name: patent_id
+        tests: [not_null, unique]
+      - name: filing_date
+        tests: [not_null]
+
+  - name: stg_assignees
+    description: Scope patent assignees (organisation-type only, joined to scope).
+    columns:
+      - name: patent_id
+        tests: [not_null]
+      - name: assignee_id
+        tests: [not_null]
+
+  - name: stg_cpc
+    description: CPC codes for scope patents.
+    columns:
+      - name: patent_id
+        tests: [not_null]
+      - name: cpc_group
+        tests: [not_null]
+
+  - name: stg_npl
+    description: NPL "other reference" strings for scope patents, with pre-extracted DOI.
+    columns:
+      - name: patent_id
+        tests: [not_null]
+      - name: ref_text
+        tests: [not_null]
+
+  - name: stg_patent_citations
+    description: Patent-to-patent citation edges for scope patents.
+    columns:
+      - name: citing_patent_id
+        tests: [not_null]
+      - name: cited_patent_id
+        tests: [not_null]

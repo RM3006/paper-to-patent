@@ -1,0 +1,31 @@
+name: paper_to_patent
+version: "1.0.0"
+profile: paper_to_patent
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+on-run-start:
+  - "{{ create_external_sources() }}"
+
+models:
+  paper_to_patent:
+    staging:
+      +materialized: table
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+    queries:
+      +materialized: view
+      +schema: marts

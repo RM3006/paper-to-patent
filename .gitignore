@@ -27,6 +27,11 @@ infra/terraform.tfstate
 infra/terraform.tfstate.backup
 infra/*.tfvars
 
+# dbt build artifacts
+models/target/
+models/dbt_packages/
+models/.user.yml
+
 # Notebooks output
 notebooks/.ipynb_checkpoints/
 
