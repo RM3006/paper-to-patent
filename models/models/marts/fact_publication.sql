@@ -35,11 +35,15 @@ with_org as (
         e.institution_id,
         x.org_id,
         x.match_method              as org_match_method,
-        x.confidence                as org_confidence
+        x.confidence                as org_confidence,
+        fdc.cluster_id
     from exploded e
     left join {{ ref('int_org_crosswalk') }} x
         on x.source = 'openalex'
         and x.source_id = e.institution_id
+    left join {{ ref('fact_document_cluster') }} fdc
+        on fdc.doc_id = e.work_id
+        and fdc.doc_type = 'paper'
 )
 
 select * from with_org

@@ -23,10 +23,54 @@ models:
         description: Full CPC group code (e.g. G03F7/2004)
         tests: [not_null, unique]
 
+  - name: dim_technology_cluster
+    description: >
+      One row per technology cluster. Includes the noise cluster (c_noise).
+      cluster_id, tagline, summary_friendly, and top c-TF-IDF terms per cluster.
+      Populated after Part 5 cluster_labels Dagster asset runs and dbt is rebuilt.
+    columns:
+      - name: cluster_id
+        description: Cluster identifier string (e.g. c_0, c_1, c_noise)
+        tests: [not_null, unique]
+      - name: tagline
+        description: "Short human-readable technology family name (2–6 words)"
+        tests: [not_null]
+      - name: summary_friendly
+        description: "2–3 plain-English sentences describing this cluster"
+        tests: [not_null]
+
+  - name: fact_document_cluster
+    description: >
+      One row per document in the ML embedding corpus.
+      Maps every paper and patent to a technology cluster with 2D UMAP coordinates.
+      doc_type 'paper' → doc_id = work_id (dim_paper); 'patent' → doc_id = patent_id (dim_patent).
+      Populated after Part 5 document_clusters Dagster asset runs and dbt is rebuilt.
+    columns:
+      - name: doc_id
+        description: OpenAlex work_id (papers) or USPTO patent_id (patents)
+        tests: [not_null, unique]
+      - name: doc_type
+        description: "'paper' | 'patent'"
+        tests: [not_null]
+      - name: cluster_id
+        description: FK → dim_technology_cluster.cluster_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: umap_x
+        tests: [not_null]
+      - name: umap_y
+        tests: [not_null]
+      - name: model_version
+        tests: [not_null]
+
   - name: dim_paper
     description: >
       One row per OpenAlex work in scope (164,072 rows).
-      cluster_id is NULL until Part 5 populates it.
+      cluster_id back-filled from fact_document_cluster after Part 5 ML pipeline runs.
     columns:
       - name: work_id
         description: OpenAlex short work ID (e.g. W2741809807)
@@ -38,7 +82,7 @@ models:
   - name: dim_patent
     description: >
       One row per scope patent (33,578 rows, CPC match + filing_date 2014–2025).
-      cluster_id is NULL until Part 5 populates it.
+      cluster_id back-filled from fact_document_cluster after Part 5 ML pipeline runs.
     columns:
       - name: patent_id
         description: USPTO patent number
@@ -51,6 +95,7 @@ models:
     description: >
       One row per (paper, institution) combination.
       org_id attached via the crosswalk; NULL allowed where institution is not in scope crosswalk.
+      cluster_id denormalised from fact_document_cluster for fast analytical queries.
     columns:
       - name: work_id
         tests: [not_null]
@@ -60,16 +105,21 @@ models:
         tests: [not_null]
       - name: org_id
         description: NULL when institution has no crosswalk entry
+      - name: cluster_id
+        description: FK → dim_technology_cluster.cluster_id; NULL before Part 5 ML pipeline runs
 
   - name: fact_patent_filing
     description: >
       One row per (patent, assignee) combination.
       Anchored on filing_date. org_id NULL for individual assignees or those not in the crosswalk.
+      cluster_id denormalised from fact_document_cluster for fast analytical queries.
     columns:
       - name: patent_id
         tests: [not_null]
       - name: filing_date
         tests: [not_null]
+      - name: cluster_id
+        description: FK → dim_technology_cluster.cluster_id; NULL before Part 5 ML pipeline runs
 
   - name: fact_patent_citation
     description: Patent-to-patent citation edges for scope patents.

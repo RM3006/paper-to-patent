@@ -238,6 +238,8 @@ LIMIT 20;
 
 > Scope filter: CPC prefix match on the 10 codes in the scope contract + `filing_date` 2014–2025. See `pipelines/nexus/assets/ingest/patentsview.py::SCOPE_CPC_PREFIXES`.
 
+> **Patent abstracts note (Part 5):** `g_patent.tsv` does not ship abstract text — it contains only `patent_id`, `patent_type`, `patent_date`, `patent_title`, `wipo_kind`, `num_claims`, `withdrawn`. The Part 5 embedding asset therefore uses `title` (from `dim_patent`) as the text source for patents, and `abstract` (from `dim_paper`) for papers. Patent titles in this corpus are descriptive enough for domain clustering; both sources share the same embedding model (`all-MiniLM-L6-v2`).
+
 ---
 
 ### OpenAlex raw schema (Part 1 / Part 4 — stub)
@@ -371,3 +373,48 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `citation_lag_years` | Float | Rounded to 2 decimal places; **never called "lead time"** |
 
 > **Verified 2026-06-22**: 5,921 rows (after `publication_date < filing_date` filter in dbt), 2,973 distinct patents, 2,470 distinct works. Median citation lag ≈ 3.6 years. Top assignees by NPL links: GlobalFoundries (704), IBM (612), STMicroelectronics (177), ASML (99), MIT (95), Intel (95).
+
+---
+
+### ML pipeline intermediate tables (Part 5)
+
+**`clusters`** — UMAP + HDBSCAN document assignments (R2: `intermediate/clusters/v{date}/clusters.parquet`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `doc_id` | String | OpenAlex `work_id` for papers; USPTO `patent_id` for patents |
+| `doc_type` | String | `paper` or `patent` |
+| `cluster_id` | String | Cluster identifier — `c_{label}` for named clusters, `c_noise` for HDBSCAN noise points |
+| `umap_x` | Float32 | 2D UMAP x-coordinate for the technology map |
+| `umap_y` | Float32 | 2D UMAP y-coordinate for the technology map |
+| `model_version` | String | Embedding model used: `all-MiniLM-L6-v2` |
+
+> Embedding model: `all-MiniLM-L6-v2` (384-dim, CPU, `normalize_embeddings=True`, max 256 tokens). Text source: paper `abstract` (from `dim_paper`) and patent `title` (from `dim_patent` — `g_patent.tsv` does not include abstract text). UMAP: `n_neighbors=15`, `min_dist=0.1`, `metric='cosine'`, `random_state=42`. HDBSCAN: `min_cluster_size=50`, `metric='euclidean'` (on 2D UMAP coords).
+
+**`cluster_terms`** — c-TF-IDF top terms per cluster (R2: `intermediate/cluster_terms/v{date}/cluster_terms.parquet`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `cluster_id` | String | Cluster identifier |
+| `top_terms` | List[String] | Top 15 discriminating terms from BERTopic-style c-TF-IDF |
+| `doc_count` | Int32 | Number of documents in this cluster |
+
+**`cluster_labels`** — Claude Haiku-generated cluster names (R2: `intermediate/cluster_labels/v{date}/cluster_labels.parquet`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `cluster_id` | String | Cluster identifier — PK |
+| `tagline` | String | Short human-readable technology family name (2–6 words) |
+| `summary_friendly` | String | 2–3 plain-English sentences describing the cluster |
+| `top_terms` | List[String] | Top c-TF-IDF terms (carried through from cluster_terms) |
+
+> Label generation: Claude `claude-haiku-4-5`, `max_tokens=256`. Prompt is grounded only in `top_terms` + 5 representative document titles — the model is explicitly forbidden from inventing information beyond the supplied evidence. `c_noise` receives a fixed label ("Frontier / Unclustered") with no API call. Spot-check quality target: ≥ 13/15 reviewed labels rated accurate (see `docs/cluster_label_review.md`).
+
+**dbt mart models (Part 5)**
+
+| dbt model | Schema | Description |
+|---|---|---|
+| `dim_technology_cluster` | `main_marts` | One row per cluster; `cluster_id` PK, `tagline`, `summary_friendly`, `top_terms` |
+| `fact_document_cluster` | `main_marts` | One row per document; `doc_id`, `doc_type`, `cluster_id`, `umap_x`, `umap_y`, `model_version` |
+
+`cluster_id` is denormalised onto `dim_paper`, `dim_patent`, `fact_publication`, and `fact_patent_filing` (left join from `fact_document_cluster`) to support cluster-filtered analytical queries without an extra join.

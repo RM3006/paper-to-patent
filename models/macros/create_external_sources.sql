@@ -13,6 +13,7 @@
     {% do run_query("CREATE SCHEMA IF NOT EXISTS openalex_raw") %}
     {% do run_query("CREATE SCHEMA IF NOT EXISTS patentsview_raw") %}
     {% do run_query("CREATE SCHEMA IF NOT EXISTS er_intermediate") %}
+    {% do run_query("CREATE SCHEMA IF NOT EXISTS ml_intermediate") %}
 
     -- openalex
     {% do run_query("CREATE OR REPLACE VIEW openalex_raw.works AS SELECT * FROM read_parquet('r2://p2p-lake/raw/openalex/*/*.parquet')") %}
@@ -36,6 +37,23 @@
     {% set npl_exists = run_query(npl_check).columns[0].values()[0] > 0 %}
     {% if npl_exists %}
       {% do run_query("CREATE OR REPLACE VIEW er_intermediate.npl_links AS SELECT * FROM read_parquet('r2://p2p-lake/intermediate/npl/*/*.parquet')") %}
+    {% endif %}
+
+    -- ml_intermediate views — only registered once Part 5 ML assets have run
+    {% set clusters_check %}
+      SELECT COUNT(*) FROM glob('r2://p2p-lake/intermediate/clusters/*/*.parquet')
+    {% endset %}
+    {% set clusters_exist = run_query(clusters_check).columns[0].values()[0] > 0 %}
+    {% if clusters_exist %}
+      {% do run_query("CREATE OR REPLACE VIEW ml_intermediate.clusters AS SELECT * FROM read_parquet('r2://p2p-lake/intermediate/clusters/*/*.parquet')") %}
+    {% endif %}
+
+    {% set labels_check %}
+      SELECT COUNT(*) FROM glob('r2://p2p-lake/intermediate/cluster_labels/*/*.parquet')
+    {% endset %}
+    {% set labels_exist = run_query(labels_check).columns[0].values()[0] > 0 %}
+    {% if labels_exist %}
+      {% do run_query("CREATE OR REPLACE VIEW ml_intermediate.cluster_labels AS SELECT * FROM read_parquet('r2://p2p-lake/intermediate/cluster_labels/*/*.parquet')") %}
     {% endif %}
   {% endif %}
 
