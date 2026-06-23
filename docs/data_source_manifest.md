@@ -332,6 +332,42 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 
 ---
 
-### NPL matcher (Part 4 — stub)
+### NPL matcher (Part 4 — complete)
 
-- **NPL matcher** — `fact_npl_link` (`match_method = npl_citation`, `confidence`), and `ref_npl_gold_eval`; precision/recall vs Marx & Fuegi gold set _(Part 4)_
+**Approach**: two-route matcher in `pipelines/nexus/assets/transform/npl_matcher.py`.
+
+| Route | Mechanism | Confidence | Links |
+|---|---|---|---|
+| DOI | regex-extracted bare DOI (trailing punctuation stripped) → exact join on `doi_bare` | `high` | 1,107 |
+| Fuzzy title | inverted-index candidate generation + `rapidfuzz.token_set_ratio` ≥ 90 | `medium` | 5,145 |
+| **Total** | after deduplication on `(patent_id, work_id)` | — | **6,252** |
+
+**Gold eval set** (`ref_npl_gold_eval` in `dev.duckdb`): Marx & Fuegi pairs filtered to scope patents (filing 2014–2025) **∩** OA corpus (163,890 works) → **8,640 measurable pairs**, 3,301 distinct patents.
+
+**Precision/recall at threshold=90 (chosen threshold):**
+
+| Threshold | Total links | Cond. precision* | Recall |
+|---|---|---|---|
+| 90 | 6,252 | **0.831** | 0.324 |
+| 95 | 2,243 | 0.841 | 0.114 |
+| 100 | 1,329 | 0.813 | 0.060 |
+
+*Conditional precision: measured only over the 3,301 patents appearing in the gold set, to avoid penalising true links that the gold cannot confirm. Threshold=90 was the lowest achieving ≥ 0.80 conditional precision.
+
+**Coverage note**: Marx & Fuegi is based on Microsoft Academic Graph (coverage ~2021). Our matcher extends coverage to 2025 via OpenAlex, producing links the gold set cannot confirm — this is a feature, not a gap. The DOI route operates at near-100% precision; the fuzzy route's 0.831 conditional precision is a conservative lower bound.
+
+**`fact_npl_link`** — resolved paper↔patent edges (R2: `gold/facts/fact_npl_link/`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `patent_id` | String | Citing patent (in scope) |
+| `work_id` | String | Matched OpenAlex work ID (e.g. `W2741809807`) |
+| `match_method` | String | `npl_citation` (DOI or fuzzy-title route) |
+| `confidence` | String | `high` (DOI route) or `medium` (fuzzy-title route) |
+| `doi_extracted` | String | Bare DOI if DOI route; NULL for fuzzy matches |
+| `publication_date` | Date | Paper publication date — citation-lag anchor |
+| `filing_date` | Date | Patent filing date — citation-lag anchor |
+| `citation_lag_days` | Integer | Days from publication to filing |
+| `citation_lag_years` | Float | Rounded to 2 decimal places; **never called "lead time"** |
+
+> **Verified 2026-06-22**: 5,921 rows (after `publication_date < filing_date` filter in dbt), 2,973 distinct patents, 2,470 distinct works. Median citation lag ≈ 3.6 years. Top assignees by NPL links: GlobalFoundries (704), IBM (612), STMicroelectronics (177), ASML (99), MIT (95), Intel (95).

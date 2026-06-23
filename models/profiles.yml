@@ -1,0 +1,15 @@
+paper_to_patent:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', 'dev.duckdb') }}"
+      threads: 4
+      secrets:
+        - type: r2
+          name: r2
+          account_id: "{{ env_var('CLOUDFLARE_ACCOUNT_ID') }}"
+          key_id: "{{ env_var('CLOUDFLARE_R2_ACCESS_KEY_ID') }}"
+          secret: "{{ env_var('CLOUDFLARE_R2_SECRET_ACCESS_KEY') }}"
+      extensions:
+        - httpfs

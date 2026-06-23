@@ -1,0 +1,97 @@
+version: 2
+
+models:
+  - name: dim_organization
+    description: >
+      One row per canonical org_id spanning both OpenAlex institutions and PatentsView assignees.
+      Built from int_organization_crosswalk (Part 3). 14,209 distinct org_ids.
+    columns:
+      - name: org_id
+        description: Canonical identifier slug (e.g. org_nvidia, org_pv_…, org_oa_…)
+        tests: [not_null, unique]
+      - name: canonical_name
+        description: Human-readable organisation name
+        tests: [not_null]
+      - name: primary_match_method
+        description: Method that yielded this canonical name (seed_crosswalk > fuzzy_high > native_id > ror)
+        tests: [not_null]
+
+  - name: dim_cpc
+    description: One row per distinct CPC group code appearing in scope patents.
+    columns:
+      - name: cpc_group
+        description: Full CPC group code (e.g. G03F7/2004)
+        tests: [not_null, unique]
+
+  - name: dim_paper
+    description: >
+      One row per OpenAlex work in scope (164,072 rows).
+      cluster_id is NULL until Part 5 populates it.
+    columns:
+      - name: work_id
+        description: OpenAlex short work ID (e.g. W2741809807)
+        tests: [not_null, unique]
+      - name: publication_date
+        description: "Publication date — citation-lag anchor"
+        tests: [not_null]
+
+  - name: dim_patent
+    description: >
+      One row per scope patent (33,578 rows, CPC match + filing_date 2014–2025).
+      cluster_id is NULL until Part 5 populates it.
+    columns:
+      - name: patent_id
+        description: USPTO patent number
+        tests: [not_null, unique]
+      - name: filing_date
+        description: "Filing date — citation-lag anchor (never grant_date)"
+        tests: [not_null]
+
+  - name: fact_publication
+    description: >
+      One row per (paper, institution) combination.
+      org_id attached via the crosswalk; NULL allowed where institution is not in scope crosswalk.
+    columns:
+      - name: work_id
+        tests: [not_null]
+      - name: institution_id
+        tests: [not_null]
+      - name: publication_date
+        tests: [not_null]
+      - name: org_id
+        description: NULL when institution has no crosswalk entry
+
+  - name: fact_patent_filing
+    description: >
+      One row per (patent, assignee) combination.
+      Anchored on filing_date. org_id NULL for individual assignees or those not in the crosswalk.
+    columns:
+      - name: patent_id
+        tests: [not_null]
+      - name: filing_date
+        tests: [not_null]
+
+  - name: fact_patent_citation
+    description: Patent-to-patent citation edges for scope patents.
+    columns:
+      - name: citing_patent_id
+        tests: [not_null]
+      - name: cited_patent_id
+        tests: [not_null]
+
+  - name: fact_npl_link
+    description: >
+      Resolved paper↔patent edges via NPL citations.
+      citation_lag_days = publication_date → filing_date interval (never "lead time").
+      All rows have match_method + confidence. Populated after Step 2.
+    columns:
+      - name: patent_id
+        tests: [not_null]
+      - name: work_id
+        tests: [not_null]
+      - name: match_method
+        tests: [not_null]
+      - name: confidence
+        tests: [not_null]
+      - name: citation_lag_days
+        description: Days from paper publication to citing patent filing

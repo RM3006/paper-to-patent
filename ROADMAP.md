@@ -234,15 +234,20 @@ The two sources share no key. You will resolve organisations with a layered stra
 9. Write `idea_journey.sql`.
 
 **Exit criteria**
-- `dbt build` passes (run + test).
-- `idea_journey.sql` for a well-known patent-holding org returns its papers, its patents, and at least some NPL-linked pairs with `confidence` populated.
-- NPL matcher precision vs gold eval set ≥ 0.80 (recall is secondary — precision-first per `CLAUDE.md`). Record the actual numbers.
-- Every fact row's organisation resolves to a `dim_organization` row (no orphan `org_id`s).
+- [x] `dbt build` passes (run + test). *(PASS=66, ERROR=0 — verified 2026-06-22)*
+- [x] `idea_journey.sql` for a well-known patent-holding org returns its papers, its patents, and at least some NPL-linked pairs with `confidence` populated. *(org_globalfoundries: 704 NPL links; org_ibm: 612 — verified 2026-06-22)*
+- [x] NPL matcher precision vs gold eval set ≥ 0.80 (recall is secondary — precision-first per `CLAUDE.md`). Record the actual numbers. *(Conditional precision = 0.831 at threshold=90; recall = 0.324. 6,252 total links (1,107 DOI/high + 5,145 fuzzy/medium). See `docs/data_source_manifest.md`.)*
+- [x] Every fact row's organisation resolves to a `dim_organization` row (no orphan `org_id`s). *(Zero orphan org_ids in fact_publication — verified 2026-06-22)*
+
+**Implementation notes (for future reference)**
+- `ids.mag` is NOT stored in our ingested OA data and is not needed: `oaid` in the Marx & Fuegi CSV is the OpenAlex numeric work ID — `work_id = 'W' + str(oaid)` joins directly.
+- DOI route yield doubled (447 → 1,083 links) by stripping trailing punctuation from extracted DOIs before joining.
+- Fuzzy matcher runs 357k NPL strings × 30 candidates; ~8 minutes CPU-time. Inverted-index blocking on 5-char alphabetic tokens, max 5,000 postings per token.
+- Conditional precision (gold-patent subset) is the meaningful metric — overall gold precision would be far lower because gold covers only ~10% of scope patents (MAG ~2021 cutoff), penalising true links the gold cannot confirm.
 
 **Risks**
 - Re-scanning raw Parquet from R2 on every iteration is slow. Materialise staging into the local DuckDB file during development.
 - DOI extraction from free-text NPL strings is noisy. A clean regex DOI match is `high`; everything else is `medium` or dropped. Precision over coverage.
-- The Marx/Fuegi MAG IDs need the OpenAlex `ids.mag` join to resolve — confirm OpenAlex returns `ids.mag` for your scope papers before relying on it.
 - The cluster dimension doesn't exist yet — model `cluster_id` as a nullable column to be populated in Part 5.
 
 ---
@@ -414,7 +419,7 @@ Do **not** build these in Parts 1–8:
 | 1 | CI runs lint + types + tests; OpenAlex works in R2 with reconstructed abstracts. |
 | 2 | All PatentsView bulk assets in R2; `g_other_reference` filtered to scope is non-empty. |
 | 3 | Crosswalk precision ≥ 0.95 on the eval set; NVIDIA variants collapse to one `org_id`. |
-| 4 | `idea_journey.sql` returns NPL-linked pairs; matcher precision ≥ 0.80 vs gold eval; no orphan `org_id`s; gold Parquet in R2. |
+| 4 | `idea_journey.sql` returns NPL-linked pairs; matcher precision ≥ 0.80 vs gold eval; no orphan `org_id`s; gold Parquet in R2. ✅ *(verified 2026-06-22: 6,252 links, cond. precision=0.831, recall=0.324; GlobalFoundries 704 NPL links via idea_journey; gold in R2)* |
 | 5 | A known technology forms one cluster and its generated label names it; spot-check ≥ 13/15. |
 | 6 | `docs/findings.md` has one NPL citation-lag finding (N ≥ 20) and one concentration finding. |
 | 7 | Vertical slice works end-to-end in incognito; a non-technical person used it without confusion. |
