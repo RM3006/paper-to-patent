@@ -26,4 +26,4 @@ dbt_resource = DbtCliResource(
 def paper_to_patent_dbt_assets(context, dbt: DbtCliResource):  # type: ignore[no-untyped-def]
     # npl_links source is registered by the on-run-start macro only when present;
     # fact_npl_link and idea_journey build cleanly once npl_links_raw has run.
-    yield from dbt.cli(["build"], context=context).stream()
+    yield from dbt.cli(["build"], context=context).stream()  # type: ignore[reportUnknownMemberType,reportUnknownArgumentType]

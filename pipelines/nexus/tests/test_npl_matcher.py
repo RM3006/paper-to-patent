@@ -3,9 +3,9 @@
 import pytest
 
 from nexus.assets.transform.npl_matcher import (
-    _dedup_matches,
-    _fuzzy_match_all,
-    _tokenize,
+    _dedup_matches,  # pyright: ignore[reportPrivateUsage]
+    _fuzzy_match_all,  # pyright: ignore[reportPrivateUsage]
+    _tokenize,  # pyright: ignore[reportPrivateUsage]
     build_inverted_index,
     evaluate_matches,
 )
