@@ -23,6 +23,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      - name: Generate dbt manifest
+        run: uv run dbt parse --project-dir models --profiles-dir models
+        env:
+          CLOUDFLARE_ACCOUNT_ID: dummy
+          CLOUDFLARE_R2_ACCESS_KEY_ID: dummy
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: dummy
+
       - name: Lint (ruff)
         run: uv run ruff check pipelines/nexus/
 
