@@ -306,13 +306,13 @@ This is the analytical payload. Every mart carries a top-of-file comment stating
 **Tasks**
 1. Build `mart_velocity`; compute both citation-lag definitions; never present the cohort estimate as NPL-linked.
 2. Build `mart_competitive`; rank assignees and institutions per cluster by count and share.
-3. Build `mart_gap`: compute HHI per cluster over `assignee_id`, compute institution count and country diversity from OpenAlex. The finding takes the form: "[cluster] has research from N institutions across M countries, but US patents are concentrated in Z assignees (HHI = X)."
+3. Build `mart_gap`: compute HHI per cluster over `assignee_id`, compute institution count from OpenAlex. Country diversity is out of scope — `country_code` was not ingested at Part 1 and re-ingesting would exceed Part 6 scope. The finding takes the form: "[cluster] has research from N institutions, but US patents are concentrated in Z assignees (HHI = X)."
 4. dbt tests; sanity-check against `idea_journey.sql`. Materialise to the R2 gold layer.
 5. Write `docs/findings.md`: at least one NPL-linked citation-lag finding for a named cluster, and one concentration finding.
 
 **Exit criteria**
 - `dbt build` passes on all three marts.
-- `docs/findings.md` contains at least one finding of the form "median NPL citation lag for [named cluster] = N years, from M linked pairs," and one concentration finding ("[cluster] research spans X institutions; US patenting concentrates in Z assignees, HHI = Y").
+- `docs/findings.md` contains at least one finding of the form "median NPL citation lag for [named cluster] = N years, from M linked pairs," and one concentration finding ("[cluster] research spans X institutions; US patenting concentrates in Z assignees (HHI = Y)").
 - Every headline number is reproducible by querying exactly one gold mart.
 - No mart uses the term "lead time" or implies causation; all framing says "citation lag."
 

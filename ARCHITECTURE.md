@@ -93,7 +93,7 @@ Raw data lands as Parquet in R2. The PatentsView side uses bulk TSV downloads (n
 
 ## 5. Warehouse & transformation
 
-**Used.** DuckDB as an embedded analytical engine, with dbt-core + dbt-duckdb for the SQL layer. Models build locally against the R2 Parquet; the gold layer is materialised back to R2 as Parquet via dbt-duckdb's external materialisation; the app queries those gold files with in-process DuckDB.
+**Used.** DuckDB as an embedded analytical engine, with dbt-core + dbt-duckdb for the SQL layer. Models build locally against the R2 Parquet into a local `dev.duckdb` file; the `gold_export` Dagster asset then reads from `dev.duckdb` and writes versioned Parquet snapshots to `r2://p2p-lake/gold/` using the stage-then-promote COPY pattern; the app queries those gold files with in-process DuckDB.
 
 **Considered.** MotherDuck (managed DuckDB); Snowflake or BigQuery; transforming purely in Python (polars) with no dbt.
 
