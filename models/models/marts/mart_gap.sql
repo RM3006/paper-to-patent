@@ -17,10 +17,12 @@
   HHI methodology:
     - Primary assignee: assignee_sequence = 0 preferred; fall back to lowest non-null
       sequence; patents with no org-type assignee resolved to crosswalk get NULL.
-    - HHI = Σ(share²) where share = org_patents / total_patents_in_cluster.
-    - NULL-org patents are excluded from share computation; pct_unresolved_patents
-      documents the exclusion rate (1.6% across scope).
-    - hhi is NULL and hhi_reportable = false when n_patents_in_hhi < 10.
+    - HHI = Σ(share²) where share = org_patents / resolved_patents_in_cluster.
+      Denominator is resolved patents only; unresolved (null-org) patents are excluded
+      from both numerator and denominator so they do not dilute measured concentration.
+      pct_unresolved_patents documents the exclusion rate (1.6% across scope on average;
+      some clusters are higher — see mart output).
+    - hhi is NULL and hhi_reportable = false when resolved_patents < 10.
     - HHI is reported on a [0, 1] scale; ×10000 = traditional HHI points.
 
   Grain: one row per cluster_id.
@@ -61,29 +63,31 @@ org_counts as (
 cluster_patent_totals as (
     select cluster_id,
         sum(org_patents)                                    as total_patents,
-        sum(org_patents) filter(where primary_org_id is null) as unresolved_patents
+        sum(org_patents) filter(where primary_org_id is null)     as unresolved_patents,
+        sum(org_patents) filter(where primary_org_id is not null) as resolved_patents
     from org_counts
     group by 1
 ),
 
--- HHI: exclude null-org rows from share computation
+-- HHI: shares computed over resolved patents only (denominator excludes null-org patents)
 hhi_calc as (
     select
         oc.cluster_id,
         round(
             sum(
-                (oc.org_patents * 1.0 / ct.total_patents) *
-                (oc.org_patents * 1.0 / ct.total_patents)
+                (oc.org_patents * 1.0 / ct.resolved_patents) *
+                (oc.org_patents * 1.0 / ct.resolved_patents)
             ),
             4
         )                                                   as hhi_raw,
         count(distinct oc.primary_org_id)
             filter(where oc.primary_org_id is not null)     as n_assignees,
         max(ct.total_patents)                               as total_patents,
-        max(ct.unresolved_patents)                          as unresolved_patents
+        max(ct.unresolved_patents)                          as unresolved_patents,
+        max(ct.resolved_patents)                            as resolved_patents
     from org_counts oc
     inner join cluster_patent_totals ct on ct.cluster_id = oc.cluster_id
-    where oc.primary_org_id is not null                     -- exclude from HHI shares
+    where oc.primary_org_id is not null
     group by 1
 ),
 
@@ -109,11 +113,11 @@ select
     round(coalesce(h.unresolved_patents, 0) * 100.0
         / nullif(coalesce(h.total_patents, 0), 0), 1)       as pct_unresolved_patents,
 
-    -- HHI (NULL when n_patents < 10 — not reportable)
-    case when coalesce(h.total_patents, 0) >= 10
+    -- HHI (NULL when resolved patents < 10 — not reportable)
+    case when coalesce(h.resolved_patents, 0) >= 10
         then h.hhi_raw
     end                                                     as hhi,
-    coalesce(h.total_patents, 0) >= 10                      as hhi_reportable,
+    coalesce(h.resolved_patents, 0) >= 10                   as hhi_reportable,
 
     -- Research breadth
     coalesce(ib.n_institutions, 0)                          as n_institutions,
