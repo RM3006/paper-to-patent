@@ -249,7 +249,7 @@ def cluster_labels(
     cluster_terms_map: dict[str, list[str]] = {}
     for row in terms_rows:
         cid = str(row[0])
-        cluster_terms_map[cid] = [str(t) for t in (row[1] or [])]
+        cluster_terms_map[cid] = [str(t) for t in (row[1] or [])]  # type: ignore[reportUnknownVariableType,reportUnknownArgumentType]
 
     context.log.info("Loaded %s cluster entries from cluster_terms.", len(cluster_terms_map))
 
