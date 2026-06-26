@@ -171,7 +171,7 @@ A star schema in the marts layer. Conformed dimensions are shared across the fac
 **Gold marts (what the app reads)**
 - `mart_velocity` — per cluster: research-onset vs patent-onset series + median **citation lag** (paper `publication_date` → citing patent `filing_date`), computed the NPL-linked way and (separately, labelled) the soft cohort way.
 - `mart_competitive` — per cluster: assignees capturing IP vs institutions producing research, with counts and shares.
-- `mart_gap` — per cluster: assignee concentration of US patenting (Herfindahl-Hirschman Index over `assignee_id`) vs breadth of global research output (institution count + country diversity from OpenAlex). The story is "researched broadly, patented narrowly" measured as concentration within US patents — not a geography comparison, which would be circular given US-only patent coverage.
+- `mart_gap` — per cluster: HHI (Herfindahl-Hirschman Index) over primary US patent assignees + institution count of global research contributors. Country diversity is out of scope — `country_code` was not ingested at Part 1. The story is "researched broadly, patented narrowly" measured as concentration within US patents only.
 
 **Canonical query** — `models/queries/idea_journey.sql` returns, for an `org_id` or topic, its papers, its patents, and the NPL links between them; it is the integration check used throughout the build.
 <!-- /MAINTAINED -->

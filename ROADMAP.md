@@ -289,7 +289,7 @@ The two sources share no key. You will resolve organisations with a layered stra
 
 ---
 
-## Part 6 — Citation-lag & competitive-intelligence analytics
+## Part 6 — Citation-lag & competitive-intelligence analytics ✅ COMPLETE (2026-06-26)
 
 **Goal**: the three headline insights exist as tested gold marts, each with at least one concrete, defensible finding.
 

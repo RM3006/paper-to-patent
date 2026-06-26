@@ -1,6 +1,6 @@
 """Tests for gold_export pure helpers."""
 
-from nexus.assets.transform.gold_export import _GOLD_MODELS, _gold_r2_path
+from nexus.assets.transform.gold_export import _GOLD_MODELS, _gold_r2_path  # type: ignore[reportPrivateUsage]
 
 
 def test_gold_r2_path_dims() -> None:

@@ -129,6 +129,56 @@ models:
       - name: cited_patent_id
         tests: [not_null]
 
+  - name: mart_competitive
+    description: >
+      Competitive landscape mart. Grain: (cluster_id, side, org_id_key).
+      side='patent': distinct US patents assigned to org per cluster.
+      side='paper': distinct papers attributed to org per cluster.
+      Paper-side shares can sum >100% per cluster (co-attribution, not partitioned share).
+      Unresolved orgs (no crosswalk match) included with canonical_name='Unresolved'.
+      rank_in_cluster: rank by doc_count within each (cluster, side).
+    columns:
+      - name: cluster_id
+        tests: [not_null]
+      - name: side
+        tests: [not_null]
+      - name: org_id_key
+        tests: [not_null]
+      - name: canonical_name
+        tests: [not_null]
+      - name: doc_count
+        tests: [not_null]
+      - name: share
+        tests: [not_null]
+      - name: cluster_total
+        tests: [not_null]
+      - name: rank_in_cluster
+        tests: [not_null]
+
+  - name: mart_gap
+    description: >
+      Research-to-patent concentration gap mart. Grain: one row per cluster_id.
+      HHI (Herfindahl-Hirschman Index, 0–1) over primary assignees of US patents.
+      n_institutions: distinct OpenAlex institution_ids contributing papers.
+      hhi is NULL when n_patents < 10 (not reportable); hhi_reportable signals this.
+      pct_unresolved_patents: fraction of patents with no resolved org (excluded from HHI).
+      Framing: concentration within US patents — not a global geography comparison.
+    columns:
+      - name: cluster_id
+        tests: [not_null, unique]
+      - name: n_patents
+        tests: [not_null]
+      - name: hhi_reportable
+        tests: [not_null]
+      - name: n_institutions
+        tests: [not_null]
+      - name: n_papers
+        tests: [not_null]
+      - name: hhi
+        description: >
+          HHI in [0, 1] (NULL when n_patents < 10). Never described as implying
+          causation — it is a descriptive concentration metric within US patents.
+
   - name: mart_velocity
     description: >
       Technology velocity mart. Grain: (cluster_id, year).
