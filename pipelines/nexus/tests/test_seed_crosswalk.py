@@ -242,10 +242,11 @@ def test_production_seed_csv_no_blank_org_id() -> None:
 
 
 def test_production_seed_csv_no_blank_normalized_patentsview() -> None:
-    """Every row must have a non-blank normalized_patentsview."""
+    """Every row must have normalized_patentsview OR openalex_institution_id (OA-only seed rows are allowed)."""
     df = pl.read_csv(str(SEED_CSV))
-    assert df["normalized_patentsview"].is_null().sum() == 0
-    assert (df["normalized_patentsview"].str.len_chars() > 0).all()
+    has_pv = df["normalized_patentsview"].is_not_null() & (df["normalized_patentsview"].str.len_chars() > 0)
+    has_oa = df["openalex_institution_id"].is_not_null() & (df["openalex_institution_id"].str.len_chars() > 0)
+    assert (has_pv | has_oa).all(), "Every seed row must have normalized_patentsview or openalex_institution_id"
 
 
 def test_production_seed_csv_normalized_forms_are_lowercase() -> None:
