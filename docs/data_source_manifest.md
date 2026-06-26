@@ -327,10 +327,10 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `source` | String | `patentsview` or `openalex` |
 | `source_id` | String | `assignee_id` (PV) or `institution_id` (OA) |
 | `canonical_name` | String | Human-readable name |
-| `match_method` | String | One of: `native_id`, `seed_crosswalk`, `fuzzy_high`, `ror` |
+| `match_method` | String | One of: `native_id`, `seed_crosswalk`, `ror_bridge`, `fuzzy_high`, `ror` |
 | `confidence` | String | `high` (medium / low not present — `fuzzy_review` band was eliminated) |
 
-> **Verified 2026-06-22:** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record.
+> **Verified 2026-06-22 (pre-ror_bridge):** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record. ROR bridge (added 2026-06-26) extends OA coverage for ~2,521 PV-only seeded orgs (IBM, Samsung Display, Micron, Carl Zeiss, SK Hynix, …); row counts updated after next Dagster run.
 
 ---
 

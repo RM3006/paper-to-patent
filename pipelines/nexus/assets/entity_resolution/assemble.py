@@ -5,16 +5,19 @@ maps one (source, source_id) pair to an org_id with provenance metadata.
 
 Layers (applied in priority order):
   1. seed_crosswalk_matched  — PatentsView assignee → known org_id
-  2. fuzzy_org_bridge        — OpenAlex institution → org_id via PV fuzzy match
-  3. Native fallback         — remaining PV assignees get org_id from assignee_id slug
-  4. OA-only fallback        — unmatched OA institutions get org_id from institution slug
+  2a. seed_crosswalk_oa_matched — OpenAlex institution → org_id via explicit seed CSV id
+  2b. ror_bridge             — OpenAlex institution → org_id via API name-token match
+                               (closes the acronym/full-name gap the fuzzy bridge misses)
+  3. fuzzy_org_bridge        — OpenAlex institution → org_id via PV fuzzy match (score=100)
+  4. Native fallback         — remaining PV assignees get org_id from assignee_id slug
+  5. OA-only fallback        — unmatched OA institutions get org_id from institution slug
 
 Output schema:
   org_id         — canonical identifier (slug: "org_tsmc", "org_pv_…", "org_oa_…")
   source         — "patentsview" | "openalex"
   source_id      — assignee_id (PV) | institution_id (OA)
   canonical_name — human-readable org name
-  match_method   — native_id | seed_crosswalk | fuzzy_high | ror
+  match_method   — native_id | seed_crosswalk | ror_bridge | fuzzy_high | ror
   confidence     — high | medium | low
 
 Output: r2://p2p-lake/intermediate/er/org_crosswalk/v{date}/org_crosswalk.parquet
