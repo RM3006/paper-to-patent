@@ -50,6 +50,7 @@ def _slugify(text: str, max_tokens: int = 4) -> str:
 def build_org_crosswalk(
     seed_matched: pl.DataFrame,
     seed_oa_matched: pl.DataFrame,
+    ror_bridge: pl.DataFrame,
     fuzzy_bridge: pl.DataFrame,
     pv_staging: pl.DataFrame,
     oa_staging: pl.DataFrame,
@@ -59,14 +60,16 @@ def build_org_crosswalk(
     Priority:
       1. seed_crosswalk_matched    → PV rows with known org_ids
       2. seed_crosswalk_oa_matched → OA rows with explicit institution IDs in the seed CSV
-      3. fuzzy_org_bridge          → OA rows matched to a PV org via name similarity
-      4. PV fallback               → remaining PV assignees, org_id from normalized name slug
-      5. OA fallback               → remaining OA institutions, org_id from normalized name slug
+      3. ror_bridge                → OA rows found via OpenAlex API (acronym/full-name gap)
+      4. fuzzy_org_bridge          → OA rows matched to a PV org via name similarity
+      5. PV fallback               → remaining PV assignees, org_id from normalized name slug
+      6. OA fallback               → remaining OA institutions, org_id from normalized name slug
 
     Input schemas:
       seed_matched    : org_id, canonical_name, assignee_id, display_name, match_method, confidence
       seed_oa_matched : org_id, canonical_name, institution_id, display_name,
                         match_method, confidence
+      ror_bridge      : org_id, institution_id, display_name, match_method, confidence
       fuzzy_bridge    : institution_id, assignee_id, similarity, match_method, confidence
       pv_staging      : assignee_id, display_name, normalized_name, match_method, confidence
       oa_staging      : institution_id, display_name, normalized_name, match_method, confidence
@@ -104,7 +107,18 @@ def build_org_crosswalk(
         ))
         matched_oa_ids.add(inst_id)
 
-    # ── Layer 2b: fuzzy bridge → OA institutions matched to PV orgs ──────
+    # ── Layer 2b: ROR bridge → OA institutions found via OpenAlex API ────
+    for r in ror_bridge.iter_rows(named=True):
+        inst_id: str = r["institution_id"]
+        if inst_id in matched_oa_ids:
+            continue
+        rows.append((
+            r["org_id"], "openalex", inst_id,
+            r["display_name"], r["match_method"], r["confidence"],
+        ))
+        matched_oa_ids.add(inst_id)
+
+    # ── Layer 2c: fuzzy bridge → OA institutions matched to PV orgs ──────
     # If the matched PV assignee is in seed, inherit the org_id.
     # If not, generate one from the PV assignee's normalized name.
     pv_norm_lookup: dict[str, str] = {
@@ -197,13 +211,15 @@ def build_org_crosswalk(
     deps=[
         "seed_crosswalk_matched",
         "seed_crosswalk_oa_matched",
+        "ror_bridge",
         "fuzzy_org_bridge",
         "patentsview_orgs_staging",
         "openalex_institutions_staging",
     ],
     description=(
-        "Final ER assembly: int_organization_crosswalk. Unions seed crosswalk (PV), "
-        "fuzzy bridge (OA→PV links), and fallback rows for unmatched entities. "
+        "Final ER assembly: int_organization_crosswalk. Unions seed crosswalk (PV+OA), "
+        "ROR bridge (API-matched OA rows), fuzzy bridge (name-similarity OA rows), "
+        "and fallback rows for unmatched entities. "
         "Long format: one row per (source, source_id) with org_id, canonical_name, "
         "match_method, confidence. "
         "Output: r2://p2p-lake/intermediate/er/org_crosswalk/v{date}/org_crosswalk.parquet"
@@ -244,6 +260,9 @@ def org_crosswalk(
     seed_oa_df = _read(
         f"r2://{bucket}/intermediate/er/seed_crosswalk_oa_matched/*/*.parquet"
     )
+    ror_df = _read(
+        f"r2://{bucket}/intermediate/er/ror_bridge/*/*.parquet"
+    )
     fuzzy_df = _read(
         f"r2://{bucket}/intermediate/er/fuzzy_org_bridge/*/*.parquet"
     )
@@ -263,7 +282,7 @@ def org_crosswalk(
             f"{review_count:,}",
         )
 
-    df = build_org_crosswalk(seed_df, seed_oa_df, fuzzy_df, pv_df, oa_df)
+    df = build_org_crosswalk(seed_df, seed_oa_df, ror_df, fuzzy_df, pv_df, oa_df)
     context.log.info(
         "Crosswalk: %s rows, %s distinct org_ids.",
         f"{len(df):,}",

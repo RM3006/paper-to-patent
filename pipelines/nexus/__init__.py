@@ -6,6 +6,7 @@ from nexus.assets.entity_resolution.crosswalk import (
     patentsview_orgs_staging,
 )
 from nexus.assets.entity_resolution.fuzzy_bridge import fuzzy_org_bridge
+from nexus.assets.entity_resolution.ror_bridge import ror_bridge
 from nexus.assets.entity_resolution.seed import seed_crosswalk_matched, seed_crosswalk_oa_matched
 from nexus.assets.ingest.openalex import openalex_works_raw
 from nexus.assets.ingest.patentsview import (
@@ -55,6 +56,7 @@ defs = Definitions(
         seed_crosswalk_matched,
         seed_crosswalk_oa_matched,
         fuzzy_org_bridge,
+        ror_bridge,
         org_crosswalk,
         paper_to_patent_dbt_assets,
         npl_links_raw,

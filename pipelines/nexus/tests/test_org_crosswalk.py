@@ -91,8 +91,14 @@ _SEED_OA: pl.DataFrame = pl.DataFrame(
 )
 
 
+_EMPTY_ROR = pl.DataFrame(
+    schema={"org_id": pl.String, "institution_id": pl.String,
+            "display_name": pl.String, "match_method": pl.String, "confidence": pl.String}
+)
+
+
 def _build() -> pl.DataFrame:
-    return build_org_crosswalk(_SEED, _SEED_OA, _FUZZY, _PV, _OA)
+    return build_org_crosswalk(_SEED, _SEED_OA, _EMPTY_ROR, _FUZZY, _PV, _OA)
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +221,7 @@ def test_seed_oa_match_uses_known_org_id() -> None:
             "confidence": ["high"],
         }),
     ])
-    df = build_org_crosswalk(_SEED, seed_oa, _FUZZY, _PV, oa_with_stanford)
+    df = build_org_crosswalk(_SEED, seed_oa, _EMPTY_ROR, _FUZZY, _PV, oa_with_stanford)
     row = next(r for r in df.to_dicts() if r["source_id"] == "https://openalex.org/I97018004")
     assert row["org_id"] == "org_stanford"
     assert row["match_method"] == "seed_crosswalk"
@@ -281,7 +287,7 @@ def test_empty_all_returns_empty_df() -> None:
             "confidence": pl.String,
         }
     )
-    df = build_org_crosswalk(empty_seed, empty_seed_oa, empty_fuzzy, empty_pv, empty_oa)
+    df = build_org_crosswalk(empty_seed, empty_seed_oa, _EMPTY_ROR, empty_fuzzy, empty_pv, empty_oa)
     assert len(df) == 0
     assert set(df.columns) == {
         "org_id", "source", "source_id", "canonical_name", "match_method", "confidence"
