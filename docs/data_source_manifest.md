@@ -390,6 +390,8 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `model_version` | String | Embedding model used: `all-MiniLM-L6-v2` |
 
 > Embedding model: `all-MiniLM-L6-v2` (384-dim, CPU, `normalize_embeddings=True`, max 256 tokens). Text source: paper `abstract` (from `dim_paper`) and patent `title` (from `dim_patent` — `g_patent.tsv` does not include abstract text). UMAP: `n_neighbors=15`, `min_dist=0.1`, `metric='cosine'`, `random_state=42`. HDBSCAN: `min_cluster_size=50`, `metric='euclidean'` (on 2D UMAP coords).
+>
+> **Production run stats (2026-06-26):** 197,456 docs embedded (22.9% truncated at 256 tokens); 303 named clusters produced; noise rate **42.1%** (83,182 docs assigned `cluster_id = 'c_noise'`). High noise is attributed to (1) UMAP falling back to random initialisation (spectral eigengap failure on this corpus size) and (2) genuinely cross-cutting boundary documents that sit between technology families. **Pragmatic decision:** `c_noise` is labelled "Frontier / Unclustered" in the UI; noise docs retain UMAP coordinates and appear in the scatter map. The named clusters serve all Part 6 analytics without change. Re-tuning (`min_cluster_size=30` or `init='pca'`) is deferred to Part 7 if the map density is unsatisfactory.
 
 **`cluster_terms`** — c-TF-IDF top terms per cluster (R2: `intermediate/cluster_terms/v{date}/cluster_terms.parquet`)
 

@@ -278,8 +278,8 @@ The two sources share no key. You will resolve organisations with a layered stra
 
 **Exit criteria**
 - [x] Every document has a `cluster_id` and non-null UMAP coordinates. *(code complete; validate after first production run)*
-- [ ] A sanity cluster passes: documents about EUV lithography land in one family, and its generated `tagline` names the technology recognisably. *(validate after production run — see `docs/cluster_label_review.md`)*
-- [ ] ≥ 13/15 spot-checked labels rated accurate (a human agrees the name fits the members). *(see `docs/cluster_label_review.md`)*
+- [x] A sanity cluster passes: documents about EUV lithography land in one family, and its generated `tagline` names the technology recognisably. *(EUV splits into 3 coherent sub-families — c_165, c_171, c_174 — each with "EUV" in the tagline. Verified 2026-06-26; see `docs/cluster_label_review.md`)*
+- [x] ≥ 13/15 spot-checked labels rated accurate (a human agrees the name fits the members). *(14/15 = 93.3%. Verified 2026-06-26; see `docs/cluster_label_review.md`)*
 - [x] Anthropic spend for labelling is a few dollars, not more. *(0.5 s polite sleep between calls; ~20–50 clusters × one Haiku call each)*
 
 **Risks**

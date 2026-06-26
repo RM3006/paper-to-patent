@@ -227,15 +227,15 @@ def document_clusters(
     # Load embeddings from R2 → numpy matrix
     context.log.info("Loading embeddings…")
     with duckdb.get_connection() as con:
-        emb_pl = con.execute(
+        rows = con.execute(
             f"SELECT doc_id, doc_type, embedding "
             f"FROM read_parquet('{embeddings_path}') "
             "ORDER BY doc_id"
-        ).pl()
+        ).fetchall()
 
-    doc_ids: list[str] = emb_pl["doc_id"].to_list()
-    doc_types: list[str] = emb_pl["doc_type"].to_list()
-    embedding_matrix = np.array(emb_pl["embedding"].to_list(), dtype=np.float32)
+    doc_ids: list[str] = [r[0] for r in rows]
+    doc_types: list[str] = [r[1] for r in rows]
+    embedding_matrix = np.array([r[2] for r in rows], dtype=np.float32)
     context.log.info(
         "Embeddings loaded: %s docs, shape %s.", f"{len(doc_ids):,}", str(embedding_matrix.shape)
     )

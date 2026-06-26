@@ -242,14 +242,14 @@ def cluster_labels(
 
     # Load cluster_terms → cluster_id → top_terms
     with duckdb.get_connection() as con:
-        terms_pl = con.execute(
+        terms_rows = con.execute(
             f"SELECT cluster_id, top_terms, doc_count FROM read_parquet('{terms_path}')"
-        ).pl()
+        ).fetchall()
 
     cluster_terms_map: dict[str, list[str]] = {}
-    for row in terms_pl.iter_rows(named=True):
-        cid = str(row["cluster_id"])
-        cluster_terms_map[cid] = [str(t) for t in (row["top_terms"] or [])]  # type: ignore[reportUnknownVariableType,reportUnknownArgumentType]
+    for row in terms_rows:
+        cid = str(row[0])
+        cluster_terms_map[cid] = [str(t) for t in (row[1] or [])]
 
     context.log.info("Loaded %s cluster entries from cluster_terms.", len(cluster_terms_map))
 
