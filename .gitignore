@@ -32,6 +32,12 @@ models/target/
 models/dbt_packages/
 models/.user.yml
 
+# Dagster / runtime logs
+logs/
+models/logs/
+pipelines/logs/
+.tmp_dagster_home_*/
+
 # Notebooks output
 notebooks/.ipynb_checkpoints/
 
