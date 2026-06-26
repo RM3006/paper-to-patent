@@ -25,19 +25,19 @@ Exact queries are shown under each finding.
 > in this cluster explicitly cited in patent references — anchored on each patent's filing date, not
 > its grant date.
 
-**Reproducible query** (from `main_marts.mart_velocity`):
+**Reproducible query** (from `main_marts.mart_gap`):
 ```sql
-SELECT DISTINCT cluster_id, tagline, npl_median_lag_years, npl_n_links
-FROM main_marts.mart_velocity
-WHERE cluster_id = 'c_152'
-  AND npl_reportable = true;
--- Returns: c_152 | Spiking Neuromorphic Neural Networks | 2.75 | 248
+SELECT cluster_id, tagline, npl_median_lag_years, npl_n_links,
+       n_oa_institutions, n_research_orgs, n_assignees, n_papers
+FROM main_marts.mart_gap
+WHERE cluster_id = 'c_152';
+-- Returns: c_152 | Spiking Neuromorphic Neural Networks | 2.75 | 248 | 2612 | ... | 96 | 5995
 ```
 
 **Context from mart_gap:**
-The same cluster spans 2,612 distinct institutions globally (source: OpenAlex), 96 distinct US patent
-assignees, and 5,995 attributed papers. HHI = 0.06, indicating dispersed patent ownership — the
-research-to-patent pipeline is distributed rather than captured by a handful of players.
+The same cluster spans 2,612 distinct research institutions globally (sub-org level, source: OpenAlex),
+96 distinct US patent assignees, and 5,995 attributed papers. HHI = 0.06, indicating dispersed patent
+ownership — the research-to-patent pipeline is distributed rather than captured by a handful of players.
 
 ---
 
@@ -53,13 +53,13 @@ research-to-patent pipeline is distributed rather than captured by a handful of 
 
 **Reproducible query** (from `main_marts.mart_gap`):
 ```sql
-SELECT cluster_id, tagline, hhi, n_assignees, n_patents, n_institutions, n_papers
+SELECT cluster_id, tagline, hhi, n_assignees, n_patents, n_oa_institutions, n_papers
 FROM main_marts.mart_gap
 WHERE cluster_id = 'c_53';
 -- Returns: c_53 | Lithographic Apparatus and Device Manufacturing | 1.0 | 1 | 155 | 0 | 0
 ```
 
-**Note:** `n_institutions = 0` and `n_papers = 0` for this cluster because the UMAP+HDBSCAN
+**Note:** `n_oa_institutions = 0` and `n_papers = 0` for this cluster because the UMAP+HDBSCAN
 embedding placed all papers about EUV apparatus into neighbouring clusters (e.g. `c_135`, `c_162`,
 `c_173`, `c_174`) rather than here. The patents in this cluster have no co-located paper
 counterpart in the same cluster — a valid and honest result of the unsupervised clustering.
@@ -71,11 +71,12 @@ The concentration finding is therefore stated without the institution-breadth co
 
 **Cluster:** `c_228` — Neuromorphic Computing with Synaptic Devices
 **Metric:** Institution breadth (paper side) vs assignee concentration (patent side)
-**Value:** Research spans **610 institutions** (762 papers); US patenting concentrates
-in **5 assignees** (10 patents, **HHI = 0.40**)
+**Value:** Research spans **610 distinct research institutions** (sub-org level, 762 papers);
+US patenting concentrates in **5 assignees** (10 patents, **HHI = 0.40**)
 
 > Research on neuromorphic computing with synaptic devices is produced by 610 distinct
-> institutions globally (762 English-language papers, 2012–2025). Yet US patent filings
+> research institutions globally (sub-org level — IBM Research Almaden and IBM Research Zürich
+> are counted separately; 762 English-language papers, 2012–2025). Yet US patent filings
 > in this cluster are concentrated in just 5 assignees, with a Herfindahl-Hirschman Index
 > of 0.40 — well above the 0.25 threshold typically considered "highly concentrated."
 > The gap between breadth of research activity and narrowness of US patent ownership
@@ -83,10 +84,11 @@ in **5 assignees** (10 patents, **HHI = 0.40**)
 
 **Reproducible query** (from `main_marts.mart_gap`):
 ```sql
-SELECT cluster_id, tagline, hhi, n_assignees, n_patents, n_institutions, n_papers
+SELECT cluster_id, tagline, hhi, n_assignees, n_patents,
+       n_oa_institutions, n_research_orgs, n_papers
 FROM main_marts.mart_gap
 WHERE cluster_id = 'c_228';
--- Returns: c_228 | Neuromorphic Computing with Synaptic Devices | 0.4 | 5 | 10 | 610 | 762
+-- Returns: c_228 | Neuromorphic Computing with Synaptic Devices | 0.4 | 5 | 10 | 610 | ~580 | 762
 ```
 
 **Caveat:** n_patents = 10 is at the minimum reportable threshold (≥10). This finding should be
@@ -106,12 +108,11 @@ read as indicative rather than conclusive; a larger patent sample would strength
 > research-to-patent cycle time between domains, though the NPL citation mechanism
 > (a researcher citing a paper in a patent) is not equivalent to proof of causation.
 
-**Reproducible query** (from `main_marts.mart_velocity`):
+**Reproducible query** (from `main_marts.mart_gap`):
 ```sql
-SELECT DISTINCT cluster_id, tagline, npl_median_lag_years, npl_n_links
-FROM main_marts.mart_velocity
-WHERE cluster_id = 'c_234'
-  AND npl_reportable = true;
+SELECT cluster_id, tagline, npl_median_lag_years, npl_n_links
+FROM main_marts.mart_gap
+WHERE cluster_id = 'c_234';
 -- Returns: c_234 | Optical Semiconductor Waveguide Devices | 5.27 | 117
 ```
 
@@ -125,4 +126,4 @@ WHERE cluster_id = 'c_234'
 | Typical NPL lag | c_152 Spiking Neuromorphic | citation lag | **2.75 yr** | 248 |
 | Slowest NPL lag | c_234 Optical Semiconductor Waveguide | citation lag | **5.27 yr** | 117 |
 | Extreme concentration | c_53 EUV Apparatus | HHI | **1.00** (1 assignee) | 155 patents |
-| Broad research, narrow patent | c_228 Neuromorphic Synaptic | gap | **610 inst / 5 assignees / HHI=0.40** | 10 patents |
+| Broad research, narrow patent | c_228 Neuromorphic Synaptic | gap | **610 research institutions (sub-org) / 5 assignees / HHI=0.40** | 10 patents |

@@ -157,12 +157,14 @@ models:
 
   - name: mart_gap
     description: >
-      Research-to-patent concentration gap mart. Grain: one row per cluster_id.
+      Per-cluster summary: citation lag, concentration gap, and research breadth.
+      Grain: one row per cluster_id.
       HHI (Herfindahl-Hirschman Index, 0–1) over primary assignees of US patents.
-      n_institutions: distinct OpenAlex institution_ids contributing papers.
-      hhi is NULL when n_patents < 10 (not reportable); hhi_reportable signals this.
+      n_oa_institutions: distinct OpenAlex institution_ids (sub-org, IBM Research Almaden ≠ IBM Research Zürich).
+      n_research_orgs: distinct org_ids post-ER (org-level, directly comparable to n_assignees).
+      npl_median_lag_years: median citation lag (NULL when npl_n_links < 20).
+      hhi is NULL when resolved_patents < 10 (not reportable); hhi_reportable signals this.
       pct_unresolved_patents: fraction of patents with no resolved org (excluded from HHI).
-      Framing: concentration within US patents — not a global geography comparison.
     columns:
       - name: cluster_id
         tests: [not_null, unique]
@@ -170,33 +172,18 @@ models:
         tests: [not_null]
       - name: hhi_reportable
         tests: [not_null]
-      - name: n_institutions
+      - name: n_oa_institutions
         tests: [not_null]
+        description: Distinct OpenAlex institution_ids (sub-org level).
+      - name: n_research_orgs
+        tests: [not_null]
+        description: Distinct org_ids post-ER (org-level, comparable to n_assignees).
       - name: n_papers
         tests: [not_null]
       - name: hhi
         description: >
-          HHI in [0, 1] (NULL when n_patents < 10). Never described as implying
-          causation — it is a descriptive concentration metric within US patents.
-
-  - name: mart_velocity
-    description: >
-      Technology velocity mart. Grain: (cluster_id, year).
-      Contains research-onset vs patent-onset annual counts and two citation-lag metrics:
-      NPL-linked (rigorous, patent-cluster anchor, N must be ≥ 20 to be reportable) and
-      cohort lag (soft estimate — papers and patents in same cluster, not necessarily linked).
-      c_noise rows included; filter is_noise = false for headline findings.
-    columns:
-      - name: cluster_id
-        tests: [not_null]
-      - name: year
-        tests: [not_null]
-      - name: tagline
-        tests: [not_null]
-      - name: paper_count
-        tests: [not_null]
-      - name: patent_count
-        tests: [not_null]
+          HHI in [0, 1] (NULL when resolved_patents < 10). Descriptive concentration
+          within US patents only — not a global geography comparison.
       - name: npl_n_links
         tests: [not_null]
       - name: npl_reportable
@@ -209,6 +196,24 @@ models:
         description: >
           SOFT ESTIMATE: median(patent filing year) − median(paper pub year) per cluster.
           Not derived from NPL links. May be negative (patents pre-date research in cluster).
+
+  - name: mart_velocity
+    description: >
+      Technology velocity mart. Grain: (cluster_id, year). Pure annual time series.
+      Citation lag and cohort lag metrics are in mart_gap (per-cluster scalars do not
+      belong in a per-year table). c_noise rows included; filter is_noise = false for
+      headline findings.
+    columns:
+      - name: cluster_id
+        tests: [not_null]
+      - name: year
+        tests: [not_null]
+      - name: tagline
+        tests: [not_null]
+      - name: paper_count
+        tests: [not_null]
+      - name: patent_count
+        tests: [not_null]
 
   - name: fact_npl_link
     description: >

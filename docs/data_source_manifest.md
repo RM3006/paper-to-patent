@@ -425,9 +425,9 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 
 ### Gold mart models (Part 6)
 
-**`mart_velocity`** (R2: `gold/facts/mart_velocity/`)
+**`mart_velocity`** (R2: `gold/marts/mart_velocity/`)
 
-Grain: `(cluster_id, year)`. Contains the research-onset vs patent-onset annual time series plus two citation-lag metrics per cluster. All 304 clusters × up to 14 years = 3,794 rows.
+Grain: `(cluster_id, year)`. Pure annual time series — paper and patent counts per cluster per year. Citation-lag metrics are in `mart_gap` (they are per-cluster scalars, not per-year). All 304 clusters × up to 14 years = 3,794 rows.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -437,14 +437,6 @@ Grain: `(cluster_id, year)`. Contains the research-onset vs patent-onset annual 
 | `year` | Integer | Calendar year |
 | `paper_count` | Integer | Distinct papers published in this cluster × year |
 | `patent_count` | Integer | Distinct patents filed in this cluster × year |
-| `npl_median_lag_years` | Float | Median citation lag in years (paper pub date → patent filing date, via NPL links). **Patent's cluster is the anchor.** NULL when `npl_n_links < 20`. |
-| `npl_n_links` | Integer | Number of NPL-linked pairs driving the lag estimate |
-| `npl_reportable` | Boolean | True when `npl_n_links ≥ 20` |
-| `cohort_med_pub_year` | Float | Median paper publication year for this cluster (soft cohort estimate) |
-| `cohort_med_filing_year` | Float | Median patent filing year for this cluster (soft cohort estimate) |
-| `cohort_lag_years` | Float | `cohort_med_filing_year − cohort_med_pub_year`. **SOFT ESTIMATE — not NPL-linked.** May be negative. |
-
-43 clusters have `npl_reportable = true` (N ≥ 20 NPL links). Fastest lag: c_158 (2.17 yr, N=96). Slowest: c_234 (5.27 yr, N=117).
 
 **`mart_competitive`** (R2: `gold/facts/mart_competitive/`)
 
@@ -464,7 +456,7 @@ Grain: `(cluster_id, side, org_id_key)`. 8,216 patent-side rows + 62,963 paper-s
 | `cluster_total` | Integer | Distinct documents in this cluster for this side |
 | `rank_in_cluster` | Integer | Rank by `doc_count` desc within `(cluster_id, side)` |
 
-**`mart_gap`** (R2: `gold/facts/mart_gap/`)
+**`mart_gap`** (R2: `gold/marts/mart_gap/`)
 
 Grain: `cluster_id`. One row per cluster, 304 rows total. 161 clusters have `hhi_reportable = true`.
 
@@ -476,9 +468,18 @@ Grain: `cluster_id`. One row per cluster, 304 rows total. 161 clusters have `hhi
 | `n_patents` | Integer | Distinct primary-assignee patents in cluster |
 | `n_assignees` | Integer | Distinct resolved assignees in HHI computation |
 | `pct_unresolved_patents` | Float | % of patents excluded from HHI (no resolved org); 1.6% across scope |
-| `hhi` | Float | HHI ∈ [0, 1] over primary assignees. NULL when `n_patents < 10`. |
-| `hhi_reportable` | Boolean | True when `n_patents ≥ 10` |
-| `n_institutions` | Integer | Distinct OpenAlex institution_ids contributing papers to this cluster |
+| `hhi` | Float | HHI ∈ [0, 1] over primary assignees. NULL when `resolved_patents < 10`. |
+| `hhi_reportable` | Boolean | True when `resolved_patents ≥ 10` |
+| `n_oa_institutions` | Integer | Distinct OpenAlex `institution_id`s contributing papers (sub-org level — IBM Research Almaden ≠ IBM Research Zürich) |
+| `n_research_orgs` | Integer | Distinct `org_id`s post-ER contributing papers (org-level, comparable to `n_assignees`) |
 | `n_papers` | Integer | Distinct papers in this cluster |
+| `npl_median_lag_years` | Float | Median citation lag in years (paper pub date → patent filing date, via NPL links). **Patent's cluster is the anchor.** NULL when `npl_n_links < 20`. |
+| `npl_n_links` | Integer | Number of NPL-linked pairs driving the lag estimate |
+| `npl_reportable` | Boolean | True when `npl_n_links ≥ 20` |
+| `cohort_med_pub_year` | Float | Median paper publication year for this cluster (soft cohort estimate) |
+| `cohort_med_filing_year` | Float | Median patent filing year for this cluster (soft cohort estimate) |
+| `cohort_lag_years` | Float | `cohort_med_filing_year − cohort_med_pub_year`. **SOFT ESTIMATE — not NPL-linked.** May be negative. |
 
 HHI methodology: primary assignee = `assignee_sequence = 0` preferred; patents with no org-type assignee resolved to crosswalk are excluded from shares (pct_unresolved = 1.6%). HHI = Σ(share²). Framing: concentration within US patents only — not a global geography comparison.
+
+43 clusters have `npl_reportable = true` (N ≥ 20 NPL links). Fastest lag: c_158 (2.17 yr, N=96). Slowest: c_234 (5.27 yr, N=117). Use `n_research_orgs` for breadth-vs-concentration comparisons; `n_oa_institutions` for fine-grained diversity counts.
