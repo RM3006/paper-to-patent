@@ -129,6 +129,92 @@ models:
       - name: cited_patent_id
         tests: [not_null]
 
+  - name: mart_competitive
+    description: >
+      Competitive landscape mart. Grain: (cluster_id, side, org_id_key).
+      side='patent': distinct US patents assigned to org per cluster.
+      side='paper': distinct papers attributed to org per cluster.
+      Paper-side shares can sum >100% per cluster (co-attribution, not partitioned share).
+      Unresolved orgs (no crosswalk match) included with canonical_name='Unresolved'.
+      rank_in_cluster: rank by doc_count within each (cluster, side).
+    columns:
+      - name: cluster_id
+        tests: [not_null]
+      - name: side
+        tests: [not_null]
+      - name: org_id_key
+        tests: [not_null]
+      - name: canonical_name
+        tests: [not_null]
+      - name: doc_count
+        tests: [not_null]
+      - name: share
+        tests: [not_null]
+      - name: cluster_total
+        tests: [not_null]
+      - name: rank_in_cluster
+        tests: [not_null]
+
+  - name: mart_gap
+    description: >
+      Per-cluster summary: citation lag, concentration gap, and research breadth.
+      Grain: one row per cluster_id.
+      HHI (Herfindahl-Hirschman Index, 0–1) over primary assignees of US patents.
+      n_oa_institutions: distinct OpenAlex institution_ids (sub-org, IBM Research Almaden ≠ IBM Research Zürich).
+      n_research_orgs: distinct org_ids post-ER (org-level, directly comparable to n_assignees).
+      npl_median_lag_years: median citation lag (NULL when npl_n_links < 20).
+      hhi is NULL when resolved_patents < 10 (not reportable); hhi_reportable signals this.
+      pct_unresolved_patents: fraction of patents with no resolved org (excluded from HHI).
+    columns:
+      - name: cluster_id
+        tests: [not_null, unique]
+      - name: n_patents
+        tests: [not_null]
+      - name: hhi_reportable
+        tests: [not_null]
+      - name: n_oa_institutions
+        tests: [not_null]
+        description: Distinct OpenAlex institution_ids (sub-org level).
+      - name: n_research_orgs
+        tests: [not_null]
+        description: Distinct org_ids post-ER (org-level, comparable to n_assignees).
+      - name: n_papers
+        tests: [not_null]
+      - name: hhi
+        description: >
+          HHI in [0, 1] (NULL when resolved_patents < 10). Descriptive concentration
+          within US patents only — not a global geography comparison.
+      - name: npl_n_links
+        tests: [not_null]
+      - name: npl_reportable
+        tests: [not_null]
+      - name: npl_median_lag_years
+        description: >
+          Median citation lag in years (publication_date → patent filing_date, via NPL link).
+          NULL when npl_n_links < 20. Never described as lead time.
+      - name: cohort_lag_years
+        description: >
+          SOFT ESTIMATE: median(patent filing year) − median(paper pub year) per cluster.
+          Not derived from NPL links. May be negative (patents pre-date research in cluster).
+
+  - name: mart_velocity
+    description: >
+      Technology velocity mart. Grain: (cluster_id, year). Pure annual time series.
+      Citation lag and cohort lag metrics are in mart_gap (per-cluster scalars do not
+      belong in a per-year table). c_noise rows included; filter is_noise = false for
+      headline findings.
+    columns:
+      - name: cluster_id
+        tests: [not_null]
+      - name: year
+        tests: [not_null]
+      - name: tagline
+        tests: [not_null]
+      - name: paper_count
+        tests: [not_null]
+      - name: patent_count
+        tests: [not_null]
+
   - name: fact_npl_link
     description: >
       Resolved paper↔patent edges via NPL citations.

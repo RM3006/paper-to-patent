@@ -1,8 +1,27 @@
 # ER Eval Set — Organisation Entity Resolution
 
-Hand-labelled pairs used to measure precision and recall of the fuzzy bridge (Layer 3).
-Every pair that reaches the `fuzzy_high` or `fuzzy_review` band must be validated against
+Hand-labelled pairs used to measure precision and recall of the cross-source ER layers (fuzzy bridge and ROR bridge).
+Every pair that reaches the `fuzzy_high`, `fuzzy_review`, or `ror_bridge` band must be validated against
 this set before the crosswalk is used in any mart.
+
+## ROR Bridge (Layer 2b — added 2026-06-26)
+
+The ROR bridge queries the OpenAlex Institutions API for seeded PV-only orgs and accepts institutions
+where `canonical_tokens ⊆ result_tokens`. Acceptance rule:
+
+- Every normalised token in the canonical name must appear in the result's display name.
+- Example: canonical="IBM" → {"ibm"} ⊆ {"ibm", "research", "almaden"} → **accept**.
+- Example: canonical="Samsung Display" → {"samsung", "display"} ⊄ {"samsung"} → **reject** (parent org).
+
+More-specific orgs are processed first (descending token count) to prevent parent absorption.
+The bridge only runs on orgs already in the seed crosswalk — it cannot introduce new org_ids.
+All accepted rows carry `match_method='ror_bridge'`, `confidence='high'`.
+
+**Quality record:**
+
+| Date | Orgs queried | Acceptance rule | Notes |
+|------|-------------|-----------------|-------|
+| 2026-06-26 | ~2,521 PV-only seeded orgs | `canonical_tokens ⊆ result_tokens` | IBM (all research labs), Samsung Display, SK Hynix, Carl Zeiss SMT, Micron expected as primary hits. Formal precision/recall measured after first live run. |
 
 ## Methodology
 

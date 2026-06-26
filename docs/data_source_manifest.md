@@ -327,10 +327,10 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `source` | String | `patentsview` or `openalex` |
 | `source_id` | String | `assignee_id` (PV) or `institution_id` (OA) |
 | `canonical_name` | String | Human-readable name |
-| `match_method` | String | One of: `native_id`, `seed_crosswalk`, `fuzzy_high`, `ror` |
+| `match_method` | String | One of: `native_id`, `seed_crosswalk`, `ror_bridge`, `fuzzy_high`, `ror` |
 | `confidence` | String | `high` (medium / low not present — `fuzzy_review` band was eliminated) |
 
-> **Verified 2026-06-22:** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record.
+> **Verified 2026-06-22 (pre-ror_bridge):** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record. ROR bridge (added 2026-06-26) extends OA coverage for ~2,521 PV-only seeded orgs (IBM, Samsung Display, Micron, Carl Zeiss, SK Hynix, …); row counts updated after next Dagster run.
 
 ---
 
@@ -420,3 +420,66 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `fact_document_cluster` | `main_marts` | One row per document; `doc_id`, `doc_type`, `cluster_id`, `umap_x`, `umap_y`, `model_version` |
 
 `cluster_id` is denormalised onto `dim_paper`, `dim_patent`, `fact_publication`, and `fact_patent_filing` (left join from `fact_document_cluster`) to support cluster-filtered analytical queries without an extra join.
+
+---
+
+### Gold mart models (Part 6)
+
+**`mart_velocity`** (R2: `gold/marts/mart_velocity/`)
+
+Grain: `(cluster_id, year)`. Pure annual time series — paper and patent counts per cluster per year. Citation-lag metrics are in `mart_gap` (they are per-cluster scalars, not per-year). All 304 clusters × up to 14 years = 3,794 rows.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `cluster_id` | String | FK → `dim_technology_cluster` |
+| `tagline` | String | Human-readable cluster name |
+| `is_noise` | Boolean | True for `c_noise`; exclude from headline findings |
+| `year` | Integer | Calendar year |
+| `paper_count` | Integer | Distinct papers published in this cluster × year |
+| `patent_count` | Integer | Distinct patents filed in this cluster × year |
+
+**`mart_competitive`** (R2: `gold/facts/mart_competitive/`)
+
+Grain: `(cluster_id, side, org_id_key)`. 8,216 patent-side rows + 62,963 paper-side rows across 248 clusters (patent) / 284 clusters (paper).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `cluster_id` | String | FK → `dim_technology_cluster` |
+| `side` | String | `'patent'` or `'paper'` |
+| `org_id_key` | String | `coalesce(org_id, 'unresolved')` — never NULL |
+| `org_id` | String | Nullable canonical org ID |
+| `canonical_name` | String | Human-readable org name; `'Unresolved'` for no-crosswalk orgs |
+| `match_method` | String | ER match method from crosswalk; `'none'` for unresolved |
+| `confidence` | String | ER confidence from crosswalk; `'low'` for unresolved |
+| `doc_count` | Integer | Distinct patents (patent side) or distinct papers (paper side) for this org+cluster |
+| `share` | Float | `doc_count / cluster_total`. Paper-side shares sum to >100% per cluster (co-attribution, not partitioned). Each individual org's share is in [0, 1]. |
+| `cluster_total` | Integer | Distinct documents in this cluster for this side |
+| `rank_in_cluster` | Integer | Rank by `doc_count` desc within `(cluster_id, side)` |
+
+**`mart_gap`** (R2: `gold/marts/mart_gap/`)
+
+Grain: `cluster_id`. One row per cluster, 304 rows total. 161 clusters have `hhi_reportable = true`.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `cluster_id` | String | PK, FK → `dim_technology_cluster` |
+| `tagline` | String | Human-readable cluster name |
+| `is_noise` | Boolean | True for `c_noise` |
+| `n_patents` | Integer | Distinct primary-assignee patents in cluster |
+| `n_assignees` | Integer | Distinct resolved assignees in HHI computation |
+| `pct_unresolved_patents` | Float | % of patents excluded from HHI (no resolved org); 1.6% across scope |
+| `hhi` | Float | HHI ∈ [0, 1] over primary assignees. NULL when `resolved_patents < 10`. |
+| `hhi_reportable` | Boolean | True when `resolved_patents ≥ 10` |
+| `n_oa_institutions` | Integer | Distinct OpenAlex `institution_id`s contributing papers (sub-org level — IBM Research Almaden ≠ IBM Research Zürich) |
+| `n_research_orgs` | Integer | Distinct `org_id`s post-ER contributing papers (org-level, comparable to `n_assignees`) |
+| `n_papers` | Integer | Distinct papers in this cluster |
+| `npl_median_lag_years` | Float | Median citation lag in years (paper pub date → patent filing date, via NPL links). **Patent's cluster is the anchor.** NULL when `npl_n_links < 20`. |
+| `npl_n_links` | Integer | Number of NPL-linked pairs driving the lag estimate |
+| `npl_reportable` | Boolean | True when `npl_n_links ≥ 20` |
+| `cohort_med_pub_year` | Float | Median paper publication year for this cluster (soft cohort estimate) |
+| `cohort_med_filing_year` | Float | Median patent filing year for this cluster (soft cohort estimate) |
+| `cohort_lag_years` | Float | `cohort_med_filing_year − cohort_med_pub_year`. **SOFT ESTIMATE — not NPL-linked.** May be negative. |
+
+HHI methodology: primary assignee = `assignee_sequence = 0` preferred; patents with no org-type assignee resolved to crosswalk are excluded from shares (pct_unresolved = 1.6%). HHI = Σ(share²). Framing: concentration within US patents only — not a global geography comparison.
+
+43 clusters have `npl_reportable = true` (N ≥ 20 NPL links). Fastest lag: c_158 (2.17 yr, N=96). Slowest: c_234 (5.27 yr, N=117). Use `n_research_orgs` for breadth-vs-concentration comparisons; `n_oa_institutions` for fine-grained diversity counts.

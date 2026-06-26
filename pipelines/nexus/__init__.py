@@ -6,6 +6,7 @@ from nexus.assets.entity_resolution.crosswalk import (
     patentsview_orgs_staging,
 )
 from nexus.assets.entity_resolution.fuzzy_bridge import fuzzy_org_bridge
+from nexus.assets.entity_resolution.ror_bridge import ror_bridge
 from nexus.assets.entity_resolution.seed import seed_crosswalk_matched, seed_crosswalk_oa_matched
 from nexus.assets.ingest.openalex import openalex_works_raw
 from nexus.assets.ingest.patentsview import (
@@ -22,6 +23,7 @@ from nexus.assets.ml.cluster_labels import cluster_labels
 from nexus.assets.ml.clustering import document_clusters
 from nexus.assets.ml.embeddings import document_embeddings
 from nexus.assets.transform.dbt_assets import dbt_resource, paper_to_patent_dbt_assets
+from nexus.assets.transform.gold_export import gold_export
 from nexus.assets.transform.npl_matcher import npl_links_raw
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
@@ -54,9 +56,11 @@ defs = Definitions(
         seed_crosswalk_matched,
         seed_crosswalk_oa_matched,
         fuzzy_org_bridge,
+        ror_bridge,
         org_crosswalk,
         paper_to_patent_dbt_assets,
         npl_links_raw,
+        gold_export,
         document_embeddings,
         document_clusters,
         cluster_labels,

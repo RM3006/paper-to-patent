@@ -21,7 +21,7 @@
 
 This is the project's signature pattern — the analog of a curation tier, but for trust rather than polish. Every organisation match and every paper↔patent edge carries two columns:
 
-- `match_method` — one of: `native_id`, `ror`, `seed_crosswalk`, `fuzzy_high`, `fuzzy_review`, `npl_citation`, `org_cooccurrence`.
+- `match_method` — one of: `native_id`, `ror`, `seed_crosswalk`, `ror_bridge`, `fuzzy_high`, `fuzzy_review`, `npl_citation`, `org_cooccurrence`.
 - `confidence` — `high` | `medium` | `low`.
 
 Rules that follow from it:
