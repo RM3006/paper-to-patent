@@ -162,3 +162,50 @@ sources:
             tests: [not_null]
           - name: doi_extracted
             description: DOI extracted from ref_text (NULL for fuzzy-title matches)
+
+  - name: ml_intermediate
+    description: >
+      ML pipeline intermediate outputs on R2 (r2://p2p-lake/intermediate/).
+      Views created at run-start via the create_external_sources() macro.
+      Each view is only registered when the corresponding R2 path is non-empty
+      (i.e. after the Part 5 Dagster ML assets have been materialised).
+    tables:
+      - name: clusters
+        description: >
+          UMAP + HDBSCAN output — one row per document.
+          Written by the document_clusters Dagster asset to
+          r2://p2p-lake/intermediate/clusters/v{date}/clusters.parquet.
+        columns:
+          - name: doc_id
+            description: OpenAlex work_id (papers) or USPTO patent_id (patents)
+            tests: [not_null]
+          - name: doc_type
+            description: "'paper' | 'patent'"
+            tests: [not_null]
+          - name: cluster_id
+            description: Cluster identifier string (e.g. c_0, c_noise)
+            tests: [not_null]
+          - name: umap_x
+            description: 2D UMAP x-coordinate (float32)
+          - name: umap_y
+            description: 2D UMAP y-coordinate (float32)
+          - name: model_version
+            description: Embedding model used (all-MiniLM-L6-v2)
+
+      - name: cluster_labels
+        description: >
+          Claude Haiku-generated cluster labels — one row per cluster.
+          Written by the cluster_labels Dagster asset to
+          r2://p2p-lake/intermediate/cluster_labels/v{date}/cluster_labels.parquet.
+        columns:
+          - name: cluster_id
+            description: Cluster identifier string — PK
+            tests: [not_null]
+          - name: tagline
+            description: "Short human-readable technology family name (2–6 words)"
+            tests: [not_null]
+          - name: summary_friendly
+            description: "2–3 plain-English sentences describing what the cluster is about"
+            tests: [not_null]
+          - name: top_terms
+            description: "List[String] — top c-TF-IDF discriminating terms for this cluster"

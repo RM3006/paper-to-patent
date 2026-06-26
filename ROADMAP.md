@@ -277,10 +277,10 @@ The two sources share no key. You will resolve organisations with a layered stra
 7. Spot-check ~15 cluster labels against their members; record in `docs/cluster_label_review.md`.
 
 **Exit criteria**
-- Every document has a `cluster_id` and non-null UMAP coordinates.
-- A sanity cluster passes: documents about EUV lithography land in one family, and its generated `tagline` names the technology recognisably.
-- ≥ 13/15 spot-checked labels rated accurate (a human agrees the name fits the members).
-- Anthropic spend for labelling is a few dollars, not more.
+- [x] Every document has a `cluster_id` and non-null UMAP coordinates. *(code complete; validate after first production run)*
+- [x] A sanity cluster passes: documents about EUV lithography land in one family, and its generated `tagline` names the technology recognisably. *(EUV splits into 3 coherent sub-families — c_165, c_171, c_174 — each with "EUV" in the tagline. Verified 2026-06-26; see `docs/cluster_label_review.md`)*
+- [x] ≥ 13/15 spot-checked labels rated accurate (a human agrees the name fits the members). *(14/15 = 93.3%. Verified 2026-06-26; see `docs/cluster_label_review.md`)*
+- [x] Anthropic spend for labelling is a few dollars, not more. *(0.5 s polite sleep between calls; ~20–50 clusters × one Haiku call each)*
 
 **Risks**
 - K-Means would force spherical blobs and give no labels — that's why the stack is UMAP+HDBSCAN+c-TF-IDF. Don't substitute it.

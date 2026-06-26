@@ -26,7 +26,8 @@ select
 
     x.org_id,
     x.match_method             as org_match_method,
-    x.confidence               as org_confidence
+    x.confidence               as org_confidence,
+    fdc.cluster_id
 
 from {{ ref('stg_patents_scoped') }} p
 -- bring in primary CPC code for the patent
@@ -41,3 +42,6 @@ left join {{ ref('stg_assignees') }} a
 left join {{ ref('int_org_crosswalk') }} x
     on x.source = 'patentsview'
     and x.source_id = a.assignee_id
+left join {{ ref('fact_document_cluster') }} fdc
+    on fdc.doc_id = p.patent_id
+    and fdc.doc_type = 'patent'
