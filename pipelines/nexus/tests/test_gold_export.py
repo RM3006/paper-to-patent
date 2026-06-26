@@ -36,4 +36,10 @@ def test_gold_models_contains_all_facts() -> None:
 
 def test_gold_models_subdirs_are_only_dims_or_facts() -> None:
     for model, subdir in _GOLD_MODELS.items():
-        assert subdir in ("dims", "facts"), f"{model} has unexpected subdir: {subdir}"
+        assert subdir in ("dims", "facts", "marts"), f"{model} has unexpected subdir: {subdir}"
+
+
+def test_gold_models_contains_all_marts() -> None:
+    expected_marts = {"mart_competitive", "mart_gap", "mart_velocity"}
+    actual_marts = {m for m, sub in _GOLD_MODELS.items() if sub == "marts"}
+    assert actual_marts == expected_marts
