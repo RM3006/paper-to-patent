@@ -29,6 +29,37 @@ def confidence_color(level: str) -> str:
     }.get(level, CONFIDENCE_MEDIUM)
 
 
+_METHOD_BADGE: dict[str, tuple[str, str]] = {
+    "seed_crosswalk": ("Seed list",      "#6366f1"),
+    "ror":            ("Verified ROR",   "#22c55e"),
+    "native_id":      ("Verified",       "#22c55e"),
+    "ror_bridge":     ("ROR bridge",     "#0ea5e9"),
+    "fuzzy_high":     ("Fuzzy match",    "#f97316"),
+    "fuzzy_review":   ("Fuzzy reviewed", "#f97316"),
+    "npl_citation":   ("NPL citation",   "#ec4899"),
+}
+
+
+def method_badge(method: str) -> str:
+    """Inline HTML badge for a match_method value."""
+    label, color = _METHOD_BADGE.get(method, (method.replace("_", " "), "#888888"))
+    return (
+        f"<span style='background:{color}22;color:{color};"
+        f"border:1px solid {color}66;border-radius:4px;"
+        f"padding:2px 8px;font-size:11px;font-weight:600;'>{label}</span>"
+    )
+
+
+def confidence_badge(level: str) -> str:
+    """Inline HTML badge for a confidence level."""
+    color = confidence_color(level)
+    return (
+        f"<span style='background:{color}22;color:{color};"
+        f"border:1px solid {color}66;border-radius:4px;"
+        f"padding:2px 8px;font-size:11px;font-weight:600;'>{level}</span>"
+    )
+
+
 def hhi_color(t: float) -> str:
     """Interpolate #22c55e (diffuse, t=0) → #ef4444 (concentrated, t=1)."""
     t = max(0.0, min(1.0, t))

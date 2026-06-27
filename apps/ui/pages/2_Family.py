@@ -172,6 +172,24 @@ def _org_bar(
     return fig
 
 
+def _org_profile_link(df: pl.DataFrame, key: str) -> None:
+    names = df["canonical_name"].to_list()
+    ids = df["org_id"].to_list()
+    lc, rc = st.columns([4, 1], vertical_alignment="bottom")
+    with lc:
+        chosen = st.selectbox(
+            "Profile",
+            names,
+            key=f"org_sel_{key}",
+            label_visibility="collapsed",
+        )
+    with rc:
+        if st.button("Profile →", key=f"org_btn_{key}", use_container_width=True):
+            idx = names.index(chosen)
+            st.session_state.selected_org_id = ids[idx]
+            st.switch_page("pages/3_Org.py")
+
+
 with c_pat:
     if len(top_patenters) > 0:
         st.plotly_chart(
@@ -179,6 +197,7 @@ with c_pat:
             use_container_width=True,
             config={"displayModeBar": False},
         )
+        _org_profile_link(top_patenters, "pat")
     else:
         st.caption("No patent data for this family.")
 
@@ -189,6 +208,7 @@ with c_res:
             use_container_width=True,
             config={"displayModeBar": False},
         )
+        _org_profile_link(top_researchers, "res")
     else:
         st.caption("No research org data for this family.")
 
