@@ -46,19 +46,28 @@ def load_family_scorecard() -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_umap_points() -> pl.DataFrame:
-    """All ~196k papers+patents with UMAP coords, cluster tagline, and family mapping."""
+    """All ~196k papers+patents with UMAP coords, cluster, family, and year."""
     return _query("""
         SELECT
+            fdc.doc_id,
             fdc.doc_type,
             fdc.umap_x,
             fdc.umap_y,
             fdc.cluster_id,
             dtc.tagline,
-            COALESCE(scf.family_id,   'noise')                    AS family_id,
-            COALESCE(scf.family_name, 'Frontier / Unclustered')   AS family_name
+            COALESCE(scf.family_id,   'noise')                   AS family_id,
+            COALESCE(scf.family_name, 'Frontier / Unclustered')  AS family_name,
+            COALESCE(
+                dp.publication_year,
+                YEAR(dp2.filing_date)
+            )::INTEGER                                            AS year
         FROM main_marts.fact_document_cluster   fdc
-        JOIN  main_marts.dim_technology_cluster dtc ON dtc.cluster_id = fdc.cluster_id
-        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fdc.cluster_id
+        JOIN  main_marts.dim_technology_cluster dtc  ON dtc.cluster_id  = fdc.cluster_id
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id  = fdc.cluster_id
+        LEFT JOIN main_marts.dim_paper  dp           ON dp.work_id      = fdc.doc_id
+                                                     AND fdc.doc_type   = 'paper'
+        LEFT JOIN main_marts.dim_patent dp2          ON dp2.patent_id   = fdc.doc_id
+                                                     AND fdc.doc_type   = 'patent'
     """)
 
 
@@ -87,6 +96,31 @@ def load_family_clusters(family_id: str) -> pl.DataFrame:
         ORDER BY mg.n_papers + mg.n_patents DESC
         """,
         [family_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_cluster_card(cluster_id: str) -> pl.DataFrame:
+    """Mini-card data for a single cluster: tagline, summary, terms, gap metrics, family."""
+    return _query(
+        """
+        SELECT
+            dtc.cluster_id,
+            dtc.tagline,
+            dtc.summary_friendly,
+            dtc.top_terms,
+            mg.n_papers,
+            mg.n_patents,
+            mg.npl_median_lag_years,
+            mg.npl_reportable,
+            scf.family_id,
+            scf.family_name
+        FROM main_marts.dim_technology_cluster dtc
+        LEFT JOIN main_marts.mart_gap           mg  ON mg.cluster_id  = dtc.cluster_id
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = dtc.cluster_id
+        WHERE dtc.cluster_id = ?
+        """,
+        [cluster_id],
     )
 
 
