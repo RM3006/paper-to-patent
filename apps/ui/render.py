@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 FAMILY_COLORS: dict[str, str] = {
-    "euv":          "#7c3aed",  # violet — EUV light sits just below visible violet
-    "si_photonics": "#0ea5e9",  # sky blue — light propagating through glass and silicon
-    "lasers":       "#f97316",  # orange — coherent light, energy
-    "neuromorphic": "#ec4899",  # fuchsia — neural/biological-digital bridge
-    "in_memory":    "#10b981",  # emerald — storage, data, growth
+    "euv":          "#3a4a6b",  # deep navy — editorial "cool technical" palette
+    "si_photonics": "#5a8fa8",  # steel blue
+    "lasers":       "#c1666b",  # dusty rose
+    "neuromorphic": "#7a6c91",  # slate purple
+    "in_memory":    "#6a9c89",  # sage green
     "adjacent":     "#94a3b8",  # slate — muted, not headline
     "noise":        "#d1d5db",  # light grey — frontier / unclustered
 }

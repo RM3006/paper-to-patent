@@ -44,7 +44,10 @@ _FAMILIES: dict[str, str] = {
 }
 
 # ── Family selector (sidebar) ───────────────────────────────────────────────────
-family_id: str = st.session_state.get("selected_family", "euv")
+family_id: str = (
+    st.query_params.get("family")
+    or st.session_state.get("selected_family", "euv")
+)
 if family_id not in _FAMILIES:
     family_id = "euv"
 

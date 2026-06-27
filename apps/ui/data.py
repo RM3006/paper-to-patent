@@ -105,6 +105,39 @@ def load_family_scorecard() -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
+def load_family_top_orgs() -> pl.DataFrame:
+    """Top 3 patenters and top 3 researchers per family (one row per org, ranked).
+
+    Columns: family_id, side ('paper'|'patent'), canonical_name, doc_count, rnk.
+    Aggregated from mart_competitive joined to seed_cluster_family; excludes
+    'Unresolved' orgs and the c_noise cluster.
+    """
+    return _query("""
+        WITH ranked AS (
+            SELECT
+                scf.family_id,
+                mc.side,
+                mc.canonical_name,
+                SUM(mc.doc_count) AS doc_count,
+                ROW_NUMBER() OVER (
+                    PARTITION BY scf.family_id, mc.side
+                    ORDER BY SUM(mc.doc_count) DESC
+                ) AS rnk
+            FROM main_marts.mart_competitive mc
+            JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
+            WHERE mc.canonical_name != 'Unresolved'
+              AND mc.cluster_id != 'c_noise'
+              AND mc.side IN ('paper', 'patent')
+            GROUP BY scf.family_id, mc.side, mc.canonical_name
+        )
+        SELECT family_id, side, canonical_name, doc_count, rnk
+        FROM ranked
+        WHERE rnk <= 3
+        ORDER BY family_id, side, rnk
+    """)
+
+
+@st.cache_data(ttl=3600)
 def load_umap_points() -> pl.DataFrame:
     """All ~196k papers+patents with UMAP coords, cluster, family, and year."""
     return _query("""
