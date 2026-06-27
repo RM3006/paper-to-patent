@@ -84,6 +84,7 @@ def parse_work(work: dict[str, Any]) -> dict[str, Any]:
         "openalex_id": work.get("id", ""),
         "doi": work.get("doi"),
         "title": work.get("title"),
+        "type": work.get("type"),
         "publication_date": work.get("publication_date"),
         "publication_year": work.get("publication_year"),
         "language": work.get("language"),
@@ -104,7 +105,7 @@ def paginate_works(
     """Yield individual work dicts from the OpenAlex /works cursor page."""
     headers = {"User-Agent": f"paper-to-patent/0.1 (mailto:{mailto})"}
     select_fields = (
-        "id,doi,title,publication_date,publication_year,language,"
+        "id,doi,title,type,publication_date,publication_year,language,"
         "abstract_inverted_index,primary_topic,authorships"
     )
     cursor: str | None = "*"
@@ -203,7 +204,8 @@ def openalex_works_raw(
         f"primary_topic.id:{topic_filter},"
         f"publication_year:{_PUB_YEAR_FILTER},"
         "language:en,"
-        "has_abstract:true"
+        "has_abstract:true,"
+        "type:article|preprint|review"
     )
 
     logger.info("Starting OpenAlex pagination — filter: %s", filter_str)

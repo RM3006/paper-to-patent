@@ -69,7 +69,8 @@ models:
 
   - name: dim_paper
     description: >
-      One row per OpenAlex work in scope (164,072 rows).
+      One row per OpenAlex work in scope (162,787 rows post-dedup filter).
+      Harvard Dataverse image/dataset entries excluded (doi 10.7910 or filename-like titles).
       cluster_id back-filled from fact_document_cluster after Part 5 ML pipeline runs.
     columns:
       - name: work_id
@@ -214,6 +215,33 @@ models:
         tests: [not_null]
       - name: patent_count
         tests: [not_null]
+
+  - name: mart_family
+    description: >
+      Family-level scorecard — one row per technology family.
+      Presentation rollup over ~303 clusters via seed_cluster_family.
+      The 5 headline families are: EUV Lithography, Silicon Photonics & Optical I/O,
+      Lasers & Light Sources, Neuromorphic / Brain-inspired, In-Memory & Emerging Memory.
+      "adjacent" family is included but excluded from headline UI charts.
+      patent_share = n_patents / (n_patents + n_papers) — key industrial-dominance signal.
+      median_lag_years_weighted: weighted by npl_n_links per contributing cluster.
+      Top assignee / researcher: mode across cluster-level #1 orgs (approximate).
+      US-patent lens only; stated in the UI.
+    columns:
+      - name: family_id
+        tests: [not_null, unique]
+      - name: family_name
+        tests: [not_null]
+      - name: family_sort_order
+        tests: [not_null]
+      - name: n_papers
+        tests: [not_null]
+      - name: n_patents
+        tests: [not_null]
+      - name: n_clusters
+        tests: [not_null]
+      - name: patent_share
+        description: n_patents / (n_patents + n_papers). Higher = more IP-intensive relative to research volume.
 
   - name: fact_npl_link
     description: >

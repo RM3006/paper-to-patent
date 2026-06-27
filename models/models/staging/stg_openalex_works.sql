@@ -46,3 +46,14 @@ from {{ source('openalex_raw', 'works') }}
 where openalex_id is not null
   and title is not null
   and publication_date is not null
+  -- Exclude Harvard Dataverse dataset entries (10.7910 = Harvard DVN; these are
+  -- image/data files, not papers — OpenAlex incorrectly tags them as works).
+  -- NULL doi is kept (preprints without a DOI are legitimate).
+  and (doi is null or doi not like '%10.7910/%')
+  -- Exclude file-like titles from any dataset repository (filename = not a paper)
+  and not (
+      title ilike '%.jpg'  or title ilike '%.jpeg' or title ilike '%.png'
+      or title ilike '%.tif' or title ilike '%.tiff' or title ilike '%.csv'
+      or title ilike '%.xlsx' or title ilike '%.nc'  or title ilike '%.mat'
+      or title ilike '%.zip'
+  )
