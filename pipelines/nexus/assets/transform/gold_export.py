@@ -39,8 +39,10 @@ _GOLD_MODELS: dict[str, str] = {
     "fact_patent_filing": "facts",
     "fact_publication": "facts",
     "mart_competitive": "marts",
+    "mart_family": "marts",
     "mart_gap": "marts",
     "mart_velocity": "marts",
+    "seed_cluster_family": "seeds",
 }
 
 

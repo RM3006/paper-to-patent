@@ -1,6 +1,13 @@
-"""Data loading layer for the Streamlit UI. Reads from the local dev DuckDB warehouse."""
+"""Data loading layer for the Streamlit UI.
+
+Dev:  reads from the local dev.duckdb warehouse.
+Prod: reads from the R2 gold Parquet layer via DuckDB in-memory + httpfs.
+      Activated by setting R2_READ_KEY_ID in the environment.
+"""
+
 from __future__ import annotations
 
+import os
 import pathlib
 
 import duckdb
@@ -9,13 +16,66 @@ import streamlit as st
 
 _LOCAL_DB = pathlib.Path(__file__).parent.parent.parent / "models" / "dev.duckdb"
 
+# Mirrors gold_export._GOLD_MODELS — must stay in sync when new models are added.
+_R2_SUBDIRS: dict[str, str] = {
+    "dim_cpc": "dims",
+    "dim_organization": "dims",
+    "dim_paper": "dims",
+    "dim_patent": "dims",
+    "dim_technology_cluster": "dims",
+    "fact_document_cluster": "facts",
+    "fact_npl_link": "facts",
+    "fact_patent_citation": "facts",
+    "fact_patent_filing": "facts",
+    "fact_publication": "facts",
+    "mart_competitive": "marts",
+    "mart_family": "marts",
+    "mart_gap": "marts",
+    "mart_velocity": "marts",
+    "seed_cluster_family": "seeds",
+}
+
+
+def _r2_mode() -> bool:
+    return bool(os.environ.get("R2_READ_KEY_ID"))
+
+
+def _make_r2_conn() -> duckdb.DuckDBPyConnection:
+    """In-memory DuckDB with main_marts.* views pointing at the R2 gold snapshot."""
+    account = os.environ["R2_ACCOUNT_ID"]
+    key = os.environ["R2_READ_KEY_ID"]
+    secret = os.environ["R2_READ_SECRET"]
+    bucket = os.environ.get("R2_BUCKET", "p2p-lake")
+    snap = os.environ["R2_SNAPSHOT_DATE"]  # e.g. "2026-06-27"
+
+    conn = duckdb.connect()
+    conn.execute(f"""
+        CREATE OR REPLACE SECRET r2_read (
+            TYPE r2,
+            ACCOUNT_ID '{account}',
+            KEY_ID '{key}',
+            SECRET '{secret}'
+        )
+    """)
+    conn.execute("CREATE SCHEMA IF NOT EXISTS main_marts")
+    for table, subdir in _R2_SUBDIRS.items():
+        path = f"r2://{bucket}/gold/{subdir}/{table}/v{snap}/{table}.parquet"
+        conn.execute(f"CREATE VIEW main_marts.{table} AS SELECT * FROM read_parquet('{path}')")
+    return conn
+
 
 def _query(sql: str, params: list[object] | None = None) -> pl.DataFrame:
+    if _r2_mode():
+        conn = _make_r2_conn()
+        try:
+            return conn.execute(sql, params or []).pl()
+        finally:
+            conn.close()
     if not _LOCAL_DB.exists():
         raise FileNotFoundError(
             f"Local DuckDB warehouse not found at {_LOCAL_DB}.\n"
             "Run 'dbt run' from models/ to build it, "
-            "or configure R2 credentials for production deployment."
+            "or set R2_READ_KEY_ID for production deployment."
         )
     with duckdb.connect(str(_LOCAL_DB), read_only=True) as conn:
         return conn.execute(sql, params or []).pl()
@@ -144,6 +204,7 @@ def load_top_orgs(cluster_ids: tuple[str, ...], side: str, top_n: int = 10) -> p
 
 
 # ── Org profile (Surface 3) ──────────────────────────────────────────────────────
+
 
 @st.cache_data(ttl=3600)
 def search_orgs(query: str, top_n: int = 8) -> pl.DataFrame:
@@ -323,4 +384,84 @@ def load_org_flagship_patent(org_id: str) -> pl.DataFrame:
         LIMIT 1
         """,
         [org_id],
+    )
+
+
+# ── Trace one idea (Surface 5) ───────────────────────────────────────────────
+
+
+@st.cache_data(ttl=3600)
+def load_trace_paper(work_id: str) -> pl.DataFrame:
+    """Paper card for trace-one-idea: title, abstract, pub_date, topic, primary org."""
+    return _query(
+        """
+        WITH primary_org AS (
+            SELECT DISTINCT ON (fp.work_id) fp.work_id, fp.org_id
+            FROM main_marts.fact_publication fp
+            WHERE fp.work_id = ?
+            ORDER BY fp.work_id, fp.org_id
+        )
+        SELECT
+            dp.title,
+            dp.publication_date,
+            dp.abstract,
+            dp.primary_topic_name,
+            dorg.canonical_name AS org_name
+        FROM main_marts.dim_paper dp
+        LEFT JOIN primary_org po ON po.work_id = dp.work_id
+        LEFT JOIN main_marts.dim_organization dorg ON dorg.org_id = po.org_id
+        WHERE dp.work_id = ?
+        """,
+        [work_id, work_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_trace_links(work_id: str) -> pl.DataFrame:
+    """Citing patents for a paper — one row per patent with primary assignee and lag."""
+    return _query(
+        """
+        WITH npl AS (
+            SELECT DISTINCT ON (patent_id)
+                patent_id, confidence, citation_lag_years
+            FROM main_marts.fact_npl_link
+            WHERE work_id = ?
+            ORDER BY patent_id,
+                CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                citation_lag_years ASC NULLS LAST
+        ),
+        assignee AS (
+            SELECT DISTINCT ON (fpf.patent_id)
+                fpf.patent_id, dorg.canonical_name AS assignee
+            FROM main_marts.fact_patent_filing fpf
+            JOIN main_marts.dim_organization dorg ON dorg.org_id = fpf.org_id
+            ORDER BY fpf.patent_id
+        )
+        SELECT
+            n.patent_id,
+            n.confidence,
+            n.citation_lag_years,
+            dp.title AS patent_title,
+            dp.filing_date,
+            a.assignee
+        FROM npl n
+        JOIN main_marts.dim_patent dp ON dp.patent_id = n.patent_id
+        LEFT JOIN assignee a ON a.patent_id = n.patent_id
+        ORDER BY n.citation_lag_years ASC NULLS LAST
+        LIMIT 6
+        """,
+        [work_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_trace_family_stat(family_id: str) -> pl.DataFrame:
+    """Family row for the closing citation-lag stat on the trace page."""
+    return _query(
+        """
+        SELECT family_name, median_lag_years_weighted, n_papers, n_patents, total_npl_links
+        FROM main_marts.mart_family
+        WHERE family_id = ?
+        """,
+        [family_id],
     )
