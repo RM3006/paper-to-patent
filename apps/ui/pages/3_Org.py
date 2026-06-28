@@ -152,18 +152,22 @@ if query and len(query) >= 2:
     if len(results) == 0:
         st.caption("No organisations found — try a shorter or different term.")
     else:
-        names = results["canonical_name"].to_list()
         ids   = results["org_id"].to_list()
-        chosen_name = st.radio(
+        names = results["canonical_name"].to_list()
+        id_to_name: dict[str | None, str] = {
+            None: f"Select from {len(ids)} result(s)…",
+            **{oid: n for oid, n in zip(ids, names, strict=False)},
+        }
+        chosen_id: str | None = st.selectbox(
             "Select organisation",
-            names,
-            key="org_search_radio",
+            options=[None] + ids,
+            format_func=lambda k: id_to_name.get(k, k),
+            index=0,
             label_visibility="collapsed",
-            horizontal=False,
         )
-        chosen_idx = names.index(chosen_name)
-        selected_org_id = ids[chosen_idx]
-        st.session_state.selected_org_id = selected_org_id
+        if chosen_id is not None:
+            selected_org_id = chosen_id
+            st.session_state.selected_org_id = chosen_id
 
 # ── Empty state — featured org chips ─────────────────────────────────────────
 if not selected_org_id and not query:

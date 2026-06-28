@@ -334,8 +334,13 @@ def load_top_orgs(cluster_ids: tuple[str, ...], side: str, top_n: int = 10) -> p
 
 
 @st.cache_data(ttl=3600)
-def search_orgs(query: str, top_n: int = 8) -> pl.DataFrame:
-    """Fuzzy + substring search against dim_organization.canonical_name."""
+def search_orgs(query: str, top_n: int = 10) -> pl.DataFrame:
+    """Substring search against dim_organization.canonical_name.
+
+    Excludes native_id (unresolved PatentsView atoms) to avoid showing
+    subsidiary/duplicate fragments of the same real-world org. Seed-crosswalk
+    canonical entities rank first, then ROR, then fuzzy_high.
+    """
     if len(query) < 2:
         return pl.DataFrame(
             schema={
@@ -348,20 +353,21 @@ def search_orgs(query: str, top_n: int = 8) -> pl.DataFrame:
     pattern = f"%{query}%"
     return _query(
         f"""
-        WITH scored AS (
-            SELECT org_id, canonical_name, primary_match_method, primary_confidence,
-                   jaro_winkler_similarity(LOWER(canonical_name), LOWER(?)) AS score
-            FROM main_marts.dim_organization
-        )
-        SELECT org_id, canonical_name, primary_match_method, primary_confidence, score
-        FROM scored
-        WHERE score > 0.6 OR canonical_name ILIKE ?
+        SELECT org_id, canonical_name, primary_match_method, primary_confidence
+        FROM main_marts.dim_organization
+        WHERE canonical_name ILIKE ?
+          AND primary_match_method IN ('seed_crosswalk', 'ror', 'ror_bridge', 'fuzzy_high')
         ORDER BY
-            CASE WHEN canonical_name ILIKE ? THEN 1 ELSE 0 END DESC,
-            score DESC
+            CASE primary_match_method
+                WHEN 'seed_crosswalk' THEN 0
+                WHEN 'ror'            THEN 1
+                WHEN 'ror_bridge'     THEN 2
+                ELSE 3
+            END,
+            LENGTH(canonical_name) ASC
         LIMIT {top_n}
         """,
-        [query, pattern, pattern],
+        [pattern],
     )
 
 
