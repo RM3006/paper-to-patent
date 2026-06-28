@@ -54,7 +54,7 @@ Raw data lands as Parquet in R2. The PatentsView side uses bulk TSV downloads (n
 | Entity resolution | rapidfuzz (splink only if eval set demands it) |
 | ML / NLP | sentence-transformers (all-MiniLM-L6-v2), umap-learn, hdbscan, scikit-learn |
 | LLM | Anthropic Claude Haiku |
-| Serving | Streamlit (Community Cloud), Plotly (scattergl), DuckDB read path |
+| Serving | Streamlit (Community Cloud), Plotly (scattergl), DuckDB read path, streamlit-searchbox (ILIKE org search) |
 <!-- /MAINTAINED -->
 
 ---

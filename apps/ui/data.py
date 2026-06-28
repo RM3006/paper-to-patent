@@ -334,41 +334,45 @@ def load_top_orgs(cluster_ids: tuple[str, ...], side: str, top_n: int = 10) -> p
 
 
 @st.cache_data(ttl=3600)
-def search_orgs(query: str, top_n: int = 10) -> pl.DataFrame:
-    """Substring search against dim_organization.canonical_name.
+def _load_seed_orgs_for_searchbox() -> list[tuple[str, str]]:
+    """34 curated seed orgs as (name, id) tuples for the empty-query default in the searchbox."""
+    df = _query("""
+        SELECT org_id, canonical_name
+        FROM main_marts.dim_organization
+        WHERE primary_match_method = 'seed_crosswalk'
+        ORDER BY canonical_name ASC
+    """)
+    return [(row["canonical_name"], row["org_id"]) for row in df.to_dicts()]
 
-    Excludes native_id (unresolved PatentsView atoms) to avoid showing
-    subsidiary/duplicate fragments of the same real-world org. Seed-crosswalk
-    canonical entities rank first, then ROR, then fuzzy_high.
+
+def search_orgs_ilike(query: str) -> list[tuple[str, str]]:
+    """Server-side ILIKE search for the org-profile searchbox (called on each keystroke).
+
+    Returns (label, value) tuples where value is org_id. Short/empty queries return the
+    34 curated seed orgs so the dropdown is useful before the user types.
+    Excludes native_id atoms (unresolved PatentsView fragments) and orgs with no activity.
     """
-    if len(query) < 2:
-        return pl.DataFrame(
-            schema={
-                "org_id": pl.Utf8,
-                "canonical_name": pl.Utf8,
-                "primary_match_method": pl.Utf8,
-                "primary_confidence": pl.Utf8,
-            }
-        )
-    pattern = f"%{query}%"
-    return _query(
-        f"""
-        SELECT org_id, canonical_name, primary_match_method, primary_confidence
+    if not query or len(query) < 2:
+        return _load_seed_orgs_for_searchbox()
+    df = _query(
+        """
+        SELECT org_id, canonical_name
         FROM main_marts.dim_organization
         WHERE canonical_name ILIKE ?
           AND primary_match_method IN ('seed_crosswalk', 'ror', 'ror_bridge', 'fuzzy_high')
+          AND org_id IN (
+              SELECT org_id FROM main_marts.fact_publication
+              UNION
+              SELECT org_id FROM main_marts.fact_patent_filing
+          )
         ORDER BY
-            CASE primary_match_method
-                WHEN 'seed_crosswalk' THEN 0
-                WHEN 'ror'            THEN 1
-                WHEN 'ror_bridge'     THEN 2
-                ELSE 3
-            END,
+            CASE primary_match_method WHEN 'seed_crosswalk' THEN 0 ELSE 1 END,
             LENGTH(canonical_name) ASC
-        LIMIT {top_n}
+        LIMIT 15
         """,
-        [pattern],
+        [f"%{query}%"],
     )
+    return [(row["canonical_name"], row["org_id"]) for row in df.to_dicts()]
 
 
 @st.cache_data(ttl=3600)

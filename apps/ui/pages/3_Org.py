@@ -5,7 +5,7 @@ Two-sided ledger: research output (papers) on the left, patent output (IP) on th
 The NPL citation bridge sits between them, showing which science feeds into this org's
 patents and which orgs build on its research.
 
-Entry: search box on this page, or featured org chips.
+Entry: single searchable dropdown on this page, or featured org chips.
 Source: dim_organization, fact_patent_filing, fact_publication, fact_npl_link,
         mart_competitive, seed_cluster_family.
 """
@@ -24,8 +24,10 @@ from render import (
     confidence_badge,
     method_badge,
 )
+from streamlit_searchbox import st_searchbox
 
 from data import (
+    search_orgs_ilike,
     load_org_filing_years,
     load_org_flagship_paper,
     load_org_flagship_patent,
@@ -37,7 +39,6 @@ from data import (
     load_org_profile,
     load_org_top_patent_clusters,
     load_org_top_research_clusters,
-    search_orgs,
 )
 
 st.set_page_config(
@@ -124,15 +125,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Sidebar — must come before st.text_input to avoid st.page_link key conflict ──
-selected_org_id: str | None = st.session_state.get("selected_org_id")
+# ── Pre-selection from chip click ─────────────────────────────────────────────
+_preselected: str | None = st.session_state.get("selected_org_id")
 
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("#### Organisation Profile")
     st.divider()
-    if selected_org_id:
+    if _preselected:
         if st.button("Clear selection", key="org_clear", type="secondary"):
             st.session_state.selected_org_id = None
+            st.session_state["org_searchbox"] = None
             st.rerun()
         st.divider()
     st.page_link("app.py",            label="← Overview")
@@ -140,37 +143,19 @@ with st.sidebar:
     st.page_link("pages/2_Family.py", label="Family detail")
     st.page_link("pages/4_Trace.py",  label="Trace an idea")
 
-# ── Search ────────────────────────────────────────────────────────────────────
-query = st.text_input(
-    "Search organisation",
-    placeholder="e.g. ASML, MIT, Samsung, IMEC …",
-    label_visibility="collapsed",
+# ── ILIKE combobox — true server-side substring filtering ─────────────────────
+chosen_id: str | None = st_searchbox(
+    search_orgs_ilike,
+    placeholder="Search by organisation name…",
+    key="org_searchbox",
 )
 
-if query and len(query) >= 2:
-    results = search_orgs(query)
-    if len(results) == 0:
-        st.caption("No organisations found — try a shorter or different term.")
-    else:
-        ids   = results["org_id"].to_list()
-        names = results["canonical_name"].to_list()
-        id_to_name: dict[str | None, str] = {
-            None: f"Select from {len(ids)} result(s)…",
-            **{oid: n for oid, n in zip(ids, names, strict=False)},
-        }
-        chosen_id: str | None = st.selectbox(
-            "Select organisation",
-            options=[None] + ids,
-            format_func=lambda k: id_to_name.get(k, k),
-            index=0,
-            label_visibility="collapsed",
-        )
-        if chosen_id is not None:
-            selected_org_id = chosen_id
-            st.session_state.selected_org_id = chosen_id
+selected_org_id: str | None = chosen_id or _preselected
+if chosen_id is not None:
+    st.session_state.selected_org_id = chosen_id
 
 # ── Empty state — featured org chips ─────────────────────────────────────────
-if not selected_org_id and not query:
+if not selected_org_id:
     st.markdown(
         "<div style='font-size:12px;color:#888888;margin-bottom:10px;'>"
         "Or explore a featured organisation:</div>",
@@ -181,6 +166,7 @@ if not selected_org_id and not query:
         with chip_cols[i]:
             if st.button(label, key=f"featured_{i}", type="secondary"):
                 st.session_state.selected_org_id = oid
+                st.session_state["org_searchbox"] = None
                 st.rerun()
     st.stop()
 
