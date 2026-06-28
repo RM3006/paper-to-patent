@@ -151,6 +151,7 @@ chosen_id: str | None = st_searchbox(
     placeholder="Search by organisation name…",
     key="org_searchbox",
     style_overrides=_SEARCHBOX_STYLE,
+    default_options=search_orgs_ilike(""),
 )
 
 selected_org_id: str | None = chosen_id or _preselected

@@ -109,6 +109,7 @@ with st.sidebar:
         key="map_family_sb",
         clear_on_submit=True,
         style_overrides=_STYLE,
+        default_options=_fam_scope,
     )
     if _fam_pick and _fam_pick not in st.session_state["_map_sel_families"]:
         st.session_state["_map_sel_families"].append(_fam_pick)
@@ -131,6 +132,7 @@ with st.sidebar:
         key="map_cluster_sb",
         clear_on_submit=True,
         style_overrides=_STYLE,
+        default_options=_cluster_scope[:20],
     )
     if _clust_pick and _clust_pick not in st.session_state["_map_sel_clusters"]:
         st.session_state["_map_sel_clusters"].append(_clust_pick)

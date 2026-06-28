@@ -144,6 +144,7 @@ with st.sidebar:
         key="family_selector_sb",
         edit_after_submit="option",
         style_overrides=_STYLE,
+        default_options=_fam_scope,
     )
     if _fam_pick and _fam_pick != family_id:
         st.session_state.selected_family = _fam_pick
@@ -157,6 +158,7 @@ with st.sidebar:
         key="family_cluster_sb",
         clear_on_submit=True,
         style_overrides=_STYLE,
+        default_options=_clust_scope[:20],
     )
     if _clust_pick and _clust_pick not in st.session_state["_fam_sel_clusters"]:
         st.session_state["_fam_sel_clusters"].append(_clust_pick)
