@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 from render import FAMILY_COLORS
+from streamlit_searchbox import st_searchbox
 
 from data import load_cluster_bubble, load_cluster_card, load_top_orgs
 
@@ -54,6 +55,38 @@ FAMILY_LABELS: dict[str, str] = {
 
 # ── Load ─────────────────────────────────────────────────────────────────────────────
 df_all = load_cluster_bubble()
+_all_cluster_map: dict[str, str] = {r["cluster_id"]: r["tagline"] for r in df_all.to_dicts()}
+
+# ── Session state for multi-select filters ────────────────────────────────────────────
+if "_map_sel_families" not in st.session_state:
+    st.session_state["_map_sel_families"] = []
+if "_map_sel_clusters" not in st.session_state:
+    st.session_state["_map_sel_clusters"] = []
+
+selected_families: list[str] = st.session_state["_map_sel_families"] or FAMILY_ORDER
+selected_clusters: list[str] = st.session_state["_map_sel_clusters"]
+
+# ── Search functions (in-memory ILIKE over already-loaded data) ───────────────────────
+_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+
+_fam_scope = [(FAMILY_LABELS[fid], fid) for fid in FAMILY_ORDER]
+
+def _search_families(query: str) -> list[tuple[str, str]]:
+    if not query:
+        return _fam_scope
+    q = query.lower()
+    return [(lbl, fid) for lbl, fid in _fam_scope if q in lbl.lower()]
+
+_cluster_scope = [
+    (r["tagline"], r["cluster_id"])
+    for r in df_all.filter(pl.col("family_id").is_in(selected_families)).sort("tagline").to_dicts()
+]
+
+def _search_clusters(query: str) -> list[tuple[str, str]]:
+    if not query:
+        return _cluster_scope[:20]
+    q = query.lower()
+    return [(lbl, cid) for lbl, cid in _cluster_scope if q in lbl.lower()]
 
 # ── Header ───────────────────────────────────────────────────────────────────────────
 st.markdown("## Technology Landscape")
@@ -69,31 +102,46 @@ st.markdown(
 # ── Sidebar ───────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("#### Filters")
-
-    selected_families = st.multiselect(
-        "Technology family",
-        options=FAMILY_ORDER,
-        format_func=lambda k: FAMILY_LABELS[k],
-        key="map_families",
+    st.caption("Technology family")
+    _fam_pick = st_searchbox(
+        _search_families,
+        placeholder="Add family…",
+        key="map_family_sb",
+        clear_on_submit=True,
+        style_overrides=_STYLE,
     )
-    if not selected_families:
-        selected_families = FAMILY_ORDER
+    if _fam_pick and _fam_pick not in st.session_state["_map_sel_families"]:
+        st.session_state["_map_sel_families"].append(_fam_pick)
+        st.rerun()
+    for _fid in list(st.session_state["_map_sel_families"]):
+        if st.button(f"× {FAMILY_LABELS.get(_fid, _fid)}", key=f"rm_fam_{_fid}",
+                     use_container_width=True, type="secondary"):
+            st.session_state["_map_sel_families"].remove(_fid)
+            # drop clusters from this family
+            _gone = {r["cluster_id"] for r in df_all.filter(pl.col("family_id") == _fid).to_dicts()}
+            st.session_state["_map_sel_clusters"] = [
+                c for c in st.session_state["_map_sel_clusters"] if c not in _gone
+            ]
+            st.rerun()
 
-    # Cluster dropdown — options restricted to currently selected families
-    _family_df = df_all.filter(pl.col("family_id").is_in(selected_families))
-    _cluster_opts = (
-        _family_df.sort("tagline")
-        .select(["cluster_id", "tagline"])
-        .to_dicts()
+    st.caption("Cluster")
+    _clust_pick = st_searchbox(
+        _search_clusters,
+        placeholder="Add cluster…",
+        key="map_cluster_sb",
+        clear_on_submit=True,
+        style_overrides=_STYLE,
     )
-    _cluster_map: dict[str, str] = {r["cluster_id"]: r["tagline"] for r in _cluster_opts}
-
-    selected_clusters: list[str] = st.multiselect(
-        "Cluster",
-        options=list(_cluster_map.keys()),
-        format_func=lambda k: _cluster_map.get(k, k),
-        key="map_clusters",
-    )
+    if _clust_pick and _clust_pick not in st.session_state["_map_sel_clusters"]:
+        st.session_state["_map_sel_clusters"].append(_clust_pick)
+        st.rerun()
+    for _cid in list(st.session_state["_map_sel_clusters"]):
+        _lbl = _all_cluster_map.get(_cid, _cid)
+        _short = _lbl[:30] + "…" if len(_lbl) > 30 else _lbl
+        if st.button(f"× {_short}", key=f"rm_clu_{_cid}",
+                     use_container_width=True, type="secondary"):
+            st.session_state["_map_sel_clusters"].remove(_cid)
+            st.rerun()
 
     st.divider()
     st.page_link("app.py", label="← Overview")

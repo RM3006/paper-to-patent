@@ -26,6 +26,8 @@ from render import (
 )
 from streamlit_searchbox import st_searchbox
 
+_SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+
 from data import (
     search_orgs_ilike,
     load_org_filing_years,
@@ -148,6 +150,7 @@ chosen_id: str | None = st_searchbox(
     search_orgs_ilike,
     placeholder="Search by organisation name…",
     key="org_searchbox",
+    style_overrides=_SEARCHBOX_STYLE,
 )
 
 selected_org_id: str | None = chosen_id or _preselected

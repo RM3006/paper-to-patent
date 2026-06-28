@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 from render import FAMILY_COLORS
+from streamlit_searchbox import st_searchbox
 
 from data import (
     load_family_clusters,
@@ -114,29 +115,64 @@ clusters = load_family_clusters(family_id)
 _cluster_opts = clusters.sort("tagline").select(["cluster_id", "tagline"]).to_dicts()
 _cluster_map: dict[str, str] = {r["cluster_id"]: r["tagline"] for r in _cluster_opts}
 
+_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+
+_fam_scope = [(lbl, fid) for fid, lbl in _FAMILIES.items()]
+_clust_scope = [(r["tagline"], r["cluster_id"]) for r in _cluster_opts]
+
+def _search_fam(query: str) -> list[tuple[str, str]]:
+    if not query:
+        return _fam_scope
+    q = query.lower()
+    return [(lbl, fid) for lbl, fid in _fam_scope if q in lbl.lower()]
+
+def _search_clust(query: str) -> list[tuple[str, str]]:
+    if not query:
+        return _clust_scope[:20]
+    q = query.lower()
+    return [(lbl, cid) for lbl, cid in _clust_scope if q in lbl.lower()]
+
+if "_fam_sel_clusters" not in st.session_state:
+    st.session_state["_fam_sel_clusters"] = []
+
 with st.sidebar:
     st.markdown("#### Filters")
-
-    chosen = st.selectbox(
-        "Technology family",
-        options=list(_FAMILIES.keys()),
-        format_func=lambda k: _FAMILIES[k],
-        index=list(_FAMILIES.keys()).index(family_id),
-        key="family_selector",
+    st.caption(f"Technology family · {family_name}")
+    _fam_pick = st_searchbox(
+        _search_fam,
+        placeholder="Switch family…",
+        key="family_selector_sb",
+        edit_after_submit="option",
+        style_overrides=_STYLE,
     )
-    if chosen != family_id:
-        st.session_state.selected_family = chosen
+    if _fam_pick and _fam_pick != family_id:
+        st.session_state.selected_family = _fam_pick
+        st.session_state["_fam_sel_clusters"] = []
         st.rerun()
 
-    selected_clusters: list[str] = st.multiselect(
-        "Cluster",
-        options=list(_cluster_map.keys()),
-        format_func=lambda k: _cluster_map.get(k, k),
-        key="family_clusters",
+    st.caption("Cluster")
+    _clust_pick = st_searchbox(
+        _search_clust,
+        placeholder="Add cluster…",
+        key="family_cluster_sb",
+        clear_on_submit=True,
+        style_overrides=_STYLE,
     )
+    if _clust_pick and _clust_pick not in st.session_state["_fam_sel_clusters"]:
+        st.session_state["_fam_sel_clusters"].append(_clust_pick)
+        st.rerun()
+    for _cid in list(st.session_state["_fam_sel_clusters"]):
+        _lbl = _cluster_map.get(_cid, _cid)
+        _short = _lbl[:30] + "…" if len(_lbl) > 30 else _lbl
+        if st.button(f"× {_short}", key=f"rm_fc_{_cid}",
+                     use_container_width=True, type="secondary"):
+            st.session_state["_fam_sel_clusters"].remove(_cid)
+            st.rerun()
 
     st.divider()
     st.page_link("app.py", label="← Back to overview")
+
+selected_clusters: list[str] = st.session_state["_fam_sel_clusters"]
 
 # Cluster filter applies only to the breakdown table at the bottom.
 _clusters_filtered = (
