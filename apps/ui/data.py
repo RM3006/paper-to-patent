@@ -138,6 +138,28 @@ def load_family_top_orgs() -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
+def load_cluster_bubble() -> pl.DataFrame:
+    """All non-noise clusters with paper/patent counts and citation lag, for the bubble chart."""
+    return _query("""
+        SELECT
+            mg.cluster_id,
+            dtc.tagline,
+            COALESCE(scf.family_id,   'noise') AS family_id,
+            COALESCE(scf.family_name, 'Frontier / Unclustered') AS family_name,
+            mg.n_papers,
+            mg.n_patents,
+            mg.npl_median_lag_years,
+            mg.npl_reportable,
+            mg.cohort_lag_years
+        FROM main_marts.mart_gap mg
+        JOIN  main_marts.dim_technology_cluster dtc ON dtc.cluster_id = mg.cluster_id
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mg.cluster_id
+        WHERE mg.cluster_id != 'c_noise'
+        ORDER BY mg.n_papers DESC
+    """)
+
+
+@st.cache_data(ttl=3600)
 def load_umap_points() -> pl.DataFrame:
     """All ~196k papers+patents with UMAP coords, cluster, family, and year."""
     return _query("""
@@ -194,9 +216,21 @@ def load_family_clusters(family_id: str) -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_cluster_card(cluster_id: str) -> pl.DataFrame:
-    """Mini-card data for a single cluster: tagline, summary, terms, gap metrics, family."""
+    """Mini-card data for a single cluster: tagline, summary, terms, gap metrics, family, totals."""
     return _query(
         """
+        WITH totals AS (
+            SELECT SUM(n_patents) AS total_patents, SUM(n_papers) AS total_papers
+            FROM main_marts.mart_gap
+            WHERE cluster_id != 'c_noise'
+        ),
+        family_totals AS (
+            SELECT scf.family_id, SUM(mg.n_patents) AS family_patents
+            FROM main_marts.mart_gap mg
+            JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mg.cluster_id
+            WHERE mg.cluster_id != 'c_noise'
+            GROUP BY scf.family_id
+        )
         SELECT
             dtc.cluster_id,
             dtc.tagline,
@@ -206,14 +240,74 @@ def load_cluster_card(cluster_id: str) -> pl.DataFrame:
             mg.n_patents,
             mg.npl_median_lag_years,
             mg.npl_reportable,
+            mg.cohort_lag_years,
             scf.family_id,
-            scf.family_name
+            scf.family_name,
+            t.total_patents,
+            t.total_papers,
+            ft.family_patents
         FROM main_marts.dim_technology_cluster dtc
-        LEFT JOIN main_marts.mart_gap           mg  ON mg.cluster_id  = dtc.cluster_id
+        LEFT JOIN main_marts.mart_gap            mg  ON mg.cluster_id  = dtc.cluster_id
         LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = dtc.cluster_id
+        CROSS JOIN totals t
+        LEFT JOIN family_totals ft ON ft.family_id = scf.family_id
         WHERE dtc.cluster_id = ?
         """,
         [cluster_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_family_velocity(family_id: str) -> pl.DataFrame:
+    """Annual paper and patent counts for a family (mart_velocity rolled up).
+
+    One row per year; paper_count and patent_count summed across the family's
+    non-noise clusters. Patents are counted by FILING year and undercount the most
+    recent years because PatentsView holds granted patents only and recent filings
+    are still in the grant pipeline — the UI fades those trailing years.
+    Source: mart_velocity + seed_cluster_family. Output: R2 gold / dev.duckdb.
+    """
+    return _query(
+        """
+        SELECT mv.year,
+               SUM(mv.paper_count)  AS paper_count,
+               SUM(mv.patent_count) AS patent_count
+        FROM main_marts.mart_velocity mv
+        JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mv.cluster_id
+        WHERE scf.family_id = ? AND mv.cluster_id != 'c_noise'
+        GROUP BY mv.year
+        ORDER BY mv.year
+        """,
+        [family_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_family_org_leaderboard(family_id: str, side: str, top_n: int = 50) -> pl.DataFrame:
+    """Top orgs for a family by side ('paper'|'patent'), with total distinct org count.
+
+    Returns top_n rows ordered by doc_count DESC.
+    Each row carries total_orgs = count of all distinct orgs for this family+side.
+    Source: mart_competitive joined to seed_cluster_family; excludes 'Unresolved' and c_noise.
+    Output: R2 gold Parquet or local dev.duckdb.
+    """
+    return _query(
+        f"""
+        WITH agg AS (
+            SELECT mc.org_id, mc.canonical_name, SUM(mc.doc_count) AS doc_count
+            FROM main_marts.mart_competitive mc
+            JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
+            WHERE scf.family_id = ? AND mc.side = ? AND mc.canonical_name != 'Unresolved'
+              AND mc.cluster_id != 'c_noise'
+            GROUP BY mc.org_id, mc.canonical_name
+        ),
+        total AS (SELECT COUNT(*) AS total_orgs FROM agg)
+        SELECT agg.org_id, agg.canonical_name, agg.doc_count, total.total_orgs
+        FROM agg CROSS JOIN total
+        ORDER BY agg.doc_count DESC
+        LIMIT {top_n}
+        """,
+        [family_id, side],
     )
 
 
@@ -481,9 +575,57 @@ def load_trace_links(work_id: str) -> pl.DataFrame:
         JOIN main_marts.dim_patent dp ON dp.patent_id = n.patent_id
         LEFT JOIN assignee a ON a.patent_id = n.patent_id
         ORDER BY n.citation_lag_years ASC NULLS LAST
-        LIMIT 6
+        LIMIT 12
         """,
         [work_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_org_paper_output_by_family(org_id: str) -> pl.DataFrame:
+    """Paper count per technology family for a given org (researcher perspective)."""
+    return _query(
+        """
+        SELECT scf.family_id, scf.family_name, SUM(mc.doc_count) AS n_papers
+        FROM main_marts.mart_competitive mc
+        JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
+        WHERE mc.org_id = ? AND mc.side = 'paper'
+        GROUP BY scf.family_id, scf.family_name
+        ORDER BY n_papers DESC
+        """,
+        [org_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_org_top_research_clusters(org_id: str) -> pl.DataFrame:
+    """Top 5 research clusters (excluding c_noise) for a given org — researcher side."""
+    return _query(
+        """
+        SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share
+        FROM main_marts.mart_competitive mc
+        WHERE mc.org_id = ? AND mc.side = 'paper' AND mc.cluster_id != 'c_noise'
+        ORDER BY mc.doc_count DESC
+        LIMIT 5
+        """,
+        [org_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_org_paper_years(org_id: str) -> pl.DataFrame:
+    """Research paper count per publication year for a given org."""
+    return _query(
+        """
+        SELECT YEAR(dp.publication_date) AS year, COUNT(DISTINCT fp.work_id) AS n_papers
+        FROM main_marts.fact_publication fp
+        JOIN main_marts.dim_paper dp ON dp.work_id = fp.work_id
+        WHERE fp.org_id = ?
+          AND dp.publication_date IS NOT NULL
+        GROUP BY year
+        ORDER BY year
+        """,
+        [org_id],
     )
 
 

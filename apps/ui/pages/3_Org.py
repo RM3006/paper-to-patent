@@ -1,13 +1,11 @@
 """
 Organisation Profile — Surface 3.
 
-Search for an org → org card (name + match badges) → three data panels:
-  - Patent output: patents by family, top 5 clusters, filing year histogram.
-  - Research intake: orgs whose papers this org cites in its patents.
-  - Influence: patenters whose patents cite this org's research.
-Plus flagship documents (most-cited paper, most-citing patent).
+Two-sided ledger: research output (papers) on the left, patent output (IP) on the right.
+The NPL citation bridge sits between them, showing which science feeds into this org's
+patents and which orgs build on its research.
 
-Entry: search box on this page, or st.session_state.selected_org_id from Surface 2.
+Entry: search box on this page, or featured org chips.
 Source: dim_organization, fact_patent_filing, fact_publication, fact_npl_link,
         mart_competitive, seed_cluster_family.
 """
@@ -23,8 +21,6 @@ import polars as pl
 import streamlit as st
 from render import (
     FAMILY_COLORS,
-    PAPER_COLOR,
-    PATENT_COLOR,
     confidence_badge,
     method_badge,
 )
@@ -36,8 +32,11 @@ from data import (
     load_org_influence,
     load_org_intake,
     load_org_output_by_family,
+    load_org_paper_output_by_family,
+    load_org_paper_years,
     load_org_profile,
     load_org_top_patent_clusters,
+    load_org_top_research_clusters,
     search_orgs,
 )
 
@@ -47,35 +46,106 @@ st.set_page_config(
     layout="wide",
 )
 
+_FONT = '"Space Grotesk", -apple-system, system-ui, sans-serif'
+
 st.markdown("""
 <style>
-  .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&display=swap');
+.block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Sidebar ──────────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.page_link("app.py",            label="← Overview")
-    st.page_link("pages/2_Family.py", label="← Family detail")
+# Featured orgs shown as chips on the empty state
+_FEATURED: list[tuple[str, str]] = [
+    ("org_asml",                       "ASML"),
+    ("org_tsmc",                       "TSMC"),
+    ("org_imec",                       "IMEC"),
+    ("org_ibm",                        "IBM"),
+    ("org_oa_chinese_academy_of_sciences", "Chinese Academy of Sciences"),
+]
 
-# ── Header ───────────────────────────────────────────────────────────────────────
+
+def _hex_rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _bar_chart(
+    names: list[str],
+    counts: list[int],
+    color: str,
+    title: str,
+    height: int = 200,
+) -> go.Figure:
+    truncated = [n[:26] + "…" if len(n) > 26 else n for n in names]
+    f = go.Figure(go.Bar(
+        x=counts, y=truncated, orientation="h",
+        marker_color=color, marker_opacity=0.85,
+        text=[f"{v:,}" for v in counts],
+        textposition="outside",
+        cliponaxis=False,
+        textfont=dict(size=11, color="#111111"),
+    ))
+    f.update_layout(
+        title=dict(text=title, font=dict(size=11, color="#888888"), x=0),
+        height=height,
+        margin=dict(l=0, r=60, t=28, b=5),
+        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+        font=dict(size=11, color="#111111"),
+        xaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, autorange="reversed"),
+        showlegend=False,
+    )
+    return f
+
+
+def _cluster_list(clusters: list[dict], color: str) -> None:
+    for row in clusters:
+        pct = (row["share"] or 0) * 100
+        st.markdown(
+            f"<div style='padding:7px 0;border-bottom:1px solid #f0f0f0;'>"
+            f"<div style='font-size:12px;color:#111111;font-weight:500;'>"
+            f"{row['tagline']}</div>"
+            f"<div style='font-size:11px;color:#888888;'>"
+            f"{row['doc_count']:,} · {pct:.1f}% cluster share"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+# ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("## Organisation Profile")
 st.markdown(
     "<p style='color:#888888;margin-top:-0.4rem;margin-bottom:1rem;font-size:15px;'>"
-    "Search any organisation that appears in the dataset — academic, corporate, or government."
+    "Search any organisation in the dataset — academic, corporate, or government. "
+    "The ledger shows what they research and what they patent."
     "</p>",
     unsafe_allow_html=True,
 )
 
-# ── Search section ────────────────────────────────────────────────────────────────
+# ── Sidebar — must come before st.text_input to avoid st.page_link key conflict ──
+selected_org_id: str | None = st.session_state.get("selected_org_id")
+
+with st.sidebar:
+    st.markdown("#### Organisation Profile")
+    st.divider()
+    if selected_org_id:
+        if st.button("Clear selection", key="org_clear", type="secondary"):
+            st.session_state.selected_org_id = None
+            st.rerun()
+        st.divider()
+    st.page_link("app.py",            label="← Overview")
+    st.page_link("pages/1_Map.py",    label="Technology map")
+    st.page_link("pages/2_Family.py", label="Family detail")
+    st.page_link("pages/4_Trace.py",  label="Trace an idea")
+
+# ── Search ────────────────────────────────────────────────────────────────────
 query = st.text_input(
     "Search organisation",
-    placeholder="e.g. ASML, MIT, Samsung, IMEC ...",
-    key="org_query",
+    placeholder="e.g. ASML, MIT, Samsung, IMEC …",
     label_visibility="collapsed",
 )
-
-selected_org_id: str | None = st.session_state.get("selected_org_id")
 
 if query and len(query) >= 2:
     results = search_orgs(query)
@@ -83,7 +153,7 @@ if query and len(query) >= 2:
         st.caption("No organisations found — try a shorter or different term.")
     else:
         names = results["canonical_name"].to_list()
-        ids = results["org_id"].to_list()
+        ids   = results["org_id"].to_list()
         chosen_name = st.radio(
             "Select organisation",
             names,
@@ -95,272 +165,208 @@ if query and len(query) >= 2:
         selected_org_id = ids[chosen_idx]
         st.session_state.selected_org_id = selected_org_id
 
-if not selected_org_id:
-    st.info(
-        "Type an organisation name above to search. "
-        "You can also arrive here from the Family Detail page leaderboard."
+# ── Empty state — featured org chips ─────────────────────────────────────────
+if not selected_org_id and not query:
+    st.markdown(
+        "<div style='font-size:12px;color:#888888;margin-bottom:10px;'>"
+        "Or explore a featured organisation:</div>",
+        unsafe_allow_html=True,
     )
+    chip_cols = st.columns(len(_FEATURED), gap="small")
+    for i, (oid, label) in enumerate(_FEATURED):
+        with chip_cols[i]:
+            if st.button(label, key=f"featured_{i}", type="secondary"):
+                st.session_state.selected_org_id = oid
+                st.rerun()
     st.stop()
 
-# ── Load profile ──────────────────────────────────────────────────────────────────
+if not selected_org_id:
+    st.stop()
+
+# ── Load profile ──────────────────────────────────────────────────────────────
 profile_df = load_org_profile(selected_org_id)
 if len(profile_df) == 0:
-    st.error(f"Organisation '{selected_org_id}' not found in the dataset.")
+    st.error(f"Organisation '{selected_org_id}' not found.")
     st.stop()
 
-profile = profile_df.row(0, named=True)
-org_name = profile["canonical_name"]
-match_method = profile["primary_match_method"]
+profile    = profile_df.row(0, named=True)
+org_name   = profile["canonical_name"]
+match_meth = profile["primary_match_method"]
 confidence = profile["primary_confidence"]
 
-# ── Org card ──────────────────────────────────────────────────────────────────────
+# ── Load data ─────────────────────────────────────────────────────────────────
+with st.spinner("Loading …"):
+    output_by_family    = load_org_output_by_family(selected_org_id)        # patents by family
+    paper_by_family     = load_org_paper_output_by_family(selected_org_id)  # papers by family
+    top_pat_clusters    = load_org_top_patent_clusters(selected_org_id)
+    top_res_clusters    = load_org_top_research_clusters(selected_org_id)
+    filing_years        = load_org_filing_years(selected_org_id)
+    paper_years         = load_org_paper_years(selected_org_id)
+    intake              = load_org_intake(selected_org_id)
+    influence           = load_org_influence(selected_org_id)
+    flagship_paper      = load_org_flagship_paper(selected_org_id)
+    flagship_patent     = load_org_flagship_patent(selected_org_id)
+
+n_patents_total = int(output_by_family["n_patents"].sum()) if len(output_by_family) > 0 else 0
+n_papers_total  = int(paper_by_family["n_papers"].sum())  if len(paper_by_family)  > 0 else 0
+has_patents     = n_patents_total > 0
+has_papers      = n_papers_total > 0
+
+# ── Dominant family color (most activity overall) ─────────────────────────────
+_family_counts: dict[str, int] = {}
+for r in output_by_family.to_dicts():
+    _family_counts[r["family_id"]] = _family_counts.get(r["family_id"], 0) + int(r["n_patents"])
+for r in paper_by_family.to_dicts():
+    _family_counts[r["family_id"]] = _family_counts.get(r["family_id"], 0) + int(r["n_papers"])
+
+dominant_family = max(_family_counts, key=_family_counts.get) if _family_counts else "noise"
+org_color = FAMILY_COLORS.get(dominant_family, "#888888")
+
+# ── Role descriptor ───────────────────────────────────────────────────────────
+if n_papers_total == 0 and n_patents_total > 0:
+    role_label = "Primarily an IP holder"
+    balance_pct = 100
+elif n_patents_total == 0 and n_papers_total > 0:
+    role_label = "Primarily a research institution"
+    balance_pct = 0
+else:
+    ratio = n_patents_total / max(n_papers_total + n_patents_total, 1)
+    balance_pct = int(ratio * 100)
+    if ratio >= 0.7:
+        role_label = "Primarily an IP holder"
+    elif ratio <= 0.3:
+        role_label = "Primarily a research institution"
+    else:
+        role_label = "Both researcher and IP holder"
+
+# ── Org card ──────────────────────────────────────────────────────────────────
 st.markdown(
-    f"<div style='border:1px solid #e6e6e6;border-radius:6px;"
-    f"padding:16px 20px;margin-bottom:1.2rem;'>"
-    f"<div style='font-size:22px;font-weight:700;color:#111111;margin-bottom:8px;'>"
-    f"{org_name}</div>"
-    f"<div style='display:flex;gap:8px;align-items:center;'>"
-    f"{method_badge(match_method)} {confidence_badge(confidence)}"
-    f"<span style='font-size:11px;color:#888888;margin-left:4px;'>"
-    f"match method · confidence</span></div>"
+    f"<div style='border:1px solid #e6e6e6;border-radius:10px;"
+    f"padding:20px 24px;margin-bottom:1.5rem;background:#ffffff;'>"
+    f"<div style='display:flex;align-items:flex-start;justify-content:space-between;"
+    f"gap:24px;flex-wrap:wrap;'>"
+    # Left: name + badges
+    f"<div>"
+    f"<div style='font-family:{_FONT};font-size:22px;font-weight:800;"
+    f"color:#111111;margin-bottom:8px;'>{org_name}</div>"
+    f"<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>"
+    f"{method_badge(match_meth)} {confidence_badge(confidence)}"
+    f"<span style='font-size:11px;color:#888888;'>match method · confidence</span>"
+    f"</div></div>"
+    # Right: paper + patent counts
+    f"<div style='display:flex;gap:24px;align-items:center;'>"
+    f"<div style='text-align:center;'>"
+    f"<div style='font-family:{_FONT};font-size:22px;font-weight:700;"
+    f"color:{_hex_rgba(org_color, 0.55)};'>{n_papers_total:,}</div>"
+    f"<div style='font-size:10px;color:#888888;'>research papers</div></div>"
+    f"<div style='text-align:center;'>"
+    f"<div style='font-family:{_FONT};font-size:22px;font-weight:700;"
+    f"color:{org_color};'>{n_patents_total:,}</div>"
+    f"<div style='font-size:10px;color:#888888;'>US patents</div></div>"
+    f"</div></div>"
+    # Balance bar
+    f"<div style='margin-top:14px;'>"
+    f"<div style='display:flex;justify-content:space-between;"
+    f"font-size:10px;color:#aaaaaa;margin-bottom:4px;'>"
+    f"<span>Research</span><span>IP</span></div>"
+    f"<div style='background:#f0f0f0;border-radius:4px;height:6px;width:100%;'>"
+    f"<div style='background:{org_color};height:6px;border-radius:4px;"
+    f"width:{balance_pct}%;'></div></div>"
+    f"<div style='font-size:11px;color:#555555;margin-top:6px;'>{role_label}</div>"
+    f"</div>"
     f"</div>",
     unsafe_allow_html=True,
 )
 
-# ── Load data (parallel) ──────────────────────────────────────────────────────────
-with st.spinner("Loading organisation data…"):
-    output_by_family  = load_org_output_by_family(selected_org_id)
-    top_clusters      = load_org_top_patent_clusters(selected_org_id)
-    filing_years      = load_org_filing_years(selected_org_id)
-    intake            = load_org_intake(selected_org_id)
-    influence         = load_org_influence(selected_org_id)
-    flagship_paper    = load_org_flagship_paper(selected_org_id)
-    flagship_patent   = load_org_flagship_patent(selected_org_id)
+# ── Two-sided ledger ──────────────────────────────────────────────────────────
+col_research, col_patent = st.columns(2, gap="large")
 
-has_patents   = len(output_by_family) > 0
-has_intake    = len(intake) > 0
-has_influence = len(influence) > 0
+# ── RESEARCH SIDE ─────────────────────────────────────────────────────────────
+with col_research:
+    st.markdown(
+        f"<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
+        f"text-transform:uppercase;color:{_hex_rgba(org_color, 0.6)};"
+        f"margin-bottom:0.75rem;'>Research output</div>",
+        unsafe_allow_html=True,
+    )
 
-# ── Patent output section ─────────────────────────────────────────────────────────
-st.markdown("#### Patent output")
+    if not has_papers:
+        st.caption("No resolved research papers found for this organisation.")
+    else:
+        # Papers by family
+        pf_ids    = paper_by_family["family_id"].to_list()
+        pf_names  = paper_by_family["family_name"].to_list()
+        pf_counts = [int(v) for v in paper_by_family["n_papers"].to_list()]
+        pf_colors = [FAMILY_COLORS.get(fid, "#888888") for fid in pf_ids]
 
-if not has_patents:
-    st.caption("No resolved US patents found for this organisation in the dataset.")
-else:
-    col_fam, col_cl = st.columns(2)
-
-    with col_fam:
-        family_ids   = output_by_family["family_id"].to_list()
-        family_names = output_by_family["family_name"].to_list()
-        n_patents    = output_by_family["n_patents"].to_list()
-        bar_colors   = [FAMILY_COLORS.get(fid, "#888888") for fid in family_ids]
-
-        pairs = sorted(zip(n_patents, family_names, bar_colors, strict=False))
+        pairs = sorted(zip(pf_counts, pf_names, pf_colors, strict=False))
         pv, pn, pc = map(list, zip(*pairs, strict=False))
 
-        fig_fam = go.Figure(go.Bar(
+        fig_pf = go.Figure(go.Bar(
             x=pv, y=pn, orientation="h",
             marker_color=pc,
             text=[f"{v:,}" for v in pv],
-            textposition="outside",
-            cliponaxis=False,
+            textposition="outside", cliponaxis=False,
         ))
-        fig_fam.update_layout(
-            title=dict(text="US patents by family", font=dict(size=12, color="#111111"), x=0),
-            height=max(180, 45 * len(pairs)),
-            margin=dict(l=0, r=60, t=30, b=5),
+        fig_pf.update_layout(
+            title=dict(text="Research papers by family", font=dict(size=11, color="#888888"), x=0),
+            height=max(160, 40 * len(pairs) + 40),
+            margin=dict(l=0, r=60, t=28, b=5),
             plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
             font=dict(size=11, color="#111111"),
-            xaxis=dict(showgrid=True, gridcolor="#e6e6e6", zeroline=False, title="US patents"),
-            yaxis=dict(showgrid=False),
+            xaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, autorange="reversed"),
             showlegend=False,
         )
-        st.plotly_chart(fig_fam, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_pf, use_container_width=True, config={"displayModeBar": False})
 
-    with col_cl:
-        st.markdown(
-            "<div style='font-size:12px;font-weight:600;color:#111111;"
-            "margin-bottom:6px;'>Top patent clusters</div>",
-            unsafe_allow_html=True,
-        )
-        for row in top_clusters.to_dicts():
-            pct = (row["share"] or 0) * 100
+        # Top research clusters
+        if len(top_res_clusters) > 0:
             st.markdown(
-                f"<div style='padding:8px 0;border-bottom:1px solid #f0f0f0;'>"
-                f"<div style='font-size:12px;color:#111111;font-weight:500;'>"
-                f"{row['tagline']}</div>"
-                f"<div style='font-size:11px;color:#888888;'>"
-                f"{row['doc_count']:,} patents · {pct:.1f}% cluster share"
-                f"</div></div>",
+                "<div style='font-size:11px;font-weight:600;color:#555555;"
+                "margin:0.5rem 0 4px;'>Top research clusters</div>",
                 unsafe_allow_html=True,
             )
+            _cluster_list(top_res_clusters.to_dicts(), _hex_rgba(org_color, 0.55))
 
-    if len(filing_years) > 0:
-        yrs = filing_years["year"].to_list()
-        nps = filing_years["n_patents"].to_list()
-        fig_hist = go.Figure(go.Bar(
-            x=yrs, y=nps,
-            marker_color=PATENT_COLOR,
-            text=[str(v) for v in nps],
-            textposition="outside",
-            cliponaxis=False,
-        ))
-        fig_hist.update_layout(
-            title=dict(
-                text="Filing year distribution (US patents)",
-                font=dict(size=12, color="#111111"), x=0,
-            ),
-            height=180,
-            margin=dict(l=0, r=10, t=30, b=5),
-            plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-            font=dict(size=11, color="#111111"),
-            xaxis=dict(showgrid=False, zeroline=False, dtick=2),
-            yaxis=dict(showgrid=True, gridcolor="#e6e6e6", zeroline=False),
-            showlegend=False,
-        )
-        st.plotly_chart(fig_hist, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(
-            "<span style='font-size:11px;color:#888888;'>"
-            "Filing counts after 2019 are understated — recently filed patents take "
-            "2–4 years to be granted and appear in PatentsView."
-            "</span>",
-            unsafe_allow_html=True,
-        )
+        # Papers over time
+        if len(paper_years) > 0:
+            yrs = paper_years["year"].to_list()
+            nps = paper_years["n_papers"].to_list()
+            fig_py = go.Figure(go.Bar(
+                x=yrs, y=nps,
+                marker_color=_hex_rgba(org_color, 0.45),
+                text=[str(v) for v in nps], textposition="outside", cliponaxis=False,
+            ))
+            fig_py.update_layout(
+                title=dict(text="Papers per year", font=dict(size=11, color="#888888"), x=0),
+                height=170,
+                margin=dict(l=0, r=10, t=28, b=5),
+                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                font=dict(size=11, color="#111111"),
+                xaxis=dict(showgrid=False, zeroline=False, dtick=2),
+                yaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_py, use_container_width=True, config={"displayModeBar": False})
 
-st.divider()
-
-# ── Research intake section ───────────────────────────────────────────────────────
-st.markdown("#### Research intake")
-st.markdown(
-    "<span style='font-size:12px;color:#888888;'>"
-    "Organisations whose research papers this org cites in its US patents "
-    "(via NPL citation links)."
-    "</span>",
-    unsafe_allow_html=True,
-)
-
-if not has_intake:
-    st.caption(
-        "No NPL-linked intake data found — this org's patents either have no "
-        "traceable NPL citations or cite papers from unresolved orgs."
-    )
-else:
-    intake_names  = intake["paper_org_name"].to_list()
-    intake_counts = intake["n_papers_cited"].to_list()
-    intake_ids    = intake["paper_org_id"].to_list()
-
-    pairs_i = sorted(zip(intake_counts, intake_names, intake_ids, strict=False))
-    ic, inn, iid = map(list, zip(*pairs_i, strict=False))
-
-    def _intake_color(org_id_val: str) -> str:
-        return PAPER_COLOR if org_id_val != selected_org_id else "#888888"
-
-    colors_i = [_intake_color(x) for x in iid]
-
-    fig_intake = go.Figure(go.Bar(
-        x=ic, y=inn, orientation="h",
-        marker_color=colors_i,
-        text=[f"{v:,}" for v in ic],
-        textposition="outside",
-        cliponaxis=False,
-    ))
-    fig_intake.update_layout(
-        height=max(200, 35 * len(pairs_i)),
-        margin=dict(l=0, r=60, t=5, b=5),
-        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-        font=dict(size=11, color="#111111"),
-        xaxis=dict(
-            showgrid=True, gridcolor="#e6e6e6", zeroline=False,
-            title="Distinct papers cited",
-        ),
-        yaxis=dict(showgrid=False),
-        showlegend=False,
-    )
-    st.plotly_chart(fig_intake, use_container_width=True, config={"displayModeBar": False})
-
-    self_rows = intake.filter(pl.col("paper_org_id") == selected_org_id)
-    n_self = int(self_rows["n_papers_cited"].sum()) if len(self_rows) > 0 else 0
-    n_total = int(intake["n_papers_cited"].sum())
-    if n_self > 0:
-        st.markdown(
-            f"<span style='font-size:11px;color:#888888;'>"
-            f"Includes {n_self:,} self-citations ({n_self / n_total:.0%} of total). "
-            f"Grey bar = this organisation."
-            f"</span>",
-            unsafe_allow_html=True,
-        )
-
-st.divider()
-
-# ── Influence section ─────────────────────────────────────────────────────────────
-st.markdown("#### Who patents this organisation's research")
-st.markdown(
-    "<span style='font-size:12px;color:#888888;'>"
-    "Organisations that filed US patents citing this org's research papers "
-    "(via NPL links). Self-citations excluded."
-    "</span>",
-    unsafe_allow_html=True,
-)
-
-if not has_influence:
-    st.caption(
-        "No NPL-linked influence data found — this org's papers are either not "
-        "cited in any in-scope US patent, or the links are unresolved."
-    )
-else:
-    inf_names  = influence["patenter_name"].to_list()
-    inf_counts = influence["n_patents"].to_list()
-
-    pairs_inf = sorted(zip(inf_counts, inf_names, strict=False))
-    infv, infn = map(list, zip(*pairs_inf, strict=False))
-
-    fig_inf = go.Figure(go.Bar(
-        x=infv, y=infn, orientation="h",
-        marker_color=PATENT_COLOR,
-        text=[f"{v:,}" for v in infv],
-        textposition="outside",
-        cliponaxis=False,
-    ))
-    fig_inf.update_layout(
-        height=max(200, 35 * len(pairs_inf)),
-        margin=dict(l=0, r=60, t=5, b=5),
-        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
-        font=dict(size=11, color="#111111"),
-        xaxis=dict(
-            showgrid=True, gridcolor="#e6e6e6", zeroline=False,
-            title="Patents citing this org's research",
-        ),
-        yaxis=dict(showgrid=False),
-        showlegend=False,
-    )
-    st.plotly_chart(fig_inf, use_container_width=True, config={"displayModeBar": False})
-
-st.divider()
-
-# ── Flagship documents section ────────────────────────────────────────────────────
-has_fp = len(flagship_paper) > 0
-has_fpt = len(flagship_patent) > 0
-
-if has_fp or has_fpt:
-    st.markdown("#### Flagship documents")
-    fc1, fc2 = st.columns(2)
-
-    with fc1:
-        if has_fp:
-            fp_row = flagship_paper.row(0, named=True)
-            pub_yr = fp_row["publication_date"].year if fp_row["publication_date"] else "—"
-            abstract = (fp_row["abstract"] or "")[:280]
-            if len(fp_row["abstract"] or "") > 280:
+        # Flagship paper
+        if len(flagship_paper) > 0:
+            fp = flagship_paper.row(0, named=True)
+            pub_yr = fp["publication_date"].year if fp["publication_date"] else "—"
+            abstract = (fp["abstract"] or "")[:220]
+            if len(fp["abstract"] or "") > 220:
                 abstract += "…"
             st.markdown(
-                f"<div style='border:1px solid #e6e6e6;border-left:4px solid {PAPER_COLOR};"
-                f"border-radius:4px;padding:14px;'>"
-                f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-                f"text-transform:uppercase;color:#888888;margin-bottom:6px;'>"
-                f"Most-cited paper · {fp_row['n_citing_patents']:,} patents cite this</div>"
-                f"<div style='font-size:14px;font-weight:600;color:#111111;"
-                f"margin-bottom:6px;line-height:1.4;'>{fp_row['title']}</div>"
-                f"<div style='font-size:11px;color:#888888;margin-bottom:8px;'>"
+                f"<div style='border:1px solid #e6e6e6;"
+                f"border-left:4px solid {_hex_rgba(org_color, 0.45)};"
+                f"border-radius:6px;padding:12px 14px;margin-top:0.5rem;'>"
+                f"<div style='font-size:9px;font-weight:700;letter-spacing:.07em;"
+                f"text-transform:uppercase;color:#888888;margin-bottom:4px;'>"
+                f"Most-cited paper · {fp['n_citing_patents']:,} patents cite this</div>"
+                f"<div style='font-size:12px;font-weight:600;color:#111111;"
+                f"line-height:1.4;margin-bottom:4px;'>{fp['title']}</div>"
+                f"<div style='font-size:11px;color:#888888;margin-bottom:6px;'>"
                 f"Published {pub_yr}</div>"
                 f"<div style='font-size:11px;color:#555555;line-height:1.5;'>"
                 f"{abstract}</div>"
@@ -368,38 +374,180 @@ if has_fp or has_fpt:
                 unsafe_allow_html=True,
             )
 
-    with fc2:
-        if has_fpt:
-            fpt_row = flagship_patent.row(0, named=True)
-            filing_yr = fpt_row["filing_date"].year if fpt_row["filing_date"] else "—"
+# ── PATENT SIDE ───────────────────────────────────────────────────────────────
+with col_patent:
+    st.markdown(
+        f"<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
+        f"text-transform:uppercase;color:{org_color};"
+        f"margin-bottom:0.75rem;'>Patent output</div>",
+        unsafe_allow_html=True,
+    )
+
+    if not has_patents:
+        st.caption("No resolved US patents found for this organisation.")
+    else:
+        # Patents by family
+        fam_ids   = output_by_family["family_id"].to_list()
+        fam_names = output_by_family["family_name"].to_list()
+        n_pats    = [int(v) for v in output_by_family["n_patents"].to_list()]
+        bar_colors = [FAMILY_COLORS.get(fid, "#888888") for fid in fam_ids]
+
+        pairs = sorted(zip(n_pats, fam_names, bar_colors, strict=False))
+        pv, pn, pc = map(list, zip(*pairs, strict=False))
+
+        fig_fam = go.Figure(go.Bar(
+            x=pv, y=pn, orientation="h",
+            marker_color=pc,
+            text=[f"{v:,}" for v in pv],
+            textposition="outside", cliponaxis=False,
+        ))
+        fig_fam.update_layout(
+            title=dict(text="US patents by family", font=dict(size=11, color="#888888"), x=0),
+            height=max(160, 40 * len(pairs) + 40),
+            margin=dict(l=0, r=60, t=28, b=5),
+            plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+            font=dict(size=11, color="#111111"),
+            xaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, autorange="reversed"),
+            showlegend=False,
+        )
+        st.plotly_chart(fig_fam, use_container_width=True, config={"displayModeBar": False})
+
+        # Top patent clusters
+        if len(top_pat_clusters) > 0:
             st.markdown(
-                f"<div style='border:1px solid #e6e6e6;border-left:4px solid {PATENT_COLOR};"
-                f"border-radius:4px;padding:14px;'>"
-                f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-                f"text-transform:uppercase;color:#888888;margin-bottom:6px;'>"
-                f"Most NPL-citing patent · cites {fpt_row['n_papers_cited']:,} papers"
-                f"</div>"
-                f"<div style='font-size:14px;font-weight:600;color:#111111;"
-                f"margin-bottom:6px;line-height:1.4;'>{fpt_row['title']}</div>"
+                "<div style='font-size:11px;font-weight:600;color:#555555;"
+                "margin:0.5rem 0 4px;'>Top patent clusters</div>",
+                unsafe_allow_html=True,
+            )
+            _cluster_list(top_pat_clusters.to_dicts(), org_color)
+
+        # Filing years
+        if len(filing_years) > 0:
+            yrs = filing_years["year"].to_list()
+            nps = [int(v) for v in filing_years["n_patents"].to_list()]
+            fig_fy = go.Figure(go.Bar(
+                x=yrs, y=nps,
+                marker_color=org_color,
+                text=[str(v) for v in nps], textposition="outside", cliponaxis=False,
+            ))
+            fig_fy.update_layout(
+                title=dict(text="US patent filings per year", font=dict(size=11, color="#888888"), x=0),
+                height=170,
+                margin=dict(l=0, r=10, t=28, b=5),
+                plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+                font=dict(size=11, color="#111111"),
+                xaxis=dict(showgrid=False, zeroline=False, dtick=2),
+                yaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_fy, use_container_width=True, config={"displayModeBar": False})
+            st.markdown(
+                "<span style='font-size:10px;color:#888888;'>"
+                "Counts after 2019 are understated — recent filings take 2–4 years to be granted."
+                "</span>",
+                unsafe_allow_html=True,
+            )
+
+        # Flagship patent
+        if len(flagship_patent) > 0:
+            fpt = flagship_patent.row(0, named=True)
+            filing_yr = fpt["filing_date"].year if fpt["filing_date"] else "—"
+            st.markdown(
+                f"<div style='border:1px solid #e6e6e6;"
+                f"border-left:4px solid {org_color};"
+                f"border-radius:6px;padding:12px 14px;margin-top:0.5rem;'>"
+                f"<div style='font-size:9px;font-weight:700;letter-spacing:.07em;"
+                f"text-transform:uppercase;color:#888888;margin-bottom:4px;'>"
+                f"Most NPL-citing patent · cites {fpt['n_papers_cited']:,} papers</div>"
+                f"<div style='font-size:12px;font-weight:600;color:#111111;"
+                f"line-height:1.4;margin-bottom:4px;'>{fpt['title']}</div>"
                 f"<div style='font-size:11px;color:#888888;'>"
-                f"Filed {filing_yr} · US{fpt_row['patent_id']}</div>"
+                f"Filed {filing_yr} · US{fpt['patent_id']}</div>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
 
-    st.divider()
+# ── Citation bridge ───────────────────────────────────────────────────────────
+has_intake    = len(intake)    > 0
+has_influence = len(influence) > 0
 
-# ── Footer ────────────────────────────────────────────────────────────────────────
+if has_intake or has_influence:
+    st.markdown("<div style='margin-top:2rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
+        f"text-transform:uppercase;color:#888888;margin-bottom:4px;'>"
+        f"The citation bridge — via NPL links</div>"
+        f"<div style='font-size:12px;color:#888888;margin-bottom:1rem;'>"
+        f"Who feeds this org's patents with research, and whose patents build on its work."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    col_intake, col_bridge, col_influence = st.columns([5, 1, 5], gap="small")
+
+    with col_intake:
+        if has_intake:
+            intake_rows = intake.to_dicts()
+            i_names  = [r["paper_org_name"] for r in intake_rows]
+            i_counts = [int(r["n_papers_cited"]) for r in intake_rows]
+            i_ids    = [r["paper_org_id"] for r in intake_rows]
+            pairs_i = sorted(zip(i_counts, i_names, i_ids, strict=False))
+            iv, inn, iid = map(list, zip(*pairs_i, strict=False))
+            colors_i = [
+                _hex_rgba(org_color, 0.45) if x != selected_org_id else "#cccccc"
+                for x in iid
+            ]
+            fig_i = _bar_chart(
+                inn, iv, colors_i,  # type: ignore[arg-type]
+                "Research it draws on (papers cited in its patents)",
+                height=max(180, 32 * len(iv) + 40),
+            )
+            fig_i.update_traces(marker_color=colors_i)
+            st.plotly_chart(fig_i, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.caption("No NPL-linked intake data found.")
+
+    with col_bridge:
+        st.markdown(
+            f"<div style='display:flex;flex-direction:column;"
+            f"align-items:center;justify-content:center;height:100%;'>"
+            f"<div style='font-size:20px;color:{org_color};'>→</div>"
+            f"<div style='font-size:9px;font-weight:700;letter-spacing:.06em;"
+            f"text-transform:uppercase;color:#aaaaaa;text-align:center;"
+            f"writing-mode:vertical-lr;margin:8px 0;'>{org_name[:16]}</div>"
+            f"<div style='font-size:20px;color:{org_color};'>→</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    with col_influence:
+        if has_influence:
+            inf_rows = influence.to_dicts()
+            inf_names  = [r["patenter_name"] for r in inf_rows]
+            inf_counts = [int(r["n_patents"]) for r in inf_rows]
+            pairs_inf = sorted(zip(inf_counts, inf_names, strict=False))
+            infv, infn = map(list, zip(*pairs_inf, strict=False))
+            fig_inf = _bar_chart(
+                infn, infv, org_color,
+                "Who patents this org's research (patents citing its papers)",
+                height=max(180, 32 * len(infv) + 40),
+            )
+            st.plotly_chart(fig_inf, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.caption("No NPL-linked influence data found.")
+
+# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
     "<span style='font-size:11px;color:#888888;'>"
     "<strong>Data quality:</strong> "
     "Org matches use the crosswalk (seed → ROR → fuzzy). "
     "Confidence badge reflects the match tier. "
     "Intake and influence panels are based on NPL citation links only "
-    "(5,921 high/medium-confidence links total). "
-    "An org with many patents but no NPL-linked intake data filed patents that "
-    "cite non-matching or non-OpenAlex reference strings. "
-    "US patents only (PatentsView / USPTO)."
+    "(high/medium-confidence links). "
+    "US patents only (PatentsView / USPTO). "
+    "Papers from OpenAlex (2012–2025). "
+    "Balance bar counts resolved documents only (unresolved orgs excluded)."
     "</span>",
     unsafe_allow_html=True,
 )

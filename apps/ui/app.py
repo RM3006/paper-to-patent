@@ -27,6 +27,14 @@ _FONT = '"Space Grotesk", -apple-system, system-ui, sans-serif'
 # Family IDs in display order (excludes adjacent / noise).
 _FAMILY_IDS = ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
 
+_FAMILY_DESC: dict[str, str] = {
+    "euv": "Extreme-UV optics that print transistors smaller than a virus — the bottleneck of the entire chip industry.",
+    "si_photonics": "Moving data as light pulses through silicon, replacing copper wires to cut latency and power inside AI servers.",
+    "lasers": "Coherent light sources integrated at chip scale, enabling the transceivers that hold data-centre networks together.",
+    "neuromorphic": "Brain-inspired chips that process data the way neurons fire, trading raw clock speed for dramatic energy efficiency.",
+    "in_memory": "Processing data where it is stored so the chip never has to fetch it across slow memory buses.",
+}
+
 # ── CSS — shared chrome ───────────────────────────────────────────────────────────
 _CSS = """
 <style>
@@ -62,6 +70,16 @@ hr { border-color: #e6e6e6 !important; }
     background: #ffffff;
     border-right: 1px solid #e6e6e6;
 }
+
+.family-explore {
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: opacity 0.18s ease;
+    white-space: nowrap;
+}
+.family-explore:hover { opacity: 0.55; }
 
 /* Default button: borderless nav link. */
 [data-testid="stButton"] button {
@@ -162,72 +180,72 @@ def _html_family_card(
     fid = row["family_id"]
     color = FAMILY_COLORS.get(fid, "#888888")
     pct = (row["patent_share"] or 0.0) * 100
-    bar_w = min(pct, 100)
     lag = row["median_lag_years_weighted"]
     lag_str = f"{lag:.1f} yr" if lag is not None else "—"
     glow = f"box-shadow:0 0 0 4px {color}44;" if highlighted else ""
 
     pat_html = _org_rows(top_orgs.get("patent", []), color)
     res_html = _org_rows(top_orgs.get("paper", []), color)
+    desc = _FAMILY_DESC.get(fid, "")
 
-    # Heroicons-style arrow-right: single <path> so shaft and arrowhead are one
-    # continuous stroke — no disconnected parts.
-    # viewBox 24×24, rendered at 88×88px ≈ 80% of the ~110px card height.
-    # stroke-width="2" → effective ~7px at render size: thick and clean.
-    arrow = (
-        f"<svg viewBox='0 0 24 24' width='88' height='88' fill='none' "
-        f"xmlns='http://www.w3.org/2000/svg'>"
-        f"<path d='M4 12 H20 M10 2 L20 12 L10 22' "
-        f"stroke='{color}' stroke-width='2' "
-        f"stroke-linecap='round' stroke-linejoin='round'/>"
-        f"</svg>"
-    )
 
-    col = "padding-right:16px;"
+    # Card: 144px tall, 16px padding all sides, gap:52px between the 4 groups.
+    # Single gap value replaces all individual padding-left/right inter-group hacks.
     return (
-        f"<div style='border:1px solid #e6e6e6;border-radius:10px;"
-        f"padding:1rem 1.25rem;display:flex;align-items:center;"
+        f"<div style='height:144px;box-sizing:border-box;border:1px solid #e6e6e6;"
+        f"border-radius:10px;padding:16px;display:flex;align-items:center;"
+        f"justify-content:space-between;"
         f"background:#ffffff;margin-bottom:0.75rem;{glow}'>"
-        # ── Family name + lag ─────────────────────────────────────────────────
-        f"<div style='flex:2.2;min-width:0;{col}'>"
-        f"<div style='font-family:{_FONT};font-size:12px;font-weight:700;"
+        # ── Group 1: Family name + description (fixed width so gap is visual-equal) ─
+        f"<div style='flex:0 0 400px;display:flex;flex-direction:column;"
+        f"justify-content:center;'>"
+        f"<div style='font-family:{_FONT};font-size:16px;font-weight:700;"
         f"letter-spacing:.07em;text-transform:uppercase;color:{color};"
-        f"margin-bottom:5px;'>{row['family_name']}</div>"
-        f"<div style='font-size:12px;color:#888888;'>{lag_str} median citation lag</div>"
+        f"margin-bottom:6px;'>{row['family_name']}</div>"
+        f"<div style='font-size:12px;color:#888888;line-height:1.5;'>{desc}</div>"
         f"</div>"
-        # ── Patent share % ────────────────────────────────────────────────────
-        f"<div style='flex:1.4;{col}'>"
-        f"<div style='font-family:{_FONT};font-size:32px;font-weight:800;"
-        f"color:{color};line-height:1;'>{pct:.0f}%</div>"
-        f"<div style='font-size:11px;color:#888888;margin-top:2px;'>patent share</div>"
-        f"<div style='background:#e6e6e6;border-radius:2px;height:3px;margin-top:7px;'>"
-        f"<div style='background:{color};width:{bar_w:.1f}%;height:3px;border-radius:2px;'>"
-        f"</div></div></div>"
-        # ── Paper / patent counts ─────────────────────────────────────────────
-        f"<div style='flex:1.4;{col}'>"
-        f"<div style='margin-bottom:8px;'>"
-        f"<div style='font-family:{_FONT};font-size:20px;font-weight:700;"
-        f"color:#111111;line-height:1;'>{row['n_papers']:,}</div>"
-        f"<div style='font-size:10px;color:#888888;margin-top:2px;'>papers</div></div>"
-        f"<div style='font-family:{_FONT};font-size:20px;font-weight:700;"
-        f"color:#111111;line-height:1;'>{row['n_patents']:,}</div>"
-        f"<div style='font-size:10px;color:#888888;margin-top:2px;'>US patents</div>"
+        # ── Group 2: 2×2 grid of metric boxes (104×48px each, 8px gap) ───────
+        f"<div style='flex-shrink:0;display:grid;"
+        f"grid-template-columns:104px 104px;grid-template-rows:48px 48px;gap:8px;'>"
+        f"<div style='background:{color};border-radius:10px;"
+        f"display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='font-family:{_FONT};font-size:18px;font-weight:800;"
+        f"color:#ffffff;line-height:1;'>{pct:.0f}%</div>"
+        f"<div style='font-size:9px;color:rgba(255,255,255,0.75);margin-top:3px;white-space:nowrap;'>patent share</div>"
         f"</div>"
-        # ── Top patenters ─────────────────────────────────────────────────────
-        f"<div style='flex:2.4;{col}'>"
+        f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
+        f"color:{color};line-height:1;'>{row['n_patents']:,}</div>"
+        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>granted US patents</div>"
+        f"</div>"
+        f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
+        f"color:{color};line-height:1;'>{lag_str}</div>"
+        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>citation lag</div>"
+        f"</div>"
+        f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
+        f"color:{color};line-height:1;'>{row['n_papers']:,}</div>"
+        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>papers</div>"
+        f"</div>"
+        f"</div>"
+        # ── Group 3: patenters + researchers wrapped together (tight inner gap) ─
+        f"<div style='flex-shrink:0;display:flex;gap:24px;align-self:stretch;'>"
+        f"<div style='width:188px;min-width:0;overflow:hidden;"
+        f"display:flex;flex-direction:column;justify-content:space-between;'>"
         f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-        f"text-transform:uppercase;color:#888888;margin-bottom:7px;'>Top patenters</div>"
+        f"text-transform:uppercase;color:#888888;'>Top patenters</div>"
         f"{pat_html}</div>"
-        # ── Top researchers ───────────────────────────────────────────────────
-        f"<div style='flex:2.2;{col}'>"
+        f"<div style='width:188px;min-width:0;overflow:hidden;"
+        f"display:flex;flex-direction:column;justify-content:space-between;'>"
         f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-        f"text-transform:uppercase;color:#888888;margin-bottom:7px;'>Top researchers</div>"
+        f"text-transform:uppercase;color:#888888;'>Top researchers</div>"
         f"{res_html}</div>"
-        # ── Arrow — thick SVG right arrow in family color ────────────────────
-        f"<div style='flex:1.8;display:flex;align-items:center;justify-content:center;'>"
+        f"</div>"
+        # ── Group 4: Explore text link ────────────────────────────────────────
+        f"<div style='flex:0 0 auto;display:flex;align-items:center;padding:0 32px 0 16px;'>"
         f"<a href='/Family?family={fid}' target='_self'"
-        f" style='display:flex;align-items:center;text-decoration:none;'>"
-        f"{arrow}</a>"
+        f" class='family-explore' style='color:{color};'>Explore family →</a>"
         f"</div>"
         f"</div>"
     )
@@ -285,12 +303,10 @@ def _org_rows(names: list[str], color: str) -> str:
     if not names:
         return "<div style='font-size:12px;color:#aaaaaa;'>—</div>"
     return "".join(
-        f'<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:4px;">'
-        f'<span style="font-family:{_FONT};font-size:10px;font-weight:700;'
-        f'color:{color};min-width:12px;">{i}</span>'
-        f'<span style="font-size:12.5px;color:#111111;line-height:1.3;">'
-        f"{name[:28]}</span></div>"
-        for i, name in enumerate(names, start=1)
+        f'<div style="margin-bottom:4px;font-size:12.5px;color:#111111;line-height:1.3;'
+        f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'
+        f'{name[:30] + "…" if len(name) > 30 else name}</div>'
+        for name in names
     )
 
 
@@ -307,7 +323,7 @@ def main() -> None:
             "The Chips Behind AI</div>"
             "<div style='color:#888888;font-size:0.9rem;'>"
             "Tracing global semiconductor research papers to US patents "
-            "across 5 technology families."
+            "across 5 technology families · 2012–2025"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -365,16 +381,16 @@ def main() -> None:
 
     # ── Footer caveat ─────────────────────────────────────────────────────────────
     st.markdown(
-        "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;'></div>",
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "**Scope:** US patents only (PatentsView / USPTO). "
-        "Papers from OpenAlex (2012–2025, English, in-scope topics). "
+        "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
+        "font-size:11px;color:#aaaaaa;line-height:1.6;'>"
+        "<strong>Scope:</strong> Granted US patents only (PatentsView / USPTO, filing dates 2014–2025). "
+        "In-scope research papers from OpenAlex (2012–2025, English, matched to EUV, silicon photonics, lasers, neuromorphic, and in-memory compute topics). "
         "Citation links are non-patent-literature (NPL) references from USPTO filings. "
         "Lag = paper publication date → citing patent filing date; never grant date. "
-        "Filing counts after 2019 understate activity due to grant-processing delay. "
+        "Patent counts after 2019 understate activity due to grant-processing delay. "
         "This is not causal inference — NPL citations record reference, not derivation."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
 

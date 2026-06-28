@@ -142,3 +142,69 @@ Then fill those IDs into seed_crosswalk.csv and update `seed_crosswalk_matched` 
 - ✅ Every crosswalk row has match_method and confidence.
 - ⏳ Precision on eval set ≥ 0.95 — pending first materialize + eval run.
 - ⏳ Stanford resolves across both sources — needs openalex_institution_id filled in seed CSV.
+
+---
+
+## Part 7 — Streamlit UI (apps/ui)
+
+### config.toml must live at apps/ui/.streamlit/config.toml
+
+Streamlit resolves config relative to its **working directory**. The app is always launched from `apps/ui/`, so a config at the project root is silently ignored. Symptom: dark header bar, white-on-white sidebar text, invisible chart labels — on every cold restart.
+
+**Rule:** Always run `uv run streamlit run app.py` from `apps/ui/`. Never from the project root. If the light theme breaks after a restart, check config.toml placement first.
+
+Correct content of `apps/ui/.streamlit/config.toml`:
+```toml
+[theme]
+base = "light"
+primaryColor = "#111111"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f5f5"
+textColor = "#111111"
+font = "sans serif"
+```
+
+### Do not patch dark-mode bleed with .stApp CSS overrides
+
+Adding `.stApp { background: #ffffff; }` in a `st.markdown` `<style>` block causes a large black decoration bar at the top unless you also suppress `[data-testid="stDecoration"]` and `[data-testid="stHeader"]`. This is treating a symptom; the real fix is always config.toml placement above.
+
+### Container border overrides: use .st-key-{key}, not data-testid
+
+`[data-testid="stVerticalBlockBorderWrapper"]` loses to Streamlit's emotion CSS. The reliable pattern is:
+```python
+with st.container(height=N, border=True, key="my_container"):
+    ...
+```
+```css
+.st-key-my_container {
+    border: 1px solid #e6e6e6 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+```
+
+### st.dataframe ProgressColumn cannot be styled per-row or per-family
+
+`st.dataframe` in Streamlit 1.40+ uses glide-data-grid — a canvas renderer. The entire grid including `ProgressColumn` bars is painted on a `<canvas>` element; no CSS selector can reach individual cells. The bar color follows `primaryColor` from config.toml.
+
+**Attempted and rejected approaches:**
+- CSS injection targeting `[data-testid="stDataFrameProgressBarValue"]` — no effect (canvas).
+- Replacing `st.dataframe` with a custom HTML `<table>` — user rejected twice ("completely broken"). Streamlit's global table CSS and uncontrolled column widths caused layout breakage.
+
+**Agreed solution for HHI:** plain `NumberColumn(format="%.2f")`, no bar. Column tooltip via `help=` in column_config. Subtitle text instructs user to hover: *"Hover over 'Lag (yr)' and 'HHI' columns for definitions."* Do not put `?` in the column name — also rejected.
+
+### Sidebar must be rendered after data loading when it depends on query results
+
+If the sidebar contains a widget whose options come from a DB query (e.g. a cluster multiselect), the data must be loaded first. In Streamlit, `with st.sidebar:` blocks can appear anywhere in the script and will still render in the sidebar, so placing them after the data loading calls is safe.
+
+### Family page design — agreed layout (2_Family.py)
+
+1. Header card (family name + description, no border)
+2. 4 metric cards: patent share, citation lag, # patents, # papers
+3. Two scrollable leaderboard bar charts side-by-side (top 50 patenters / researchers), 10 bars visible, `st.container(height=..., border=True, key=...)`
+4. Velocity chart: papers vs patents over time; trailing N years dotted/faded where N = `round(median_lag_years_weighted)` (dynamic provisional window)
+5. Cluster breakdown table: `st.dataframe`, sorted by patents descending, `help=` tooltips on Lag and HHI columns, map link right-aligned above the table
+
+### Velocity chart colors
+
+`PAPER_COLOR` / `PATENT_COLOR` from render.py were rejected as inconsistent with the palette. Both lines use `family_color`: papers at 45% opacity (`_hex_rgba(family_color, 0.45)`), patents at full strength. The `_hex_rgba(hex, alpha)` helper converts hex to `rgba(r,g,b,alpha)` string.
