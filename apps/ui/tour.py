@@ -1,7 +1,7 @@
-"""Guided tour definition — "The Chips Behind AI" front door.
+"""Guided tour definition — "The Chips Behind AI".
 
-Five stops narrating the key contrasts in the data. The tour runs entirely on
-Surface 1 (the family scorecard). Each step optionally highlights one family tile.
+Five stops, one per page. Each step narrates the key insight of its page
+and carries the page_file path used by render_tour_banner() for navigation.
 """
 from __future__ import annotations
 
@@ -12,66 +12,74 @@ from dataclasses import dataclass
 class TourStep:
     title: str
     narration: str
-    highlighted_family: str | None  # family_id to visually highlight, or None
+    page_file: str  # path passed to st.switch_page()
 
 
 TOUR_STEPS: list[TourStep] = [
     TourStep(
-        title="Five families, one story",
+        title="Five technology families powering AI hardware",
         narration=(
-            "AI chip manufacturing rests on these five technology clusters — from the "
-            "extreme-UV light that etches circuits at atomic scales to the neuromorphic "
-            "processors that mimic the brain. Each tile shows you the balance between "
-            "academic research and industrial IP. A high patent share means a few companies "
-            "have converted knowledge into ownership."
+            "Each row is one technology family, from extreme-UV lithography that prints "
+            "transistors smaller than a virus, to in-memory computing that eliminates "
+            "the speed bottleneck between processor and memory. "
+            "The <strong>patent share</strong> tells you how much of the world's research "
+            "has been converted into US intellectual property. "
+            "The <strong>citation lag</strong> is the gap between a paper's publication date "
+            "and the filing date of a US patent that references it: a traceable number "
+            "extracted from real USPTO non-patent-literature citations, not an estimate."
         ),
-        highlighted_family=None,
+        page_file="app.py",
     ),
     TourStep(
-        title="EUV Lithography — industrial lock-in",
+        title="Every cluster at a glance",
         narration=(
-            "EUV Lithography has 52% patent share — more patents than papers. This is what "
-            "industrial lock-in looks like. ASML holds a near-monopoly on EUV machines; "
-            "TSMC and a handful of chipmakers own the process IP. IMEC, the Belgian research "
-            "institute, leads the academic side. Concentration at the top of the supply chain "
-            "is near-total."
+            "Each dot is a technology cluster: a coherent group of papers and patents "
+            "identified by semantic similarity. "
+            "Position encodes the balance between research volume (Y axis) "
+            "and patent capture (X axis), both on a log scale. "
+            "Dots high and left are prolific research areas with little IP capture; "
+            "dots low and right are industrialised niches. "
+            "<strong>Click any dot</strong> to open its detail card: plain English summary, "
+            "citation lag, top patenters, and top researchers."
         ),
-        highlighted_family="euv",
+        page_file="pages/1_Map.py",
     ),
     TourStep(
-        title="Silicon Photonics — the knowledge gap",
+        title="Inside a technology family",
         narration=(
-            "Silicon Photonics has 35,000+ papers — 7× more than EUV — but only 6% reach a "
-            "US patent. Most knowledge stays academic. Chinese Academy of Sciences leads the "
-            "research; GlobalFoundries leads the patents. The 3.6-year median lag (longest of "
-            "all five families) reflects slower industrial adoption of a field still maturing "
-            "in the lab."
+            "Use the pills at the top to switch between the five technology families. "
+            "The metrics strip shows patent share, paper count, citation lag, and HHI "
+            "(a concentration index measuring how few organisations dominate the IP). "
+            "The leaderboards rank who files the most patents and publishes the most papers. "
+            "The velocity chart shows how filing activity has shifted year by year. "
+            "At the bottom, the cluster table breaks the family into its sub-topics."
         ),
-        highlighted_family="si_photonics",
+        page_file="pages/2_Family.py",
     ),
     TourStep(
-        title="The citation lag — a traceable number",
+        title="Who owns the IP?",
         narration=(
-            "Lag = paper publication date → citing patent filing date, measured through "
-            "non-patent-literature citations extracted from USPTO filings. It is a "
-            "traceable, specific date — not 'time to market' or causal inference. "
-            "In-Memory and Neuromorphic computing are fastest at under 3 years. "
-            "Look at the right-hand chart: the spread across families is less than 1 year, "
-            "but the ranking is stable."
+            "Search any organisation (company, university, or research institute) "
+            "and see its two-sided ledger: patents filed on the left, papers published on "
+            "the right. The bar charts break activity down by technology family, "
+            "so you can see where an organisation concentrates its effort. "
+            "The NPL bridge shows which research feeds into its patents and "
+            "which organisations build on its science."
         ),
-        highlighted_family=None,
+        page_file="pages/3_Org.py",
     ),
     TourStep(
-        title="See the full landscape",
+        title="From paper to patent: a traceable link",
         narration=(
-            "The Technology Map page plots all 197,000 papers and patents as individual dots, "
-            "positioned by semantic similarity. Each cluster emerges from embeddings — no "
-            "hand-placed layout. The grey Frontier / Unclustered zone holds 33% of papers "
-            "and 48% of patents: research at the intersection of multiple families. "
-            "Use the sidebar to navigate there, or click 'Explore →' on any family tile to "
-            "drill into its cluster detail."
+            "Every link here is a real non-patent-literature citation extracted from a "
+            "USPTO filing, not a model prediction. "
+            "Search a paper and the timeline shows every US patent that cited it, "
+            "positioned at its filing date. "
+            "The gap between the paper's publication date and the earliest citing patent "
+            "is the citation lag you have seen on every other page. "
+            "This is where it comes from."
         ),
-        highlighted_family=None,
+        page_file="pages/4_Trace.py",
     ),
 ]
 
@@ -85,4 +93,4 @@ def is_last_step(idx: int) -> bool:
 
 
 def progress_label(idx: int) -> str:
-    return f"Stop {idx + 1} of {len(TOUR_STEPS)}"
+    return f"Step {idx + 1} of {len(TOUR_STEPS)}"

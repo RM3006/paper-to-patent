@@ -1,6 +1,8 @@
 """Semantic color constants for the UI. Chrome colors live in app.py CSS."""
 from __future__ import annotations
 
+import streamlit as st
+
 FAMILY_COLORS: dict[str, str] = {
     "euv":          "#3a4a6b",  # deep navy — editorial "cool technical" palette
     "si_photonics": "#5a8fa8",  # steel blue
@@ -9,6 +11,16 @@ FAMILY_COLORS: dict[str, str] = {
     "in_memory":    "#6a9c89",  # sage green
     "adjacent":     "#94a3b8",  # slate — muted, not headline
     "noise":        "#d1d5db",  # light grey — frontier / unclustered
+}
+
+FAMILY_LABELS: dict[str, str] = {
+    "euv":          "EUV Lithography",
+    "si_photonics": "Silicon Photonics & Optical I/O",
+    "lasers":       "Lasers & Light Sources",
+    "neuromorphic": "Neuromorphic / Brain-inspired",
+    "in_memory":    "In-Memory & Emerging Memory",
+    "adjacent":     "Adjacent / Cross-family",
+    "noise":        "Frontier / Unclustered",
 }
 
 PAPER_COLOR = "#3b82f6"    # blue  — academic
@@ -67,3 +79,166 @@ def hhi_color(t: float) -> str:
     g = int(197 + (68  - 197) * t)
     b = int(94  + (68  - 94)  * t)
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def render_tour_banner(page_step: int) -> None:
+    """Show the guided tour banner if the active tour step matches this page.
+
+    Call once per page right after render_nav(), passing the zero-based step
+    index that belongs to this page. Returns immediately when no tour is active
+    or when the active step belongs to a different page.
+    """
+    from tour import TOUR_STEPS, is_first_step, is_last_step, progress_label
+
+    tour_step = st.session_state.get("tour_step")
+    if tour_step != page_step:
+        return
+
+    step = TOUR_STEPS[page_step]
+    _font = '"Space Grotesk", -apple-system, system-ui, sans-serif'
+
+    st.markdown(
+        "<style>"
+        ".st-key-tour_card {"
+        "  background:#fdf6e3;border:1px solid #ecdfb8;"
+        "  border-radius:10px;padding:4px 22px 18px;margin-bottom:1.2rem;"
+        "}"
+        ".st-key-tour_nav {"
+        "  display:flex;flex-direction:row;justify-content:flex-end;"
+        "  align-items:center;gap:0.5rem;margin-top:10px;"
+        "}"
+        ".st-key-tour_nav [data-testid='stButton'] button,"
+        ".st-key-tour_nav [data-testid='stButton'] button[kind='primary'],"
+        ".st-key-tour_nav [data-testid='stButton'] button[kind='secondary'] {"
+        "  padding:0.1rem 0.3rem;font-size:0.82rem;font-weight:600;"
+        "  border:none;border-radius:0;text-decoration:underline;"
+        "  color:#8a6d1f;background:transparent;"
+        "}"
+        ".st-key-tour_nav [data-testid='stButton'] button:hover,"
+        ".st-key-tour_nav [data-testid='stButton'] button[kind='primary']:hover,"
+        ".st-key-tour_nav [data-testid='stButton'] button[kind='secondary']:hover {"
+        "  color:#a3821f;background:transparent;text-decoration:underline;"
+        "}"
+        ".st-key-tour_card,"
+        ".st-key-tour_card > div > [data-testid='stVerticalBlock'] {"
+        "  gap:4px !important;"
+        "}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+    with st.container(key="tour_card"):
+        col_label, col_nav = st.columns([3, 1], vertical_alignment="center")
+        with col_label:
+            st.markdown(
+                f"<span style='color:#888888;font-size:0.72rem;font-weight:700;"
+                f"text-transform:uppercase;letter-spacing:0.1em;'>"
+                f"Guided tour · {progress_label(page_step)}</span>",
+                unsafe_allow_html=True,
+            )
+        with col_nav, st.container(key="tour_nav"):
+            if not is_first_step(page_step):
+                prev_page = TOUR_STEPS[page_step - 1].page_file
+                if st.button("← Back", key="tour_back", type="secondary"):
+                    st.session_state["tour_step"] = page_step - 1
+                    st.switch_page(prev_page)
+            finish_label = "Finish →" if is_last_step(page_step) else "Next →"
+            if st.button(finish_label, key="tour_next", type="primary"):
+                if is_last_step(page_step):
+                    st.session_state["tour_step"] = None
+                    st.rerun()
+                else:
+                    st.session_state["tour_step"] = page_step + 1
+                    st.switch_page(TOUR_STEPS[page_step + 1].page_file)
+            if st.button("Exit tour", key="tour_exit", type="secondary"):
+                st.session_state["tour_step"] = None
+                st.rerun()
+
+        st.markdown(
+            f"<div style='font-family:{_font};font-weight:700;font-size:1rem;"
+            f"color:#111111;margin-bottom:6px;margin-top:-10px;'>{step.title}</div>"
+            f"<div style='color:#111111;font-size:0.9rem;line-height:1.6;'>"
+            f"{step.narration}</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def render_nav(active: str) -> None:
+    """Persistent site header rendered at the top of every page.
+
+    Brand block (wordmark + subtitle + tour CTA) above a full-width tab strip.
+    """
+    _font = '"Space Grotesk", -apple-system, system-ui, sans-serif'
+
+    # Suppress decoration stripe, toolbar colour, auto page nav, and sidebar toggle.
+    st.markdown(
+        "<style>"
+        "[data-testid='stDecoration'] { display: none !important; }"
+        "[data-testid='stHeader'] { background: transparent !important; }"
+        "[data-testid='stSidebar'] { display: none !important; }"
+        "[data-testid='stSidebarNav'] { display: none !important; }"
+        "[data-testid='stSidebarCollapseButton'] { display: none !important; }"
+        "[data-testid='stExpandSidebarButton'] { display: none !important; }"
+        "[data-testid='collapsedControl'] { display: none !important; }"
+        "[data-testid='stSidebarCollapsedControl'] { display: none !important; }"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Brand block: wordmark + subtitle (left) | tour button (right) ─────────
+    col_brand, col_cta = st.columns([5, 2], vertical_alignment="center")
+    with col_brand:
+        st.markdown(
+            f"<div style='font-family:{_font};font-size:72px;font-weight:bold;"
+            f"color:#111111;letter-spacing:-0.02em;line-height:1.05;'>"
+            f"The Chips Behind AI</div>"
+            f"<div style='color:#888888;font-size:0.9rem;'>"
+            f"Tracing global semiconductor research papers to US patents "
+            f"across 5 technology families · 2012–2025"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with col_cta:
+        if st.session_state.get("tour_step") is None:
+            if st.button("Take the 90-second tour", key=f"_hdr_tour_{active}", type="primary"):
+                st.session_state["tour_step"] = 0
+                if active != "Overview":
+                    st.switch_page("app.py")
+
+    # ── Tab strip ──────────────────────────────────────────────────────────────
+    _tabs = [
+        ("Overview",             "/"),
+        ("Technology Landscape", "/Map"),
+        ("Family Deepdive",      "/Family"),
+        ("Organisation Profile", "/Org"),
+        ("Trace a Paper",        "/Trace"),
+    ]
+    tabs_html = ""
+    for label, href in _tabs:
+        cls = ' class="chip-active"' if label == active else ""
+        tabs_html += f"<a href='{href}' target='_self'{cls}>{label}</a>"
+
+    st.markdown(
+        "<style>"
+        ".chip-nav {"
+        "  display:flex; gap:40px; padding:0;"
+        "  border-bottom:1px solid #e6e6e6;"
+        "  margin-top:1rem; margin-bottom:1.5rem;"
+        "}"
+        ".chip-nav a {"
+        "  font-size:14px; font-weight:400; color:#888888 !important;"
+        "  text-decoration:none !important;"
+        "  padding-bottom:6px; margin-bottom:-1px;"
+        "  border-bottom:2px solid transparent;"
+        "  white-space:nowrap; display:inline-block;"
+        "  transition:color .15s, border-color .15s;"
+        "}"
+        ".chip-nav a:hover { color:#555555 !important; }"
+        ".chip-nav a.chip-active {"
+        "  font-weight:700; color:#111111 !important;"
+        "  border-bottom-color:#111111;"
+        "}"
+        "</style>"
+        f"<div class='chip-nav'>{tabs_html}</div>",
+        unsafe_allow_html=True,
+    )

@@ -335,12 +335,17 @@ def load_top_orgs(cluster_ids: tuple[str, ...], side: str, top_n: int = 10) -> p
 
 @st.cache_data(ttl=3600)
 def _load_seed_orgs_for_searchbox() -> list[tuple[str, str]]:
-    """34 curated seed orgs as (name, id) tuples for the empty-query default in the searchbox."""
+    """All active resolved orgs as (name, id) tuples for the empty-query default in the searchbox."""
     df = _query("""
         SELECT org_id, canonical_name
         FROM main_marts.dim_organization
-        WHERE primary_match_method = 'seed_crosswalk'
+        WHERE primary_match_method != 'native_id'
+          AND org_id IN (
+              SELECT org_id FROM main_marts.mart_competitive
+              WHERE cluster_id != 'c_noise'
+          )
         ORDER BY canonical_name ASC
+        LIMIT 100
     """)
     return [(row["canonical_name"], row["org_id"]) for row in df.to_dicts()]
 
@@ -348,8 +353,8 @@ def _load_seed_orgs_for_searchbox() -> list[tuple[str, str]]:
 def search_orgs_ilike(query: str) -> list[tuple[str, str]]:
     """Server-side ILIKE search for the org-profile searchbox (called on each keystroke).
 
-    Returns (label, value) tuples where value is org_id. Short/empty queries return the
-    34 curated seed orgs so the dropdown is useful before the user types.
+    Returns (label, value) tuples where value is org_id. Short/empty queries return all
+    active resolved orgs so the dropdown is useful before the user types.
     Excludes native_id atoms (unresolved PatentsView fragments) and orgs with no activity.
     """
     if not query or len(query) < 2:
@@ -359,20 +364,58 @@ def search_orgs_ilike(query: str) -> list[tuple[str, str]]:
         SELECT org_id, canonical_name
         FROM main_marts.dim_organization
         WHERE canonical_name ILIKE ?
-          AND primary_match_method IN ('seed_crosswalk', 'ror', 'ror_bridge', 'fuzzy_high')
+          AND primary_match_method != 'native_id'
           AND org_id IN (
-              SELECT org_id FROM main_marts.fact_publication
-              UNION
-              SELECT org_id FROM main_marts.fact_patent_filing
+              SELECT org_id FROM main_marts.mart_competitive
+              WHERE cluster_id != 'c_noise'
           )
-        ORDER BY
-            CASE primary_match_method WHEN 'seed_crosswalk' THEN 0 ELSE 1 END,
-            LENGTH(canonical_name) ASC
-        LIMIT 15
+        ORDER BY canonical_name ASC
+        LIMIT 50
         """,
         [f"%{query}%"],
     )
     return [(row["canonical_name"], row["org_id"]) for row in df.to_dicts()]
+
+
+def search_papers_ilike(query: str) -> list[tuple[str, str]]:
+    """ILIKE search for the trace-page paper searchbox (called on each keystroke).
+
+    Returns (label, work_id) tuples. Empty/short queries return the top 30 most-cited
+    papers so the dropdown is useful before the user types.
+    Only includes papers with at least one NPL citation link.
+    """
+    if not query or len(query) < 2:
+        df = _query("""
+            SELECT dp.work_id, dp.title, dp.publication_year,
+                   COUNT(DISTINCT fnl.patent_id) AS n_citing
+            FROM main_marts.dim_paper dp
+            JOIN main_marts.fact_npl_link fnl ON fnl.work_id = dp.work_id
+            GROUP BY dp.work_id, dp.title, dp.publication_year
+            ORDER BY n_citing DESC
+            LIMIT 30
+        """)
+    else:
+        df = _query(
+            """
+            SELECT dp.work_id, dp.title, dp.publication_year,
+                   COUNT(DISTINCT fnl.patent_id) AS n_citing
+            FROM main_marts.dim_paper dp
+            JOIN main_marts.fact_npl_link fnl ON fnl.work_id = dp.work_id
+            WHERE dp.title ILIKE ?
+            GROUP BY dp.work_id, dp.title, dp.publication_year
+            ORDER BY n_citing DESC
+            LIMIT 50
+            """,
+            [f"%{query}%"],
+        )
+    results = []
+    for row in df.to_dicts():
+        title = row["title"] or ""
+        yr = row["publication_year"] or "?"
+        n = row["n_citing"]
+        label = f"{title[:75]}{'…' if len(title) > 75 else ''} ({yr} · {n} patents)"
+        results.append((label, row["work_id"]))
+    return results
 
 
 @st.cache_data(ttl=3600)
@@ -405,12 +448,29 @@ def load_org_output_by_family(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
+def load_dataset_totals() -> dict[str, int]:
+    """Total paper and patent counts across all in-scope technology families."""
+    df = _query("""
+        SELECT SUM(n_papers) AS total_papers, SUM(n_patents) AS total_patents
+        FROM main_marts.mart_family
+        WHERE family_id != 'adjacent'
+    """)
+    row = df.row(0, named=True)
+    return {
+        "total_papers":  int(row["total_papers"]  or 0),
+        "total_patents": int(row["total_patents"] or 0),
+    }
+
+
+@st.cache_data(ttl=3600)
 def load_org_top_patent_clusters(org_id: str) -> pl.DataFrame:
-    """Top 5 patent clusters (excluding c_noise) for a given patenter org."""
+    """Top 5 patent clusters (excluding c_noise) for a given patenter org, with family_id."""
     return _query(
         """
-        SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share
+        SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share,
+               scf.family_id
         FROM main_marts.mart_competitive mc
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
         WHERE mc.org_id = ? AND mc.side = 'patent' AND mc.cluster_id != 'c_noise'
         ORDER BY mc.doc_count DESC
         LIMIT 5
@@ -529,7 +589,7 @@ def load_org_flagship_patent(org_id: str) -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_trace_paper(work_id: str) -> pl.DataFrame:
-    """Paper card for trace-one-idea: title, abstract, pub_date, topic, primary org."""
+    """Paper card for trace-one-idea: title, abstract, pub_date, topic, primary org, family."""
     return _query(
         """
         WITH primary_org AS (
@@ -543,10 +603,12 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
             dp.publication_date,
             dp.abstract,
             dp.primary_topic_name,
-            dorg.canonical_name AS org_name
+            dorg.canonical_name AS org_name,
+            scf.family_id
         FROM main_marts.dim_paper dp
         LEFT JOIN primary_org po ON po.work_id = dp.work_id
         LEFT JOIN main_marts.dim_organization dorg ON dorg.org_id = po.org_id
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = dp.cluster_id
         WHERE dp.work_id = ?
         """,
         [work_id, work_id],
@@ -585,7 +647,6 @@ def load_trace_links(work_id: str) -> pl.DataFrame:
         JOIN main_marts.dim_patent dp ON dp.patent_id = n.patent_id
         LEFT JOIN assignee a ON a.patent_id = n.patent_id
         ORDER BY n.citation_lag_years ASC NULLS LAST
-        LIMIT 12
         """,
         [work_id],
     )
@@ -609,11 +670,13 @@ def load_org_paper_output_by_family(org_id: str) -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_org_top_research_clusters(org_id: str) -> pl.DataFrame:
-    """Top 5 research clusters (excluding c_noise) for a given org — researcher side."""
+    """Top 5 research clusters (excluding c_noise) for a given org — researcher side, with family_id."""
     return _query(
         """
-        SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share
+        SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share,
+               scf.family_id
         FROM main_marts.mart_competitive mc
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
         WHERE mc.org_id = ? AND mc.side = 'paper' AND mc.cluster_id != 'c_noise'
         ORDER BY mc.doc_count DESC
         LIMIT 5

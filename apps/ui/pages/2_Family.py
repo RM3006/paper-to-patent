@@ -18,8 +18,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from render import FAMILY_COLORS
-from streamlit_searchbox import st_searchbox
+from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
 
 from data import (
     load_family_clusters,
@@ -29,9 +28,10 @@ from data import (
 )
 
 st.set_page_config(
-    page_title="Family Detail — The Chips Behind AI",
-    page_icon="🔬",
+    page_title="Family Deepdive — The Chips Behind AI",
+    page_icon="📊",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 _FONT = '"Space Grotesk", -apple-system, system-ui, sans-serif'
@@ -46,16 +46,15 @@ st.markdown("""
     border-radius: 8px !important;
     box-shadow: none !important;
 }
+.js-plotly-plot .plotly .cursor-crosshair { cursor: default !important; }
+.js-plotly-plot .cartesianlayer .spikeline { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-_FAMILIES: dict[str, str] = {
-    "euv":          "EUV Lithography",
-    "si_photonics": "Silicon Photonics & Optical I/O",
-    "lasers":       "Lasers & Light Sources",
-    "neuromorphic": "Neuromorphic / Brain-inspired",
-    "in_memory":    "In-Memory & Emerging Memory",
-}
+render_nav("Family Deepdive")
+render_tour_banner(2)
+
+_HEADLINE_FAMILIES = {k: v for k, v in FAMILY_LABELS.items() if k not in ("adjacent", "noise")}
 
 _FAMILY_DESC: dict[str, str] = {
     "euv": (
@@ -92,7 +91,7 @@ family_id: str = (
     st.query_params.get("family")
     or st.session_state.get("selected_family", "euv")
 )
-if family_id not in _FAMILIES:
+if family_id not in _HEADLINE_FAMILIES:
     family_id = "euv"
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -104,94 +103,43 @@ if len(family_row_df) == 0:
 
 frow         = family_row_df.row(0, named=True)
 family_color = FAMILY_COLORS.get(family_id, "#888888")
-family_name  = _FAMILIES.get(family_id, family_id)
+family_name  = FAMILY_LABELS.get(family_id, family_id)
 family_desc  = _FAMILY_DESC.get(family_id, "")
 
 pat_df   = load_family_org_leaderboard(family_id, "patent", 50)
 res_df   = load_family_org_leaderboard(family_id, "paper", 50)
 clusters = load_family_clusters(family_id)
 
-# ── Sidebar — same design as Map page ─────────────────────────────────────────
-_cluster_opts = clusters.sort("tagline").select(["cluster_id", "tagline"]).to_dicts()
-_cluster_map: dict[str, str] = {r["cluster_id"]: r["tagline"] for r in _cluster_opts}
+_clusters_filtered = clusters
 
-_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+# ── Family pill switcher — single line, max size ──────────────────────────────
+_pills_html = ""
+for _fid, _flbl in _HEADLINE_FAMILIES.items():
+    _fc = FAMILY_COLORS.get(_fid, "#888888")
+    if _fid == family_id:
+        _pills_html += (
+            f"<a href='/Family?family={_fid}' target='_self' class='fpill fpill-on'"
+            f" style='background:{_fc};color:#ffffff;border-color:{_fc};'>{_flbl}</a>"
+        )
+    else:
+        _pills_html += (
+            f"<a href='/Family?family={_fid}' target='_self' class='fpill fpill-off'"
+            f" style='color:{_fc};border-color:{_fc};'>{_flbl}</a>"
+        )
 
-_fam_scope = [(lbl, fid) for fid, lbl in _FAMILIES.items()]
-_clust_scope = [(r["tagline"], r["cluster_id"]) for r in _cluster_opts]
-
-def _search_fam(query: str) -> list[tuple[str, str]]:
-    if not query:
-        return _fam_scope
-    q = query.lower()
-    return [(lbl, fid) for lbl, fid in _fam_scope if q in lbl.lower()]
-
-def _search_clust(query: str) -> list[tuple[str, str]]:
-    if not query:
-        return _clust_scope[:20]
-    q = query.lower()
-    return [(lbl, cid) for lbl, cid in _clust_scope if q in lbl.lower()]
-
-if "_fam_sel_clusters" not in st.session_state:
-    st.session_state["_fam_sel_clusters"] = []
-
-with st.sidebar:
-    st.markdown("#### Filters")
-    st.caption(f"Technology family · {family_name}")
-    _fam_pick = st_searchbox(
-        _search_fam,
-        placeholder="Switch family…",
-        key="family_selector_sb",
-        edit_after_submit="option",
-        style_overrides=_STYLE,
-        default_options=_fam_scope,
-    )
-    if _fam_pick and _fam_pick != family_id:
-        st.session_state.selected_family = _fam_pick
-        st.session_state["_fam_sel_clusters"] = []
-        st.rerun()
-
-    st.caption("Cluster")
-    _clust_pick = st_searchbox(
-        _search_clust,
-        placeholder="Add cluster…",
-        key="family_cluster_sb",
-        clear_on_submit=True,
-        style_overrides=_STYLE,
-        default_options=_clust_scope[:20],
-    )
-    if _clust_pick and _clust_pick not in st.session_state["_fam_sel_clusters"]:
-        st.session_state["_fam_sel_clusters"].append(_clust_pick)
-        st.rerun()
-    for _cid in list(st.session_state["_fam_sel_clusters"]):
-        _lbl = _cluster_map.get(_cid, _cid)
-        _short = _lbl[:30] + "…" if len(_lbl) > 30 else _lbl
-        if st.button(f"× {_short}", key=f"rm_fc_{_cid}",
-                     use_container_width=True, type="secondary"):
-            st.session_state["_fam_sel_clusters"].remove(_cid)
-            st.rerun()
-
-    st.divider()
-    st.page_link("app.py", label="← Back to overview")
-
-selected_clusters: list[str] = st.session_state["_fam_sel_clusters"]
-
-# Cluster filter applies only to the breakdown table at the bottom.
-_clusters_filtered = (
-    clusters.filter(pl.col("cluster_id").is_in(selected_clusters))
-    if selected_clusters else clusters
-)
-
-# ── Header card ────────────────────────────────────────────────────────────────
 st.markdown(
-    f"<div style='padding:24px 0 16px 0;'>"
-    f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-    f"text-transform:uppercase;color:{family_color};margin-bottom:8px;'>"
-    f"Technology family</div>"
-    f"<div style='font-family:{_FONT};font-size:26px;font-weight:800;"
-    f"color:#111111;line-height:1.1;margin-bottom:10px;'>{family_name}</div>"
-    f"<div style='font-size:14px;color:#555555;line-height:1.6;'>{family_desc}</div>"
-    f"</div>",
+    "<style>"
+    ".fpill-row { display:flex; flex-wrap:nowrap; gap:10px; margin-bottom:1rem; }"
+    ".fpill { font-size:15px; font-weight:600; white-space:nowrap;"
+    "  padding:9px 20px; border-radius:8px; border:1.5px solid;"
+    "  text-decoration:none !important; transition:opacity .15s; }"
+    ".fpill-on  { font-weight:700; }"
+    ".fpill-off { background:#ffffff; opacity:0.6; }"
+    ".fpill-off:hover { opacity:1; }"
+    "</style>"
+    f"<div class='fpill-row'>{_pills_html}</div>"
+    f"<p style='color:#888888;font-size:15px;margin-top:0;margin-bottom:1.4rem;'>"
+    f"{family_desc}</p>",
     unsafe_allow_html=True,
 )
 
@@ -271,7 +219,7 @@ with col_pat:
             st.plotly_chart(
                 _bar_chart(pat_df, family_color),
                 use_container_width=True,
-                config={"displayModeBar": False},
+                config={"displayModeBar": False, "displaylogo": False},
                 key="bar_patent",
             )
     else:
@@ -285,7 +233,7 @@ with col_res:
             st.plotly_chart(
                 _bar_chart(res_df, family_color),
                 use_container_width=True,
-                config={"displayModeBar": False},
+                config={"displayModeBar": False, "displaylogo": False},
                 key="bar_paper",
             )
     else:
@@ -349,27 +297,24 @@ if len(vel_df) > 0:
         font=dict(size=12, color="#111111"),
         margin=dict(l=10, r=20, t=10, b=40),
         xaxis=dict(dtick=2, showgrid=False, zeroline=False,
-                   showline=True, linecolor="#e6e6e6", tickfont=dict(size=11)),
+                   showline=True, linecolor="#e6e6e6", tickfont=dict(size=11),
+                   showspikes=False),
         yaxis=dict(gridcolor="#f0f0f0", zeroline=False, rangemode="tozero",
-                   tickfont=dict(size=11)),
+                   tickfont=dict(size=11), showspikes=False),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
                     font=dict(size=11), title=None),
         hovermode="x unified",
+        dragmode=False,
     )
     st.plotly_chart(
         fig_vel, use_container_width=True,
-        config={"displayModeBar": False}, key="velocity_chart",
+        config={"displayModeBar": False, "displaylogo": False}, key="velocity_chart",
     )
 
 # ── Cluster breakdown table ────────────────────────────────────────────────────
 if len(_clusters_filtered) > 0:
-    n_shown = len(_clusters_filtered)
     n_total = len(clusters)
-    count_label = (
-        f"{n_shown} of {n_total} clusters"
-        if selected_clusters else
-        f"{n_total} clusters"
-    )
+    count_label = f"{n_total} clusters"
 
     st.markdown("<div style='margin-top:2rem;'></div>", unsafe_allow_html=True)
 
