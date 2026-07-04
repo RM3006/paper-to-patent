@@ -17,6 +17,10 @@ sources:
             description: DOI URL — primary join key for NPL matcher
           - name: title
             description: Paper title
+          - name: type
+            description: >
+              OpenAlex work type. Ingest filters to article|preprint|review at
+              the API level (see stg_openalex_works schema.yml for the guard test).
           - name: publication_date
             description: "Publication date (YYYY-MM-DD) — citation-lag anchor"
           - name: publication_year

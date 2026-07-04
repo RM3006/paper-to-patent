@@ -28,6 +28,7 @@ select
 
     -- content
     title,
+    type,
     publication_date::date                             as publication_date,
     publication_year::integer                          as publication_year,
     language,

@@ -10,6 +10,17 @@ models:
         tests: [not_null]
       - name: title
         tests: [not_null]
+      - name: type
+        description: >
+          OpenAlex work type. The ingest asset filters to type:article|preprint|review
+          at the API level (see openalex.py); this test guards that filter never
+          regresses silently. Note: OpenAlex itself mistypes some non-research
+          records (e.g. software-release DOIs) as 'article' — this filter is
+          necessary but not sufficient to exclude all non-article noise.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["article", "preprint", "review"]
 
   - name: stg_patents_scoped
     description: Scope-filtered patents (CPC + filing_date 2014–2025), type-cast.
