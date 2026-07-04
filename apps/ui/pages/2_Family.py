@@ -129,9 +129,9 @@ for _fid, _flbl in _HEADLINE_FAMILIES.items():
 
 st.markdown(
     "<style>"
-    ".fpill-row { display:flex; flex-wrap:nowrap; gap:10px; margin-bottom:1rem; }"
-    ".fpill { font-size:15px; font-weight:600; white-space:nowrap;"
-    "  padding:9px 20px; border-radius:8px; border:1.5px solid;"
+    ".fpill-row { display:flex; flex-wrap:nowrap; gap:10px; margin-bottom:1rem; width:100%; }"
+    ".fpill { flex:1 1 0; text-align:center; font-size:19px; font-weight:600; white-space:nowrap;"
+    "  padding:16px 20px; border-radius:10px; border:1.5px solid;"
     "  text-decoration:none !important; transition:opacity .15s; }"
     ".fpill-on  { font-weight:700; }"
     ".fpill-off { background:#ffffff; opacity:0.6; }"
@@ -159,12 +159,9 @@ for col, value, label in [
 ]:
     with col:
         st.markdown(
-            f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
-            f"padding:18px 8px;text-align:center;height:90px;"
-            f"display:flex;flex-direction:column;align-items:center;"
-            f"justify-content:center;margin-bottom:1rem;'>"
-            f"<div style='font-family:{_FONT};font-size:28px;font-weight:800;"
-            f"color:{family_color};line-height:1;'>{value}</div>"
+            f"<div class='card card--metric' style='margin-bottom:1rem;--accent:{family_color};'>"
+            f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
+            f"font-weight:800;line-height:1;'>{value}</div>"
             f"<div style='font-size:12px;color:#888888;margin-top:6px;"
             f"white-space:nowrap;'>{label}</div>"
             f"</div>",
