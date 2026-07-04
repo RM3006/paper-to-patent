@@ -3,6 +3,11 @@
 All numbers here are reproducible by querying the gold marts in `dev.duckdb`.
 Exact queries are shown under each finding.
 
+**Snapshot**: 2026-07-04 (post embedding-quality-gate re-cluster; 238 clusters, 3-way
+cluster family scheme). Cluster IDs are not stable across re-clustering runs — every
+finding below cites the cluster's current tagline alongside its ID, and if this doc is
+refreshed after a future re-cluster, cite fresh IDs rather than assuming these persist.
+
 **Caveats applying to all findings:**
 - Patent data is US-only (PatentsView). Findings describe US patenting, not global IP capture.
 - Paper data is English-language OpenAlex works (topics T11338, T10299, T11429, T10502, 2012–2025).
@@ -14,107 +19,115 @@ Exact queries are shown under each finding.
 
 ---
 
-## Finding 1 — NPL citation lag: Spiking Neuromorphic Neural Networks
+## Finding 1 — Fastest NPL citation lag: In-Memory Computing with Resistive Devices
 
-**Cluster:** `c_152` — Spiking Neuromorphic Neural Networks
+**Cluster:** `c_121` — In-Memory Computing with Resistive Devices
 **Metric:** Median NPL-linked citation lag
-**Value:** **2.75 years** (median publication-to-filing interval across 248 NPL-linked paper→patent pairs)
+**Value:** **1.92 years** (median publication-to-filing interval across 21 confirmed NPL-linked paper→patent pairs — at the minimum reportable threshold, N ≥ 20)
 
-> Research on spiking neuromorphic neural networks takes a median of 2.75 years from publication
-> before it is cited in a US patent filing. This is measured across 248 confirmed NPL links — papers
-> in this cluster explicitly cited in patent references — anchored on each patent's filing date, not
-> its grant date.
+> Research on resistive in-memory computing devices takes a median of 1.92 years from
+> publication before it is cited in a US patent filing — the fastest confirmed lag among
+> the 32 clusters with enough NPL-linked pairs to report. Anchored on the citing patent's
+> filing date, not its grant date. N is at the minimum reportable threshold; read this as
+> indicative rather than definitive.
 
 **Reproducible query** (from `main_marts.mart_gap`):
 ```sql
 SELECT cluster_id, tagline, npl_median_lag_years, npl_n_links,
        n_oa_institutions, n_research_orgs, n_assignees, n_papers
 FROM main_marts.mart_gap
-WHERE cluster_id = 'c_152';
--- Returns: c_152 | Spiking Neuromorphic Neural Networks | 2.75 | 248 | 2612 | ... | 96 | 5995
+WHERE cluster_id = 'c_121';
+-- Returns: c_121 | In-Memory Computing with Resistive Devices | 1.92 | 21 | 110 | 102 | 8 | 91
 ```
-
-**Context from mart_gap:**
-The same cluster spans 2,612 distinct research institutions globally (sub-org level, source: OpenAlex),
-96 distinct US patent assignees, and 5,995 attributed papers. HHI = 0.06, indicating dispersed patent
-ownership — the research-to-patent pipeline is distributed rather than captured by a handful of players.
 
 ---
 
-## Finding 2 — IP concentration: EUV Lithography apparatus
+## Finding 2 — Slowest NPL citation lag: Photonic Logic Gates and Optical Computing
 
-**Cluster:** `c_53` — Lithographic Apparatus and Device Manufacturing
+**Cluster:** `c_188` — Photonic Logic Gates and Optical Computing
+**Metric:** Median NPL-linked citation lag
+**Value:** **6.77 years** (N = 52 NPL-linked pairs)
+
+> Photonic logic and optical-computing research takes a median of 6.77 years from
+> publication to appear cited in a US patent filing — more than 3x the lag seen in the
+> fastest cluster (c_121, 1.92 yr). This variation across families suggests meaningful
+> differences in research-to-patent cycle time between sub-domains, though the NPL
+> citation mechanism (a patent examiner or applicant citing a paper) is not equivalent
+> to proof of causation.
+
+**Reproducible query:**
+```sql
+SELECT cluster_id, tagline, npl_median_lag_years, npl_n_links
+FROM main_marts.mart_gap
+WHERE cluster_id = 'c_188';
+-- Returns: c_188 | Photonic Logic Gates and Optical Computing | 6.77 | 52
+```
+
+---
+
+## Finding 3 — IP concentration: Exposure Apparatus and Movable Device Manufacturing
+
+**Cluster:** `c_10` — Exposure Apparatus and Movable Device Manufacturing
 **Metric:** HHI over primary US patent assignees
-**Value:** **HHI = 1.0** (1 assignee holds 155 patents; monopoly concentration)
+**Value:** **HHI = 1.0** (1 assignee holds all 11 patents in this cluster; monopoly concentration)
 
-> In the EUV lithographic apparatus cluster, a single assignee holds 100% of US patents
-> (HHI = 1.0, N = 155). This cluster is at the extreme end of US patent concentration
-> within the three scope technology families.
+> A single assignee holds 100% of US patents in this lithography-exposure-apparatus
+> cluster (HHI = 1.0, N = 11 patents) — the extreme end of US patent concentration
+> within the three scope technology families. Unlike a prior version of this finding,
+> this cluster does have co-located paper activity (24 papers, 32 institutions), so the
+> concentration is not simply an artifact of a patent-only cluster.
 
-**Reproducible query** (from `main_marts.mart_gap`):
+**Reproducible query:**
 ```sql
 SELECT cluster_id, tagline, hhi, n_assignees, n_patents, n_oa_institutions, n_papers
 FROM main_marts.mart_gap
-WHERE cluster_id = 'c_53';
--- Returns: c_53 | Lithographic Apparatus and Device Manufacturing | 1.0 | 1 | 155 | 0 | 0
+WHERE cluster_id = 'c_10';
+-- Returns: c_10 | Exposure Apparatus and Movable Device Manufacturing | 1.0 | 1 | 11 | 32 | 24
 ```
 
-**Note:** `n_oa_institutions = 0` and `n_papers = 0` for this cluster because the UMAP+HDBSCAN
-embedding placed all papers about EUV apparatus into neighbouring clusters (e.g. `c_135`, `c_162`,
-`c_173`, `c_174`) rather than here. The patents in this cluster have no co-located paper
-counterpart in the same cluster — a valid and honest result of the unsupervised clustering.
-The concentration finding is therefore stated without the institution-breadth comparison.
+**Caveat:** N = 11 patents is just above the ≥10 reportability floor — read as indicative, not conclusive, same caution as the prior version of this finding.
 
 ---
 
-## Finding 3 — Concentration gap: Neuromorphic Computing with Synaptic Devices
+## Finding 4 — Concentration gap: Neuromorphic Synaptic Devices
 
-**Cluster:** `c_228` — Neuromorphic Computing with Synaptic Devices
+**Cluster:** `c_141` — Neuromorphic Synaptic Devices
 **Metric:** Institution breadth (paper side) vs assignee concentration (patent side)
-**Value:** Research spans **610 distinct research institutions** (sub-org level, 762 papers);
-US patenting concentrates in **5 assignees** (10 patents, **HHI = 0.40**)
+**Value:** Research spans **850 distinct research institutions** (sub-org level, 1,148 papers);
+US patenting concentrates in **6 assignees** (11 patents, **HHI = 0.34**)
 
-> Research on neuromorphic computing with synaptic devices is produced by 610 distinct
-> research institutions globally (sub-org level — IBM Research Almaden and IBM Research Zürich
-> are counted separately; 762 English-language papers, 2012–2025). Yet US patent filings
-> in this cluster are concentrated in just 5 assignees, with a Herfindahl-Hirschman Index
-> of 0.40 — well above the 0.25 threshold typically considered "highly concentrated."
-> The gap between breadth of research activity and narrowness of US patent ownership
-> illustrates the core dynamic this atlas tracks.
+> Research on neuromorphic synaptic devices is produced by 850 distinct research
+> institutions globally (sub-org level — e.g. IBM Research Almaden and IBM Research
+> Zürich are counted separately; 1,148 English-language papers, 2012–2025). Yet US
+> patent filings in this cluster are concentrated in just 6 assignees, with a
+> Herfindahl-Hirschman Index of 0.34 — above the 0.25 threshold typically considered
+> "highly concentrated." The gap between breadth of research activity and narrowness
+> of US patent ownership illustrates the core dynamic this atlas tracks.
 
-**Reproducible query** (from `main_marts.mart_gap`):
+**Reproducible query:**
 ```sql
 SELECT cluster_id, tagline, hhi, n_assignees, n_patents,
        n_oa_institutions, n_research_orgs, n_papers
 FROM main_marts.mart_gap
-WHERE cluster_id = 'c_228';
--- Returns: c_228 | Neuromorphic Computing with Synaptic Devices | 0.4 | 5 | 10 | 610 | ~580 | 762
+WHERE cluster_id = 'c_141';
+-- Returns: c_141 | Neuromorphic Synaptic Devices | 0.34 | 6 | 11 | 850 | 778 | 1148
 ```
 
-**Caveat:** n_patents = 10 is at the minimum reportable threshold (≥10). This finding should be
-read as indicative rather than conclusive; a larger patent sample would strengthen it.
+**Caveat:** N = 11 patents is just above the ≥10 reportability floor — read as indicative, not conclusive.
 
 ---
 
-## Finding 4 — Slow-to-patent technology: Optical Semiconductor Waveguide Devices
+## Family-level headline numbers (`mart_family`, 3 families — see ARCHITECTURE.md §Data model)
 
-**Cluster:** `c_234` — Optical Semiconductor Waveguide Devices
-**Metric:** Median NPL-linked citation lag
-**Value:** **5.27 years** (N = 117 NPL-linked pairs)
+| Family | Papers | Patents | Patent share | Weighted median lag |
+|---|---|---|---|---|
+| EUV Lithography | 5,830 | 5,230 | 47.3% | 4.24 yr |
+| Silicon Photonics | 47,595 | 3,362 | 6.6% | 3.76 yr |
+| Neuromorphic & In-Memory Compute | 31,570 | 13,112 | 29.3% | 2.76 yr |
 
-> Optical semiconductor waveguide research takes a median of 5.27 years from publication
-> to appear cited in a US patent filing — nearly twice the lag seen in neuromorphic computing
-> (c_152: 2.75 yr). This variation across families suggests meaningful differences in
-> research-to-patent cycle time between domains, though the NPL citation mechanism
-> (a researcher citing a paper in a patent) is not equivalent to proof of causation.
-
-**Reproducible query** (from `main_marts.mart_gap`):
-```sql
-SELECT cluster_id, tagline, npl_median_lag_years, npl_n_links
-FROM main_marts.mart_gap
-WHERE cluster_id = 'c_234';
--- Returns: c_234 | Optical Semiconductor Waveguide Devices | 5.27 | 117
-```
+Note: these 3 families are the original Part 0 scope families (Silicon Photonics includes
+lasers; Neuromorphic & In-Memory Compute is merged) — not the 5-way split used in an
+earlier version of this project's UI design. See `MEMORY.md` for why.
 
 ---
 
@@ -122,8 +135,7 @@ WHERE cluster_id = 'c_234';
 
 | Finding | Cluster | Metric | Value | N |
 |---|---|---|---|---|
-| Fastest NPL lag | c_158 In-Memory Computing | citation lag | **2.17 yr** | 96 |
-| Typical NPL lag | c_152 Spiking Neuromorphic | citation lag | **2.75 yr** | 248 |
-| Slowest NPL lag | c_234 Optical Semiconductor Waveguide | citation lag | **5.27 yr** | 117 |
-| Extreme concentration | c_53 EUV Apparatus | HHI | **1.00** (1 assignee) | 155 patents |
-| Broad research, narrow patent | c_228 Neuromorphic Synaptic | gap | **610 research institutions (sub-org) / 5 assignees / HHI=0.40** | 10 patents |
+| Fastest NPL lag | c_121 In-Memory Computing with Resistive Devices | citation lag | **1.92 yr** | 21 |
+| Slowest NPL lag | c_188 Photonic Logic Gates and Optical Computing | citation lag | **6.77 yr** | 52 |
+| Extreme concentration | c_10 Exposure Apparatus and Movable Device Mfg | HHI | **1.00** (1 assignee) | 11 patents |
+| Broad research, narrow patent | c_141 Neuromorphic Synaptic Devices | gap | **850 institutions / 6 assignees / HHI=0.34** | 11 patents |

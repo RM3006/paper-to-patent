@@ -34,7 +34,7 @@ A curious teenager should grasp the map in 90 seconds. An R&D strategist or VC a
 
 ## Tech stack
 
-Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS · Cloudflare R2 · Parquet · DuckDB · dbt-core + dbt-duckdb · `polars` · `sentence-transformers` (`all-MiniLM-L6-v2`) · `umap-learn` + `hdbscan` · `rapidfuzz` · Streamlit · Plotly (`scattergl`) · Claude Haiku (cluster labels)
+Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS · Cloudflare R2 · Parquet · DuckDB · dbt-core + dbt-duckdb · `polars` · `sentence-transformers` (`all-MiniLM-L6-v2`) · `umap-learn` + `hdbscan` · `langdetect` · `rapidfuzz` · Streamlit · Plotly (`scattergl`) · Claude Haiku (cluster labels)
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for design rationale and [`ROADMAP.md`](ROADMAP.md) for the build plan.
 

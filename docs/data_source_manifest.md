@@ -330,7 +330,9 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `match_method` | String | One of: `native_id`, `seed_crosswalk`, `ror_bridge`, `fuzzy_high`, `ror` |
 | `confidence` | String | `high` (medium / low not present — `fuzzy_review` band was eliminated) |
 
-> **Verified 2026-06-22 (pre-ror_bridge):** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record. ROR bridge (added 2026-06-26) extends OA coverage for ~2,521 PV-only seeded orgs (IBM, Samsung Display, Micron, Carl Zeiss, SK Hynix, …); row counts updated after next Dagster run.
+> **Verified 2026-06-22 (pre-ror_bridge):** 3,262 PV assignees · 12,936 OA institutions → 16,198 crosswalk rows · 14,209 distinct org_ids. Fuzzy bridge: 1,160 fuzzy_high, 0 fuzzy_review. Seed: 43 PV matches (34 org_ids) · 3 OA explicit-ID matches (Stanford, MIT, IMEC). Precision = 1.00 on eval set. See `docs/er_eval_set.md` for the full quality record. ROR bridge (added 2026-06-26) extends OA coverage for ~2,521 PV-only seeded orgs (IBM, Samsung Display, Micron, Carl Zeiss, SK Hynix, …).
+>
+> **Verified 2026-07-04 (current):** 16,215 crosswalk rows · 14,179 distinct org_ids. Match method breakdown: `ror` 11,743 · `native_id` 2,559 · `fuzzy_high` 1,818 · `seed_crosswalk` 57 · `ror_bridge` 38. (A source-view bug briefly caused this table to silently union two snapshots, 32,413 rows with the June-22 snapshot's rows exactly duplicated plus 32 institutions — mostly UC campuses and IBM/Toshiba labs — carrying two conflicting `org_id`s; fixed by making the source macro resolve to the latest snapshot only, see `MEMORY.md`.) Precision has not been re-measured against `docs/er_eval_set.md` since the ror_bridge/fuzzy_high counts grew — worth a follow-up run.
 
 ---
 
@@ -373,6 +375,8 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `citation_lag_years` | Float | Rounded to 2 decimal places; **never called "lead time"** |
 
 > **Verified 2026-06-22**: 5,921 rows (after `publication_date < filing_date` filter in dbt), 2,973 distinct patents, 2,470 distinct works. Median citation lag ≈ 3.6 years. Top assignees by NPL links: GlobalFoundries (704), IBM (612), STMicroelectronics (177), ASML (99), MIT (95), Intel (95).
+>
+> **Verified 2026-07-04**: 5,749 rows (1,075 high/DOI + 4,674 medium/fuzzy), 2,896 distinct patents, 2,433 distinct works, median lag 3.13 years. Note: this reflects the *original* DOI/fuzzy-title matcher run intersected with the current (type-filtered, smaller) OpenAlex corpus via the inner joins in `fact_npl_link.sql` — the matcher itself (`npl_links_raw`) has not been re-run against the current corpus, so the precision/recall table above is not a fresh measurement. A re-run would be needed to confirm the 0.831 conditional precision still holds.
 
 ---
 
@@ -391,7 +395,11 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 
 > Embedding model: `all-MiniLM-L6-v2` (384-dim, CPU, `normalize_embeddings=True`, max 256 tokens). Text source: paper `abstract` (from `dim_paper`) and patent `title` (from `dim_patent` — `g_patent.tsv` does not include abstract text). UMAP: `n_neighbors=15`, `min_dist=0.1`, `metric='cosine'`, `random_state=42`. HDBSCAN: `min_cluster_size=50`, `metric='euclidean'` (on 2D UMAP coords).
 >
-> **Production run stats (2026-06-26):** 197,456 docs embedded (22.9% truncated at 256 tokens); 303 named clusters produced; noise rate **42.1%** (83,182 docs assigned `cluster_id = 'c_noise'`). High noise is attributed to (1) UMAP falling back to random initialisation (spectral eigengap failure on this corpus size) and (2) genuinely cross-cutting boundary documents that sit between technology families. **Pragmatic decision:** `c_noise` is labelled "Frontier / Unclustered" in the UI; noise docs retain UMAP coordinates and appear in the scatter map. The named clusters serve all Part 6 analytics without change. Re-tuning (`min_cluster_size=30` or `init='pca'`) is deferred to Part 7 if the map density is unsatisfactory.
+> **Embedding input quality gate (added 2026-07-04, `resolve_paper_text()` in `embeddings.py`):** before embedding, each paper is checked in order — (1) a version-style title ("libBigWig 0.1.5") excludes the document entirely, applied to patents too; (2) a placeholder abstract ("Abstract not provided.") or one under 50 characters falls back to the paper's title; (3) an abstract that `langdetect` detects as non-English falls back to title if the title itself is English, else excludes (OpenAlex's own `language` field was found unreliable — French/Italian/Catalan thesis abstracts were all tagged `en`); (4) otherwise the abstract is used as normal. Derived from inspecting three artifact clusters found by measuring cluster-family purity against each document's own CPC/topic tag.
+>
+> **Production run stats (2026-06-26, pre-quality-gate):** 197,456 docs embedded (22.9% truncated at 256 tokens); 303 named clusters produced; noise rate **42.1%** (83,182 docs).
+>
+> **Production run stats (2026-07-04, post-quality-gate, current):** 186,933 docs embedded (153,355 papers + 33,578 patents; 22.1% truncated); **237 named clusters** produced; noise rate **35.4%** (66,163 docs assigned `cluster_id = 'c_noise'`), down from 42.1% — the excluded/fallback text had been diffusing the whole embedding space, not just forming its own clusters. Mean cluster purity against each document's own CPC/topic-derived family: 94.2% (median 98.9%); the single worst cluster is 44.6%, and inspection confirms the remaining low-purity clusters are genuine technical overlap (e.g. resist chemistry shared between EUV and memory-device fabrication), not artifacts. `c_noise` remains labelled "Frontier / Unclustered" in the UI; noise docs retain UMAP coordinates and appear in the scatter map.
 
 **`cluster_terms`** — c-TF-IDF top terms per cluster (R2: `intermediate/cluster_terms/v{date}/cluster_terms.parquet`)
 
@@ -410,7 +418,7 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `summary_friendly` | String | 2–3 plain-English sentences describing the cluster |
 | `top_terms` | List[String] | Top c-TF-IDF terms (carried through from cluster_terms) |
 
-> Label generation: Claude `claude-haiku-4-5`, `max_tokens=256`. Prompt is grounded only in `top_terms` + 5 representative document titles — the model is explicitly forbidden from inventing information beyond the supplied evidence. `c_noise` receives a fixed label ("Frontier / Unclustered") with no API call. Spot-check quality target: ≥ 13/15 reviewed labels rated accurate (see `docs/cluster_label_review.md`).
+> Label generation: Claude `claude-haiku-4-5`, `max_tokens=256`. Prompt is grounded only in `top_terms` + 5 representative document titles — the model is explicitly forbidden from inventing information beyond the supplied evidence. `c_noise` receives a fixed label ("Frontier / Unclustered") with no API call. Spot-check quality target: ≥ 13/15 reviewed labels rated accurate — **current (2026-07-04, post-quality-gate) result: 13/15 (86.7%)**, passing but narrower than the pre-gate run's 14/15; see `docs/cluster_label_review.md` for the full breakdown, including one new confirmed failure (`c_15`, a generically-labelled cluster with off-domain content) not yet root-caused.
 
 **dbt mart models (Part 5)**
 
@@ -418,6 +426,7 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 |---|---|---|
 | `dim_technology_cluster` | `main_marts` | One row per cluster; `cluster_id` PK, `tagline`, `summary_friendly`, `top_terms` |
 | `fact_document_cluster` | `main_marts` | One row per document; `doc_id`, `doc_type`, `cluster_id`, `umap_x`, `umap_y`, `model_version` |
+| `seed_cluster_family` | `main_marts` | One row per cluster; `family_id` (3-way: `euv` / `silicon_photonics` / `neuromorphic_in_memory`), `family_name`, `family_sort_order`. Computed fresh each run via CPC/topic majority vote — **display label only**, not used for counting (see ARCHITECTURE.md §Data model). |
 
 `cluster_id` is denormalised onto `dim_paper`, `dim_patent`, `fact_publication`, and `fact_patent_filing` (left join from `fact_document_cluster`) to support cluster-filtered analytical queries without an extra join.
 
@@ -427,7 +436,7 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 
 **`mart_velocity`** (R2: `gold/marts/mart_velocity/`)
 
-Grain: `(cluster_id, year)`. Pure annual time series — paper and patent counts per cluster per year. Citation-lag metrics are in `mart_gap` (they are per-cluster scalars, not per-year). All 304 clusters × up to 14 years = 3,794 rows.
+Grain: `(cluster_id, year)`. Pure annual time series — paper and patent counts per cluster per year. Citation-lag metrics are in `mart_gap` (they are per-cluster scalars, not per-year). *(2026-06-26 figures: all 304 clusters × up to 14 years = 3,794 rows. Current, 2026-07-04: 238 clusters → 3,044 rows.)*
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -440,7 +449,7 @@ Grain: `(cluster_id, year)`. Pure annual time series — paper and patent counts
 
 **`mart_competitive`** (R2: `gold/facts/mart_competitive/`)
 
-Grain: `(cluster_id, side, org_id_key)`. 8,216 patent-side rows + 62,963 paper-side rows across 248 clusters (patent) / 284 clusters (paper).
+Grain: `(cluster_id, side, org_id_key)`. *(2026-06-26 figures: 8,216 patent-side rows + 62,963 paper-side rows across 248 / 284 clusters. Current, 2026-07-04: 7,491 patent-side rows + 60,949 paper-side rows.)*
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -458,7 +467,7 @@ Grain: `(cluster_id, side, org_id_key)`. 8,216 patent-side rows + 62,963 paper-s
 
 **`mart_gap`** (R2: `gold/marts/mart_gap/`)
 
-Grain: `cluster_id`. One row per cluster, 304 rows total. 161 clusters have `hhi_reportable = true`.
+Grain: `cluster_id`. *(2026-06-26 figures: 304 rows, 161 `hhi_reportable`. Current, 2026-07-04: 238 rows, 135 `hhi_reportable`.)*
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -482,4 +491,20 @@ Grain: `cluster_id`. One row per cluster, 304 rows total. 161 clusters have `hhi
 
 HHI methodology: primary assignee = `assignee_sequence = 0` preferred; patents with no org-type assignee resolved to crosswalk are excluded from shares (pct_unresolved = 1.6%). HHI = Σ(share²). Framing: concentration within US patents only — not a global geography comparison.
 
-43 clusters have `npl_reportable = true` (N ≥ 20 NPL links). Fastest lag: c_158 (2.17 yr, N=96). Slowest: c_234 (5.27 yr, N=117). Use `n_research_orgs` for breadth-vs-concentration comparisons; `n_oa_institutions` for fine-grained diversity counts.
+*(2026-06-26 figures: 43 clusters `npl_reportable = true`. Fastest lag: c_158, 2.17 yr, N=96. Slowest: c_234, 5.27 yr, N=117.)*
+**Current, 2026-07-04**: 32 clusters have `npl_reportable = true` (N ≥ 20 NPL links). Fastest: `c_121` "In-Memory Computing with Resistive Devices" (1.92 yr, N=21). Slowest: `c_188` "Photonic Logic Gates and Optical Computing" (6.77 yr, N=52). Cluster IDs are not stable across re-clustering runs, so `c_158`/`c_234` above no longer refer to the same content — always re-derive the fastest/slowest cluster from a live query rather than citing an ID from a prior run. Use `n_research_orgs` for breadth-vs-concentration comparisons; `n_oa_institutions` for fine-grained diversity counts.
+
+**`mart_family`** (R2: `gold/marts/mart_family/`)
+
+Grain: `family_id` — one row per one of the **3** headline families (`euv` / `silicon_photonics` / `neuromorphic_in_memory`; see the two-tier family tagging note in ARCHITECTURE.md §Data model). Aggregates `mart_gap` via `seed_cluster_family` for the map/cluster-browsing story — **not** the source of truth for per-document counts (those come from `fact_patent_filing.family_id` / `fact_publication.family_id` directly). Originally a 5-way split (adding `lasers` and splitting `in_memory` from `neuromorphic`); reverted 2026-07-04 after purity measurement showed the two extra seams were not real boundaries — see ARCHITECTURE.md and `MEMORY.md` for the full rationale.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `family_id` | String | PK: `euv` / `silicon_photonics` / `neuromorphic_in_memory` |
+| `family_name`, `family_sort_order` | String, Integer | Display name and fixed ordering |
+| `n_papers`, `n_patents` | Integer | Summed from `mart_gap` across the family's clusters |
+| `patent_share` | Float | `n_patents / (n_patents + n_papers)` |
+| `median_lag_years_weighted` | Float | NPL-linked citation lag, weighted by `npl_n_links` per contributing cluster |
+| `top_assignee_name`, `top_researcher_name` | String | Mode of each cluster's #1-ranked org within the family — an approximation; the UI's actual leaderboards use a `SUM(doc_count)` query against `mart_competitive` instead (see `apps/ui/data.py::load_family_top_orgs`), which is more accurate than this column |
+
+> **Verified 2026-07-04**: EUV — 5,830 papers, 5,230 patents, 47.3% patent share, 4.24 yr weighted lag. Silicon Photonics — 47,595 papers, 3,362 patents, 6.6% share, 3.76 yr lag. Neuromorphic & In-Memory — 31,570 papers, 13,112 patents, 29.3% share, 2.76 yr lag.

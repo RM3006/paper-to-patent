@@ -32,7 +32,7 @@ Rules that follow from it:
 
 ## Tech stack (fixed — ask before deviating)
 
-Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS (with `dagster-dbt`) · Cloudflare R2 · Parquet · DuckDB (embedded analytical warehouse) · dbt-core + dbt-duckdb · `polars` (not pandas) · `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) · `umap-learn` + `hdbscan` (BERTopic is an acceptable wrapper) · `scikit-learn` · `rapidfuzz` (ER fuzzy bridge; `splink` only if rapidfuzz precision on the eval set falls below 0.95) · Streamlit (Community Cloud) · `streamlit-searchbox` (ILIKE org search combobox) · Plotly (`scattergl`) · Claude Haiku for cluster labels.
+Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS (with `dagster-dbt`) · Cloudflare R2 · Parquet · DuckDB (embedded analytical warehouse) · dbt-core + dbt-duckdb · `polars` (not pandas) · `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) · `umap-learn` + `hdbscan` (BERTopic is an acceptable wrapper) · `scikit-learn` · `langdetect` (abstract-quality gate before embedding — see ROADMAP Part 5) · `rapidfuzz` (ER fuzzy bridge; `splink` only if rapidfuzz precision on the eval set falls below 0.95) · Streamlit (Community Cloud) · `streamlit-searchbox` (ILIKE org search combobox) · Plotly (`scattergl`) · Claude Haiku for cluster labels.
 
 **Deliberately not in the stack** (divergence from prior projects — reasons in `ARCHITECTURE.md`):
 - **No managed warehouse** (MotherDuck / Snowflake / BigQuery). The served dataset is single-digit MB and the whole corpus is ~1–2 GB; DuckDB over R2 Parquet covers both build and serve. A managed warehouse would add a service, a credential, and a usage cap without solving a problem at this scale.

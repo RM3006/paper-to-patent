@@ -52,7 +52,7 @@ Raw data lands as Parquet in R2. The PatentsView side uses bulk TSV downloads (n
 | Data lake | Cloudflare R2, Parquet |
 | Warehouse + transform | DuckDB, dbt-core + dbt-duckdb |
 | Entity resolution | rapidfuzz (splink only if eval set demands it) |
-| ML / NLP | sentence-transformers (all-MiniLM-L6-v2), umap-learn, hdbscan, scikit-learn |
+| ML / NLP | sentence-transformers (all-MiniLM-L6-v2), umap-learn, hdbscan, scikit-learn, langdetect (embedding quality gate) |
 | LLM | Anthropic Claude Haiku |
 | Serving | Streamlit (Community Cloud), Plotly (scattergl), DuckDB read path, streamlit-searchbox (ILIKE org search) |
 <!-- /MAINTAINED -->
@@ -109,7 +109,7 @@ Raw data lands as Parquet in R2. The PatentsView side uses bulk TSV downloads (n
 2b. **ROR bridge** (`ror_bridge` asset) — for seeded PV orgs that still have no OpenAlex entry after layers 1–2a (2,521 orgs including IBM, Samsung Display, Micron, Carl Zeiss, SK Hynix). Queries the OpenAlex Institutions API by canonical name. Accepts an institution if every normalized token in the canonical name appears in the result's display name (`canonical_tokens ⊆ result_tokens`). More-specific orgs (Samsung Display, 2 tokens) are processed before less-specific parents (Samsung, 1 token) to prevent parent absorption. `match_method = ror_bridge`, `confidence = high`. Root cause this layer closes: first-token blocking in the fuzzy bridge prevents acronym/full-name pairs from ever being compared (e.g. "International Business Machines Corporation" → block "international"; "IBM Research - Almaden" → block "ibm").
 3. **Fuzzy bridge** — first-token blocking + `rapidfuzz` token-set ratio. **Only score = 100 is accepted** (`fuzzy_high`). `token_set_ratio = 100` means one name's token set is a strict subset of the other's — the only safe matching criterion. Scores 90–99 were empirically found to be false positives (e.g. "University of Southampton" ↔ "University of Roehampton" scored 89.8, "National Institute of Standards and Technology" ↔ "National Eye Institute" scored 90.1). The `fuzzy_review` band is not used.
 
-Quality is measured against a hand-labelled eval set (`docs/er_eval_set.md`). Verified 2026-06-22: all 10 Tier-3 non-match pairs correctly excluded; all 1,160 accepted rows at exactly score=100; precision = 1.00.
+Quality is measured against a hand-labelled eval set (`docs/er_eval_set.md`). Verified 2026-06-22 (score=100 rule): all 10 Tier-3 non-match pairs correctly excluded; precision = 1.00. Crosswalk size as of 2026-07-04 (post ROR-bridge, post a fix to a source-view bug that had briefly double-counted an earlier snapshot): 16,215 rows / 14,179 distinct `org_id`s (native_id 2,559 · ror 11,743 · fuzzy_high 1,818 · seed_crosswalk 57 · ror_bridge 38).
 
 **Considered.** Exact match after normalisation only; `splink` as the primary fuzzy engine; embedding-based name similarity; a commercial entity-resolution API; a purely manual crosswalk; a `fuzzy_review` band with manual resolution.
 
@@ -128,13 +128,17 @@ Quality is measured against a hand-labelled eval set (`docs/er_eval_set.md`). Ve
 
 ## 8. Semantic clustering & labelling
 
-**Used.** `all-MiniLM-L6-v2` (384-dim) embeddings computed on CPU → UMAP to 2D → HDBSCAN clustering → c-TF-IDF top terms per cluster → Claude Haiku writes a human-readable family name (`tagline`) and a plain-English description (`summary_friendly`). BERTopic is an acceptable wrapper for exactly this stack.
+**Used.** `all-MiniLM-L6-v2` (384-dim) embeddings computed on CPU → UMAP to 2D → HDBSCAN clustering → c-TF-IDF top terms per cluster → Claude Haiku writes a human-readable family name (`tagline`) and a plain-English description (`summary_friendly`). BERTopic is an acceptable wrapper for exactly this stack. Before embedding, a quality gate (`resolve_paper_text` in `embeddings.py`) falls a paper back to its title, or excludes it entirely, when its abstract can't be trusted as real content — see "Embedding input quality gate" below.
 
 **Considered.** K-Means; LDA / classical topic models; larger embedding models (e5, GTE) on a GPU; raw cluster IDs with no labels; a CPC-only manual taxonomy.
 
 **Why.** K-Means forces spherical, equal-ish clusters, needs a preset *k*, and produces no labels — wrong for organic, uneven technology families. UMAP + HDBSCAN finds variable-density clusters and gives a principled noise bucket (surfaced honestly in the UI as a "frontier / unclustered" zone); c-TF-IDF extracts the defining terms; Haiku turns those terms into names a non-expert can read — the readability requirement is that a person sees "EUV lithography", never "cluster 23". `all-MiniLM-L6-v2` is small enough to run on CPU in minutes; a larger model would force a GPU (and Modal) for marginal quality gain at this scale, which the constraints rule out. CPC codes alone are a rigid human taxonomy that misses cross-cutting and emerging families, so clustering complements rather than replaces them.
 
-**Production run (2026-06-26).** 197,456 docs → 303 named clusters + `c_noise`. Spot-check: 14/15 labels rated accurate (93.3%). Noise rate: **42.1% (83,182 docs)**. This is higher than ideal and has two likely causes: (1) UMAP fell back to random initialisation (spectral eigenvector solver failed on the eigengap), producing a more diffuse 2D layout; (2) the corpus spans three broad technology families whose boundary documents (e.g. a paper combining silicon photonics and neuromorphic computing) sit in low-density interstitial space and get no cluster assignment. The 303 named clusters are high-quality precisely because HDBSCAN was strict. **Decision:** treat `c_noise` as a named zone ("Frontier / Unclustered") in the UI rather than re-tuning — the named clusters serve all Part 6 analytics, and the noise documents still have UMAP coordinates and appear in the scatter map. Potential re-tune (lower `min_cluster_size` to 30, or fix UMAP init to `pca`) is noted for Part 7 if the map feels too sparse.
+**Embedding input quality gate (added 2026-07-04).** Measuring cluster-family purity against each document's own CPC/topic tag surfaced several artifact clusters formed from non-content text rather than genuine cross-topic overlap: a cluster of papers whose abstract was the literal placeholder string "Abstract not provided.", a cluster of French/Italian/Catalan PhD thesis abstracts all mistagged `language: en` by OpenAlex, and a cluster mixing conference-abstract placeholders, journal editorials, and mistagged bioinformatics-software release notes. `resolve_paper_text()` now runs four checks in order per paper (version-style title → exclude; placeholder or <50-char abstract → fall back to title; non-English abstract via `langdetect` → fall back to title if the title itself is English, else exclude; otherwise use the abstract) and applies the version-style-title check to patents too. All three source clusters are confirmed gone from the next run with no similar artifact taking their place.
+
+**Production run (2026-07-04, post quality-gate).** 186,933 docs → 237 named clusters + `c_noise`. Noise rate: **35.4% (66,163 docs)**, down from 42.6% in the pre-gate run — the excluded/fallback text had been diffusing the embedding space generally, not just forming its own clusters. Mean cluster purity against each document's own family tag: 94.2% (median 98.9%); the worst cluster is 44.6%, and inspection shows the remaining low-purity clusters are genuine technical overlap (e.g. resist chemistry shared between EUV and memory-device fabrication), not artifacts. **Decision (unchanged):** `c_noise` remains a named zone ("Frontier / Unclustered") in the UI rather than a target for further re-tuning — noise documents retain UMAP coordinates and appear in the scatter map.
+
+**Cluster → family assignment (revised 2026-07-04).** Cluster IDs are not stable across re-clustering runs (confirmed live: the same `cluster_id` held entirely different content before and after this run), so cluster-level family labelling is now computed fresh each run rather than read from a hand-maintained mapping — see the Data model section below for the two-tier family scheme this motivated.
 
 ## 9. Serving & presentation
 
@@ -158,9 +162,13 @@ A star schema in the marts layer. Conformed dimensions are shared across the fac
 - `dim_cpc` — CPC subclass reference for human-readable classification.
 - `dim_technology_cluster` — one row per cluster; `tagline`, `summary_friendly`, `top_terms` (populated in Part 5).
 
+**Two-tier family tagging (revised 2026-07-04).** Family assignment exists at two grains, deliberately not one:
+- **Document-level, 5-way, authoritative for counting** — `fact_patent_filing.family_id` and `fact_publication.family_id` classify each patent/paper directly from its *own* CPC prefix or OpenAlex topic (euv / si_photonics / lasers / neuromorphic / in_memory), independent of whichever cluster it algorithmically landed in. Every patent-share, HHI, or leaderboard number is computed from this column.
+- **Cluster-level, 3-way, display only** — `seed_cluster_family` labels each *cluster as a whole* using the original Part 0 scope families (`euv` / `silicon_photonics`, which now includes lasers / `neuromorphic_in_memory`, merged) for map colour and cluster cards. It was originally a 5-way split matching the document-level scheme, but measuring purity showed ~44% of clusters were a genuine Lasers↔SiPhotonics or Neuromorphic↔InMemory mix — the same two seams where Part 7's 5-way UI split had cut through what Part 0 originally scoped as one family. Reverting the *cluster* label to 3 (while keeping the *document* label at 5) removed that forced-partition problem without losing per-document precision. Recomputed fresh every dbt run from CPC/topic majority vote (not a hand-maintained CSV) since cluster IDs are not stable across re-clustering runs.
+
 **Facts**
-- `fact_publication` — grain: paper. Measures + foreign keys to org, cluster, time.
-- `fact_patent_filing` — grain: patent filing. Filing-date anchored; FKs to org, CPC, cluster, time.
+- `fact_publication` — grain: (paper, institution). FKs to org, cluster, time. `family_id`: this paper's own direct family (see above).
+- `fact_patent_filing` — grain: (patent, assignee). Filing-date anchored; FKs to org, CPC, cluster, time. `family_id`: this patent's own direct family (see above).
 - `fact_patent_citation` — grain: patent→patent citation edge.
 - `fact_npl_link` — grain: patent→paper edge from NPL citations; carries `match_method` (`npl_citation`) and `confidence`.
 - `fact_document_cluster` — grain: document; `cluster_id`, `umap_x`, `umap_y`, `model_version`.
@@ -173,6 +181,7 @@ A star schema in the marts layer. Conformed dimensions are shared across the fac
 - `mart_velocity` — per cluster: research-onset vs patent-onset series + median **citation lag** (paper `publication_date` → citing patent `filing_date`), computed the NPL-linked way and (separately, labelled) the soft cohort way.
 - `mart_competitive` — per cluster: assignees capturing IP vs institutions producing research, with counts and shares.
 - `mart_gap` — per cluster: HHI (Herfindahl-Hirschman Index) over primary US patent assignees + institution count of global research contributors. Country diversity is out of scope — `country_code` was not ingested at Part 1. The story is "researched broadly, patented narrowly" measured as concentration within US patents only.
+- `mart_family` — one row per one of the 3 headline families (see two-tier tagging above): papers, patents, patent share, weighted median citation lag, top assignee/researcher. Aggregates `mart_gap` via `seed_cluster_family`; family-level counts are for the map/cluster-browsing story, not the authoritative per-document counts (those come straight from `fact_patent_filing`/`fact_publication.family_id`).
 
 **Canonical query** — `models/queries/idea_journey.sql` returns, for an `org_id` or topic, its papers, its patents, and the NPL links between them; it is the integration check used throughout the build.
 <!-- /MAINTAINED -->
