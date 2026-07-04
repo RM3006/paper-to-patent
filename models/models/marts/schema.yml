@@ -108,6 +108,17 @@ models:
         description: NULL when institution has no crosswalk entry
       - name: cluster_id
         description: FK → dim_technology_cluster.cluster_id; NULL before Part 5 ML pipeline runs
+      - name: family_id
+        description: >
+          This paper's OWN direct family (euv/si_photonics/lasers/neuromorphic/
+          in_memory), from its own primary_topic_id (T10502 broken by a keyword
+          match on this paper's own title+abstract). Independent of cluster
+          membership -- the authoritative column for family-level counting.
+          NULL when unresolvable.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
 
   - name: fact_patent_filing
     description: >
@@ -121,6 +132,16 @@ models:
         tests: [not_null]
       - name: cluster_id
         description: FK → dim_technology_cluster.cluster_id; NULL before Part 5 ML pipeline runs
+      - name: family_id
+        description: >
+          This patent's OWN direct family (euv/si_photonics/lasers/neuromorphic/
+          in_memory), from its own primary_cpc prefix. Independent of cluster
+          membership -- the authoritative column for family-level counting.
+          NULL when its primary_cpc doesn't match any of the 5 prefixes.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
 
   - name: fact_patent_citation
     description: Patent-to-patent citation edges for scope patents.
@@ -214,6 +235,36 @@ models:
       - name: paper_count
         tests: [not_null]
       - name: patent_count
+        tests: [not_null]
+
+  - name: seed_cluster_family
+    description: >
+      Cluster → DISPLAY family assignment, using the original 3 Part 0 scope
+      families (euv / silicon_photonics / neuromorphic_in_memory) + adjacent.
+      Computed fresh every dbt run from CPC group prefix (patents) and OpenAlex
+      primary_topic_id (papers). Reverted from an earlier 5-way split (2026-07-04):
+      purity measurement showed ~44% of clusters genuinely mix Lasers with Silicon
+      Photonics or Neuromorphic with In-Memory content, so a 5-way cluster label
+      would misattribute a meaningful share of documents. This table is a display
+      label for the cluster as a whole (map colour, cluster card) -- it is NOT
+      used for family-level counting. fact_patent_filing.family_id and
+      fact_publication.family_id carry each document's own direct family (5-way)
+      and are the authoritative source for any patent-share, HHI, or leaderboard
+      number.
+    columns:
+      - name: cluster_id
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: family_id
+        tests: [not_null]
+      - name: family_name
+        tests: [not_null]
+      - name: family_sort_order
         tests: [not_null]
 
   - name: mart_family

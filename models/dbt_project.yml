@@ -15,16 +15,6 @@ clean-targets: ["target", "dbt_packages"]
 on-run-start:
   - "{{ create_external_sources() }}"
 
-seeds:
-  paper_to_patent:
-    +schema: marts
-    seed_cluster_family:
-      +column_types:
-        cluster_id: varchar
-        family_id: varchar
-        family_name: varchar
-        family_sort_order: integer
-
 models:
   paper_to_patent:
     staging:
