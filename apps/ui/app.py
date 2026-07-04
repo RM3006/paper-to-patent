@@ -50,13 +50,31 @@ hr { border-color: #e6e6e6 !important; }
 [data-testid="stSidebarNav"] a p  { color: #111111 !important; }
 [data-testid="stSidebarNav"] a:hover { background: #f5f5f5; }
 
-.card {
-    background: #ffffff;
-    border: 1px solid #e6e6e6;
-    border-radius: 10px;
-    padding: 20px 22px;
-    margin-bottom: 4px;
+/* .card / .card-tag / .card-stat / .family-explore come from render.py's
+   render_nav(), shared by every page. */
+
+/* Family row: same .card shell, fixed-height flex layout, accent threaded via --accent
+   (set inline per family) instead of repeating the family color across every child.
+   Selector is ".card.card--family" (not just ".card--family") so these properties
+   always beat .card's, regardless of which <style> block happens to load last --
+   .card comes from render.py's render_nav(), .card--family from here; their relative
+   order is not something this file controls. */
+.card.card--family {
+    height: 144px;
+    box-sizing: border-box;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    border-color: var(--accent-border, #e6e6e6);
 }
+.card.card--family.is-highlighted {
+    box-shadow: 0 0 0 4px var(--accent-glow, transparent);
+}
+.card--family .card-title    { color: var(--accent); }
+.card--family .card-tile-pct { background: var(--accent); }
+/* .card-stat and .family-explore already resolve var(--accent) generically (render.py). */
 
 [data-testid="stVerticalBlockBorderWrapper"] {
     background: #ffffff;
@@ -69,16 +87,6 @@ hr { border-color: #e6e6e6 !important; }
     background: #ffffff;
     border-right: 1px solid #e6e6e6;
 }
-
-.family-explore {
-    font-size: 14px;
-    font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-    transition: opacity 0.18s ease;
-    white-space: nowrap;
-}
-.family-explore:hover { opacity: 0.55; }
 
 /* Default button: borderless nav link. */
 [data-testid="stButton"] button {
@@ -98,7 +106,7 @@ hr { border-color: #e6e6e6 !important; }
 /* Primary: solid ink (overridden per family for Explore buttons). */
 [data-testid="stButton"] button[kind="primary"] {
     justify-content: center;
-    padding: 0.5rem 1.3rem;
+    padding: 0.5rem 1.4rem;
     border: 1px solid #111111;
     border-radius: 8px;
     font-weight: 700;
@@ -116,7 +124,7 @@ hr { border-color: #e6e6e6 !important; }
 /* Secondary: outlined. */
 [data-testid="stButton"] button[kind="secondary"] {
     justify-content: center;
-    padding: 0.5rem 1.3rem;
+    padding: 0.5rem 1.4rem;
     border: 1px solid #111111;
     border-radius: 8px;
     font-weight: 700;
@@ -144,45 +152,42 @@ def _html_family_card(
     pct = (row["patent_share"] or 0.0) * 100
     lag = row["median_lag_years_weighted"]
     lag_str = f"{lag:.1f} yr" if lag is not None else "—"
-    glow = f"box-shadow:0 0 0 4px {color}44;" if highlighted else ""
+    card_cls = "card card--family is-highlighted" if highlighted else "card card--family"
+    accent_vars = f"--accent:{color};--accent-border:{color}55;--accent-glow:{color}44;"
 
     pat_html = _org_rows(top_orgs.get("patent", []), color)
     res_html = _org_rows(top_orgs.get("paper", []), color)
     desc = _FAMILY_DESC.get(fid, "")
 
     return (
-        f"<div style='height:144px;box-sizing:border-box;border:1px solid #e6e6e6;"
-        f"border-radius:10px;padding:16px;display:flex;align-items:center;"
-        f"justify-content:space-between;"
-        f"background:#ffffff;margin-bottom:0.75rem;{glow}'>"
+        f"<div class='{card_cls}' style='{accent_vars}'>"
         f"<div style='flex:0 0 400px;display:flex;flex-direction:column;"
         f"justify-content:center;'>"
-        f"<div style='font-family:{_FONT};font-size:16px;font-weight:700;"
-        f"letter-spacing:.07em;text-transform:uppercase;color:{color};"
-        f"margin-bottom:6px;'>{row['family_name']}</div>"
+        f"<div class='card-title' style='font-family:{_FONT};font-size:16px;font-weight:700;"
+        f"letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px;'>{row['family_name']}</div>"
         f"<div style='font-size:12px;color:#888888;line-height:1.5;'>{desc}</div>"
         f"</div>"
         f"<div style='flex-shrink:0;display:grid;"
         f"grid-template-columns:104px 104px;grid-template-rows:48px 48px;gap:8px;'>"
-        f"<div style='background:{color};border-radius:10px;"
+        f"<div class='card-tile-pct' style='border-radius:10px;"
         f"display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
         f"<div style='font-family:{_FONT};font-size:18px;font-weight:800;"
         f"color:#ffffff;line-height:1;'>{pct:.0f}%</div>"
         f"<div style='font-size:9px;color:rgba(255,255,255,0.75);margin-top:3px;white-space:nowrap;'>patent share</div>"
         f"</div>"
         f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
-        f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
-        f"color:{color};line-height:1;'>{row['n_patents']:,}</div>"
+        f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
+        f"line-height:1;'>{row['n_patents']:,}</div>"
         f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>granted US patents</div>"
         f"</div>"
         f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
-        f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
-        f"color:{color};line-height:1;'>{lag_str}</div>"
+        f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
+        f"line-height:1;'>{lag_str}</div>"
         f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>citation lag</div>"
         f"</div>"
         f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
-        f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
-        f"color:{color};line-height:1;'>{row['n_papers']:,}</div>"
+        f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
+        f"line-height:1;'>{row['n_papers']:,}</div>"
         f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>papers</div>"
         f"</div>"
         f"</div>"
@@ -200,7 +205,7 @@ def _html_family_card(
         f"</div>"
         f"<div style='flex:0 0 auto;display:flex;align-items:center;padding:0 32px 0 16px;'>"
         f"<a href='/Family?family={fid}' target='_self'"
-        f" class='family-explore' style='color:{color};'>Explore family →</a>"
+        f" class='family-explore'>Explore family →</a>"
         f"</div>"
         f"</div>"
     )

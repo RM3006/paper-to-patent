@@ -34,11 +34,6 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&display=swap');
 .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
-.family-explore {
-    font-size: 14px; font-weight: 600; text-decoration: underline;
-    text-underline-offset: 3px; transition: opacity 0.18s ease; white-space: nowrap;
-}
-.family-explore:hover { opacity: 0.55; }
 .st-key-cluster_pat_scroll,
 .st-key-cluster_res_scroll {
     border: 1px solid #e6e6e6 !important;
@@ -201,12 +196,11 @@ if selected_cluster_id:
 
         # ── Header card ──────────────────────────────────────────────────────────────
         st.markdown(
-            f"<div style='border:1px solid #e6e6e6;border-radius:10px;"
-            f"padding:20px 24px;margin-top:1rem;margin-bottom:0.75rem;background:#ffffff;"
-            f"display:flex;justify-content:space-between;align-items:flex-start;'>"
+            f"<div class='card' style='margin-top:1rem;display:flex;"
+            f"justify-content:space-between;align-items:flex-start;--accent:{family_color};'>"
             f"<div style='flex:1;min-width:0;padding-right:32px;'>"
-            f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-            f"text-transform:uppercase;color:{family_color};margin-bottom:6px;'>"
+            f"<div class='card-tag' style='font-size:10px;font-weight:700;letter-spacing:.07em;"
+            f"text-transform:uppercase;margin-bottom:6px;'>"
             f"{family_label}</div>"
             f"<div style='font-family:{_FONT};font-size:18px;font-weight:700;"
             f"color:#111111;margin-bottom:2px;'>{crow['tagline']}</div>"
@@ -215,7 +209,7 @@ if selected_cluster_id:
             f"<div style='font-size:13px;color:#555555;line-height:1.6;'>{summary}</div>"
             f"</div>"
             f"<a href='/Family?family={family_id}' target='_self'"
-            f" class='family-explore' style='color:{family_color};flex-shrink:0;'>"
+            f" class='family-explore' style='flex-shrink:0;'>"
             f"Explore family →</a>"
             f"</div>",
             unsafe_allow_html=True,
@@ -234,12 +228,9 @@ if selected_cluster_id:
         for col, value, label in _metrics:
             with col:
                 st.markdown(
-                    f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
-                    f"padding:18px 8px;text-align:center;height:90px;"
-                    f"display:flex;flex-direction:column;align-items:center;"
-                    f"justify-content:center;'>"
-                    f"<div style='font-family:{_FONT};font-size:28px;font-weight:800;"
-                    f"color:{family_color};line-height:1;'>{value}</div>"
+                    f"<div class='card card--metric' style='--accent:{family_color};'>"
+                    f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
+                    f"font-weight:800;line-height:1;'>{value}</div>"
                     f"<div style='font-size:12px;color:#888888;margin-top:6px;"
                     f"white-space:nowrap;'>{label}</div>"
                     f"</div>",
@@ -247,7 +238,7 @@ if selected_cluster_id:
                 )
 
         # ── Top patenters / researchers bar charts ────────────────────────────────────
-        st.markdown("<div style='margin-top:0.75rem;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
         col_pat, col_res = st.columns(2)
 
         pat_df = load_top_orgs((selected_cluster_id,), "patent", 30)

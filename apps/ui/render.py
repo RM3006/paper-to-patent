@@ -101,7 +101,7 @@ def render_tour_banner(page_step: int) -> None:
         "<style>"
         ".st-key-tour_card {"
         "  background:#fdf6e3;border:1px solid #ecdfb8;"
-        "  border-radius:10px;padding:4px 22px 18px;margin-bottom:1.2rem;"
+        "  border-radius:10px;padding:4px 26px 22px;margin-bottom:1rem;"
         "}"
         ".st-key-tour_nav {"
         "  display:flex;flex-direction:row;justify-content:flex-end;"
@@ -131,11 +131,20 @@ def render_tour_banner(page_step: int) -> None:
         col_label, col_nav = st.columns([3, 1], vertical_alignment="center")
         with col_label:
             st.markdown(
-                f"<span style='color:#888888;font-size:0.72rem;font-weight:700;"
-                f"text-transform:uppercase;letter-spacing:0.1em;'>"
-                f"Guided tour · {progress_label(page_step)}</span>",
+                f"<div style='color:#888888;font-size:0.72rem;font-weight:700;"
+                f"text-transform:uppercase;letter-spacing:0.12em;'>"
+                f"Guided tour · {progress_label(page_step)}</div>",
                 unsafe_allow_html=True,
             )
+        def _end_tour() -> None:
+            """Leave the tour and return to whichever page it was started from."""
+            st.session_state["tour_step"] = None
+            return_page = st.session_state.pop("tour_return_page", "app.py")
+            if return_page == TOUR_STEPS[page_step].page_file:
+                st.rerun()
+            else:
+                st.switch_page(return_page)
+
         with col_nav, st.container(key="tour_nav"):
             if not is_first_step(page_step):
                 prev_page = TOUR_STEPS[page_step - 1].page_file
@@ -145,19 +154,17 @@ def render_tour_banner(page_step: int) -> None:
             finish_label = "Finish →" if is_last_step(page_step) else "Next →"
             if st.button(finish_label, key="tour_next", type="primary"):
                 if is_last_step(page_step):
-                    st.session_state["tour_step"] = None
-                    st.rerun()
+                    _end_tour()
                 else:
                     st.session_state["tour_step"] = page_step + 1
                     st.switch_page(TOUR_STEPS[page_step + 1].page_file)
             if st.button("Exit tour", key="tour_exit", type="secondary"):
-                st.session_state["tour_step"] = None
-                st.rerun()
+                _end_tour()
 
         st.markdown(
             f"<div style='font-family:{_font};font-weight:700;font-size:1rem;"
-            f"color:#111111;margin-bottom:6px;margin-top:-10px;'>{step.title}</div>"
-            f"<div style='color:#111111;font-size:0.9rem;line-height:1.6;'>"
+            f"color:#111111;margin-bottom:6px;'>{step.title}</div>"
+            f"<div style='color:#111111;font-size:0.95rem;line-height:1.55;'>"
             f"{step.narration}</div>",
             unsafe_allow_html=True,
         )
@@ -171,6 +178,9 @@ def render_nav(active: str) -> None:
     _font = '"Space Grotesk", -apple-system, system-ui, sans-serif'
 
     # Suppress decoration stripe, toolbar colour, auto page nav, and sidebar toggle.
+    # Also defines the shared .card family, used on every page. Dynamic per-instance
+    # color (family, org...) goes through --accent / --accent-border, set inline on
+    # the card root -- never baked into the class itself.
     st.markdown(
         "<style>"
         "[data-testid='stDecoration'] { display: none !important; }"
@@ -181,6 +191,31 @@ def render_nav(active: str) -> None:
         "[data-testid='stExpandSidebarButton'] { display: none !important; }"
         "[data-testid='collapsedControl'] { display: none !important; }"
         "[data-testid='stSidebarCollapsedControl'] { display: none !important; }"
+        ".card {"
+        "  background:#ffffff;border:1px solid #e6e6e6;border-radius:10px;"
+        "  padding:22px 26px;margin-bottom:1rem;"
+        "}"
+        ".card-tag  { color: var(--accent, #888888); }"
+        ".card-stat { color: var(--accent, #111111); }"
+        ".family-explore {"
+        "  font-size:14px;font-weight:600;text-decoration:underline !important;"
+        "  text-underline-offset:3px;transition:opacity 0.18s ease;"
+        "  white-space:nowrap;color:var(--accent, #111111) !important;"
+        "}"
+        ".family-explore:hover { opacity: 0.55; }"
+        ".card.card--metric {"
+        "  height:90px;padding:18px 8px;text-align:center;display:flex;"
+        "  flex-direction:column;align-items:center;justify-content:center;"
+        "  border-radius:8px;"
+        "}"
+        ".card.card--row {"
+        "  height:48px;box-sizing:border-box;padding:0 10px;border-radius:6px;"
+        "  margin-bottom:4px;display:flex;flex-direction:column;justify-content:center;"
+        "}"
+        ".card.card--identity {"
+        "  border-radius:6px;padding:16px 18px;"
+        "  border-color:var(--accent-border, #e6e6e6);"
+        "}"
         "</style>",
         unsafe_allow_html=True,
     )
@@ -201,9 +236,21 @@ def render_nav(active: str) -> None:
     with col_cta:
         if st.session_state.get("tour_step") is None:
             if st.button("Take the 90-second tour", key=f"_hdr_tour_{active}", type="primary"):
+                from tour import TOUR_STEPS
+
+                # TOUR_STEPS is ordered Overview, Map, Family, Org, Trace -- same
+                # order as the tab strip below -- so this label lookup stays valid
+                # as long as both lists list pages in that order.
+                _nav_labels = [
+                    "Overview", "Technology Landscape", "Family Deepdive",
+                    "Organisation Profile", "Trace a Paper",
+                ]
                 st.session_state["tour_step"] = 0
+                st.session_state["tour_return_page"] = TOUR_STEPS[_nav_labels.index(active)].page_file
                 if active != "Overview":
                     st.switch_page("app.py")
+                else:
+                    st.rerun()
 
     # ── Tab strip ──────────────────────────────────────────────────────────────
     _tabs = [

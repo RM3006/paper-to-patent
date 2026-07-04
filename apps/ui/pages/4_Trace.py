@@ -41,6 +41,12 @@ st.markdown("""
 .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 .js-plotly-plot .plotly .cursor-crosshair { cursor: default !important; }
 .js-plotly-plot .cartesianlayer .spikeline { display: none !important; }
+
+/* Insight callout: thinner than Streamlit's default st.info padding, so it reads
+   as a quiet caption rather than a competing focal point (matches human-protein-atlas). */
+.st-key-atlas_insight [data-testid="stAlertContainer"] {
+    padding-top: 0.5rem; padding-bottom: 0.5rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -125,9 +131,10 @@ topic_html = f"<span style='color:#aaaaaa;margin-left:8px;'>· {topic}</span>" i
 
 # ── Paper description card (full width) ──────────────────────────────────────
 st.markdown(
-    f"<div style='border:1px solid {family_color}55;border-radius:6px;padding:16px 18px;margin-bottom:1rem;'>"
-    f"<div style='font-size:9px;font-weight:700;letter-spacing:.08em;"
-    f"text-transform:uppercase;color:{family_color};margin-bottom:6px;'>"
+    f"<div class='card card--identity' "
+    f"style='--accent:{family_color};--accent-border:{family_color}55;'>"
+    f"<div class='card-tag' style='font-size:9px;font-weight:700;letter-spacing:.08em;"
+    f"text-transform:uppercase;margin-bottom:6px;'>"
     f"Research Paper · {pub_year} · {family_label}</div>"
     f"<div style='font-family:{_FONT};font-size:15px;font-weight:700;color:#111111;"
     f"line-height:1.4;margin-bottom:8px;'>{paper['title']}</div>"
@@ -147,12 +154,9 @@ for _col, _val, _lbl in [
 ]:
     with _col:
         st.markdown(
-            f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
-            f"padding:18px 8px;text-align:center;height:90px;"
-            f"display:flex;flex-direction:column;align-items:center;"
-            f"justify-content:center;margin-bottom:1.5rem;'>"
-            f"<div style='font-family:{_FONT};font-size:28px;font-weight:800;"
-            f"color:{family_color};line-height:1;'>{_val}</div>"
+            f"<div class='card card--metric' style='margin-bottom:1.5rem;--accent:{family_color};'>"
+            f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
+            f"font-weight:800;line-height:1;'>{_val}</div>"
             f"<div style='font-size:12px;color:#888888;margin-top:6px;"
             f"white-space:nowrap;'>{_lbl}</div>"
             f"</div>",
@@ -172,7 +176,8 @@ st.markdown(
 )
 
 if n_citing == 0:
-    st.info("No citing patents found in the current NPL link set.")
+    with st.container(key="atlas_insight"):
+        st.info("No citing patents found in the current NPL link set.")
 else:
     links = links_df.to_dicts()
     links_with_lag = [

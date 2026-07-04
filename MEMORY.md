@@ -205,6 +205,26 @@ If the sidebar contains a widget whose options come from a DB query (e.g. a clus
 4. Velocity chart: papers vs patents over time; trailing N years dotted/faded where N = `round(median_lag_years_weighted)` (dynamic provisional window)
 5. Cluster breakdown table: `st.dataframe`, sorted by patents descending, `help=` tooltips on Lag and HHI columns, map link right-aligned above the table
 
+### `.card` family is centralized in render.py, not app.py
+
+`.card`, `.card-tag`, `.card-stat`, `.family-explore`, `.card--metric`, `.card--row`, `.card--identity` are defined once in `render.py`'s `render_nav()`, which every page (`app.py` + all 4 `pages/*.py`) already calls. They used to live only in `app.py`'s local `_CSS`, which meant they were invisible on the other 4 pages — Streamlit does not re-run `app.py` when navigating to a `pages/` script, so anything injected only there never reached the rest of the site. Page-specific modifiers (`.card--family`, used only by the Overview family rows) stay local to their page; only classes reused across 2+ pages belong in render.py. If a future card style is added to only one page, don't reflexively centralize it — centralize only once a second page needs the same shape.
+
+**Card shape catalogue** (all compose with base `.card`, override what differs):
+- `.card--metric` — 90px fixed-height stat box, used on all 4 non-Overview pages for the "N metric cards" rows. Text color goes through `.card-stat` (`var(--accent, #111111)`); Org page's metric cards don't set `--accent` at all and rely on the `#111111` fallback, since org totals aren't tied to one family.
+- `.card--row` — 48px compact list row (Org page's cluster mini-list).
+- `.card--identity` — softened family-colored border (`{color}55`), tighter radius/padding; the Trace-a-Paper paper-subject box design, the one the user pointed to as the reference for what a "family-colored but not heavy" border should look like.
+- `.card--family` — Overview-only, fixed 144px row, documented separately below.
+
+**Known remaining inconsistency, not fixed:** the `.card--metric` boxes' `margin-bottom` still varies by page (1_Map: 0, relies on an external spacer div; 2_Family/3_Org: `1rem`; 4_Trace: `1.5rem`). Preserved as-is rather than silently unified, since each page's total gap before the next section was tuned around that specific value and changing it would shift layout beyond what was asked. Revisit only if explicitly requested, the same way `.card--family`'s margin-bottom was only unified after an explicit ask.
+
+### `.card--family` deliberately overrides `.card`'s padding, not just color
+
+`.card--family` (Overview page family rows) composes with `.card` but overrides `padding` (16px vs `.card`'s `22px 26px`) and `height` (fixed 144px). This is a fit constraint, not a style preference: the card holds a stat grid with fixed row heights (`grid-template-rows: 48px 48px; gap: 8px` = 104px). At `.card`'s 22px padding, available inner height would be `144 − 2(border) − 44(padding) = 98px` — less than the 104px grid needs, causing overflow. At 16px padding it's `110px`, which fits. Do not "align" this padding to `.card`'s value without also revisiting the fixed 144px height and grid dimensions. `margin-bottom` has no such constraint and was unified to `.card`'s `1rem` (was `0.75rem`, a leftover from before the class refactor, not an intentional choice).
+
+### CSS `!important` on stVerticalBlockBorderWrapper blocks dynamic border colors
+
+`[data-testid="stVerticalBlockBorderWrapper"] { border: 1px solid #e6e6e6 !important; }` (app.py) wins over any per-instance `border-color` (including `var(--accent)`) set on a card built with `st.container(border=True, key=...)` — `!important` overrides regardless of selector specificity, and the failure is silent (no error, border just stays grey). Raw-HTML cards (`_html_family_card()`, built as a `<div class="card card--family">` string via `st.markdown(..., unsafe_allow_html=True)`) are unaffected — this only bites a card that switches to a native `st.container` (e.g. to embed a real widget like a button inside it). If that happens, the container's `.st-key-{key}` selector must set the accent border with matching `!important`, not just a plain declaration.
+
 ### Velocity chart colors
 
 `PAPER_COLOR` / `PATENT_COLOR` from render.py were rejected as inconsistent with the palette. Both lines use `family_color`: papers at 45% opacity (`_hex_rgba(family_color, 0.45)`), patents at full strength. The `_hex_rgba(hex, alpha)` helper converts hex to `rgba(r,g,b,alpha)` string.

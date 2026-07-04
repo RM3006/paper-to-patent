@@ -8,3 +8,7 @@ backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f5f5f5"
 textColor = "#111111"
 font = "sans serif"
+
+[client]
+# Hide the developer toolbar (hamburger / "Deploy"), matching the human-protein-atlas app.
+toolbarMode = "minimal"

@@ -112,11 +112,8 @@ def _cluster_list(clusters: list[dict], min_rows: int = 5) -> None:
         pct = (row["share"] or 0) * 100
         fam_color = FAMILY_COLORS.get(row.get("family_id") or "", "#888888")
         st.markdown(
-            f"<div style='height:48px;box-sizing:border-box;padding:0 10px;"
-            f"border:1px solid #e6e6e6;border-radius:6px;margin-bottom:4px;"
-            f"background:#ffffff;display:flex;flex-direction:column;"
-            f"justify-content:center;'>"
-            f"<div style='font-size:12px;color:{fam_color};font-weight:600;"
+            f"<div class='card card--row' style='--accent:{fam_color};'>"
+            f"<div class='card-stat' style='font-size:12px;font-weight:600;"
             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
             f"{row['tagline']}</div>"
             f"<div style='font-size:11px;color:#888888;margin-top:2px;'>"
@@ -235,12 +232,9 @@ for _col, _val, _lbl in [
 ]:
     with _col:
         st.markdown(
-            f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
-            f"padding:18px 8px;text-align:center;height:90px;"
-            f"display:flex;flex-direction:column;align-items:center;"
-            f"justify-content:center;margin-bottom:1rem;'>"
-            f"<div style='font-family:{_FONT};font-size:28px;font-weight:800;"
-            f"color:#111111;line-height:1;'>{_val}</div>"
+            f"<div class='card card--metric' style='margin-bottom:1rem;'>"
+            f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
+            f"font-weight:800;line-height:1;'>{_val}</div>"
             f"<div style='font-size:12px;color:#888888;margin-top:6px;"
             f"white-space:nowrap;'>{_lbl}</div>"
             f"</div>",
