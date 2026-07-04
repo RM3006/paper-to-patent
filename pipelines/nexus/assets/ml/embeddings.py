@@ -60,7 +60,13 @@ _BATCH_SIZE = 128
 
 # Quality gate constants (see module docstring)
 _PLACEHOLDER_ABSTRACT_RE = re.compile(r"^\s*abstract\s+not\s+(provided|available)", re.IGNORECASE)
-_VERSION_TITLE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_\-]*\s+v?\d+\.\d+(\.\d+)?(\s*\(.*\))?\s*$")
+_VERSION_TITLE_RE = re.compile(
+    r"^[A-Za-z][A-Za-z0-9_\-]*\s+v?\d+\.\d+(\.\d+)?(\s*\(.*\))?\s*$"
+    # "Name: Name v1.2.3" -- release-note titles that repeat the project name
+    # before the colon (e.g. "seL4: seL4 3.0.1"), which the bare pattern above
+    # doesn't match because of the leading "Name: " prefix.
+    r"|^(?P<name>[A-Za-z][A-Za-z0-9_\-]*)\s*:\s*(?P=name)\s+v?\d+\.\d+(\.\d+)?(\s*\(.*\))?\s*$"
+)
 _MIN_ABSTRACT_LEN = 50
 
 

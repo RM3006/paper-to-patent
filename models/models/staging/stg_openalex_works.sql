@@ -58,3 +58,14 @@ where openalex_id is not null
       or title ilike '%.xlsx' or title ilike '%.nc'  or title ilike '%.mat'
       or title ilike '%.zip'
   )
+  -- Exclude software-release-note entries (e.g. "seL4: seL4 3.0.1", "IDBac
+  -- v0.0.15") that OpenAlex mistypes as type:article -- the `type` filter at
+  -- ingest cannot catch these since OpenAlex's own field says "article".
+  -- Verified against the live corpus: matches only genuine software release
+  -- records (seL4, IDBac, libBigWig, InChI, mygit, meowallet, clipper), no
+  -- false positives on real paper titles.
+  and not regexp_matches(
+      title,
+      '^[A-Za-z][A-Za-z0-9_-]*\s*:\s*[A-Za-z][A-Za-z0-9_-]*\s+v?[0-9]+\.[0-9]+(\.[0-9]+)?(\s*\(.*\))?$'
+      || '|^[A-Za-z][A-Za-z0-9_-]*\s+v?[0-9]+\.[0-9]+(\.[0-9]+)?(\s*\(.*\))?$'
+  )

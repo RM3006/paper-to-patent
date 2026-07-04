@@ -3,7 +3,7 @@
 Spot-check of Claude Haiku-generated technology cluster labels against their member documents.
 
 **Current run date:** 2026-07-04 (post embedding-quality-gate re-cluster)
-**Current corpus:** 186,933 docs (153,355 papers + 33,578 patents)
+**Current corpus:** 186,930 docs (153,352 papers + 33,578 patents) — 3 fewer than the prior count in this doc; a staging-layer fix (Issue 3, see `MEMORY.md`) removed software-release-note titles (e.g. "seL4: seL4 3.0.1") that OpenAlex mistypes as `type:article`, and `fact_document_cluster` now drops any doc no longer present in the scoped staging models instead of surfacing it as an orphan.
 **Current clusters produced:** 237 named clusters + `c_noise`
 **Current noise rate:** 35.4% (66,163 docs unclustered by HDBSCAN), down from 42.1% pre-gate
 **Model version:** 2026-07-04
@@ -148,7 +148,7 @@ Weighted by document count rather than averaged per cluster, overall purity is m
 
 `c_noise` receives the fixed label "Frontier / Unclustered" — not reviewed against members.
 
-**Noise rate: 35.4% (66,163 / 186,933 docs)**, down from 42.1% in the 2026-06-26 run. The drop is attributed to the embedding-quality gate: placeholder/non-English/version-title text had been diffusing the whole embedding space generically, not just forming its own artifact clusters, so removing it tightened the overall point cloud. Still above the 30% warning threshold in the original template; the same causes likely remain in reduced form (genuinely diffuse boundary documents between the three broad technology families; `min_cluster_size=50` is conservative for this corpus size).
+**Noise rate: 35.4% (66,163 / 186,930 docs)**, down from 42.1% in the 2026-06-26 run. The drop is attributed to the embedding-quality gate: placeholder/non-English/version-title text had been diffusing the whole embedding space generically, not just forming its own artifact clusters, so removing it tightened the overall point cloud. Still above the 30% warning threshold in the original template; the same causes likely remain in reduced form (genuinely diffuse boundary documents between the three broad technology families; `min_cluster_size=50` is conservative for this corpus size).
 
 **Recommendation, unchanged:** re-tuning (`min_cluster_size=30`/`min_samples` or UMAP init) remains a Part 7+ option if map density becomes a UX problem, not a blocker today.
 

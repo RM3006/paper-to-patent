@@ -94,6 +94,22 @@ def test_version_style_title_rejects_title_with_embedded_number() -> None:
     )
 
 
+def test_version_style_title_matches_repeated_name_before_colon() -> None:
+    # "seL4: seL4 3.0.1" — release-note titles that repeat the project name
+    # before the colon, seen live in the OpenAlex corpus.
+    assert is_version_style_title("seL4: seL4 3.0.1")
+    assert is_version_style_title("seL4: seL4 2.10 (minor release)")
+
+
+def test_version_style_title_rejects_colon_subtitle_with_different_name() -> None:
+    # A real subtitle after a colon shouldn't match just because the second
+    # part happens to look number-ish — only an EXACT name repeat + version
+    # counts as a release note.
+    assert not is_version_style_title(
+        "Neuromorphic Computing: A Review of Spiking Neural Networks"
+    )
+
+
 # ---------------------------------------------------------------------------
 # resolve_paper_text — the quality gate
 # ---------------------------------------------------------------------------
