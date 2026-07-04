@@ -18,7 +18,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
+from render import (
+    FAMILY_COLORS,
+    FAMILY_LABELS,
+    render_chip_multiselect,
+    render_nav,
+    render_tour_banner,
+)
 
 from data import (
     load_family_clusters,
@@ -51,7 +57,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-render_nav("Family Deepdive")
+render_nav("Family Deepdive", filter_sidebar=True)
 render_tour_banner(2)
 
 _HEADLINE_FAMILIES = {k: v for k, v in FAMILY_LABELS.items() if k not in ("adjacent", "noise")}
@@ -106,11 +112,36 @@ family_color = FAMILY_COLORS.get(family_id, "#888888")
 family_name  = FAMILY_LABELS.get(family_id, family_id)
 family_desc  = _FAMILY_DESC.get(family_id, "")
 
-pat_df   = load_family_org_leaderboard(family_id, "patent", 50)
-res_df   = load_family_org_leaderboard(family_id, "paper", 50)
 clusters = load_family_clusters(family_id)
 
-_clusters_filtered = clusters
+# Reset the cluster filter whenever the active family changes (pill switcher / query param).
+if st.session_state.get("_fam_filter_active_family") != family_id:
+    st.session_state["_fam_filter_active_family"] = family_id
+    st.session_state["_fam_sel_clusters"] = []
+
+# ── Sidebar filter ──────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("#### Filters")
+    _cluster_scope = [
+        (r["tagline"], r["cluster_id"]) for r in clusters.sort("tagline").to_dicts()
+    ]
+    selected_clusters: list[str] = render_chip_multiselect(
+        "Cluster",
+        "_fam_sel_clusters",
+        _cluster_scope,
+        placeholder="Add cluster…",
+        search_key="family_cluster_sb",
+    )
+
+cluster_ids_filter = tuple(selected_clusters) if selected_clusters else None
+
+pat_df = load_family_org_leaderboard(family_id, "patent", 50, cluster_ids=cluster_ids_filter)
+res_df = load_family_org_leaderboard(family_id, "paper", 50, cluster_ids=cluster_ids_filter)
+
+_clusters_filtered = (
+    clusters.filter(pl.col("cluster_id").is_in(selected_clusters))
+    if selected_clusters else clusters
+)
 
 # ── Family pill switcher — single line, max size ──────────────────────────────
 _pills_html = ""
@@ -237,7 +268,7 @@ with col_res:
         st.caption("No researcher data for this family.")
 
 # ── Velocity: research & patenting over time ───────────────────────────────────
-vel_df = load_family_velocity(family_id)
+vel_df = load_family_velocity(family_id, cluster_ids=cluster_ids_filter)
 if len(vel_df) > 0:
     years   = [int(y) for y in vel_df["year"].to_list()]
     papers  = [int(v) for v in vel_df["paper_count"].to_list()]
@@ -252,6 +283,9 @@ if len(vel_df) > 0:
     pat_prov  = [p if y >= cutoff else None for y, p in zip(years, patents, strict=True)]
     col_papers  = _hex_rgba(family_color, 0.45)
     col_patents = family_color
+    _vel_scope_note = (
+        f" (filtered to {len(selected_clusters)} selected clusters)" if selected_clusters else ""
+    )
 
     st.markdown("<div style='margin-top:2rem;'></div>", unsafe_allow_html=True)
     st.markdown(
@@ -259,7 +293,8 @@ if len(vel_df) > 0:
         f"color:#111111;'>Research &amp; patenting over time</div>"
         f"<div style='font-size:12px;color:#888888;margin-bottom:8px;'>"
         f"Annual research papers (by publication year) and granted US patents "
-        f"(by filing year) in {family_name}. The shaded years are still moving "
+        f"(by filing year) in {family_name}{_vel_scope_note}. "
+        f"The shaded years are still moving "
         f"through the grant pipeline and undercount real patenting — not a decline."
         f"</div>",
         unsafe_allow_html=True,
@@ -310,8 +345,9 @@ if len(vel_df) > 0:
 
 # ── Cluster breakdown table ────────────────────────────────────────────────────
 if len(_clusters_filtered) > 0:
+    n_shown = len(_clusters_filtered)
     n_total = len(clusters)
-    count_label = f"{n_total} clusters"
+    count_label = f"{n_shown} of {n_total} clusters" if selected_clusters else f"{n_total} clusters"
 
     st.markdown("<div style='margin-top:2rem;'></div>", unsafe_allow_html=True)
 

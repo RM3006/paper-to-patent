@@ -81,6 +81,28 @@ def _query(sql: str, params: list[object] | None = None) -> pl.DataFrame:
         return conn.execute(sql, params or []).pl()
 
 
+def _scope_clause(
+    family_col: str,
+    cluster_col: str,
+    family_ids: tuple[str, ...] | None,
+    cluster_ids: tuple[str, ...] | None,
+) -> str:
+    """A ' AND ...' SQL fragment restricting family_col/cluster_col to the given ID sets.
+
+    Both are optional; an empty/None set means "no restriction" on that dimension.
+    Shared by the Organisation Profile page's family + cluster filters, which apply
+    to nearly every query on that page.
+    """
+    clauses = []
+    if family_ids:
+        ids_sql = ", ".join(f"'{f}'" for f in family_ids)
+        clauses.append(f"{family_col} IN ({ids_sql})")
+    if cluster_ids:
+        ids_sql = ", ".join(f"'{c}'" for c in cluster_ids)
+        clauses.append(f"{cluster_col} IN ({ids_sql})")
+    return (" AND " + " AND ".join(clauses)) if clauses else ""
+
+
 @st.cache_data(ttl=3600)
 def load_family_scorecard() -> pl.DataFrame:
     """One row per technology family from mart_family, ordered by family_sort_order."""
@@ -258,23 +280,31 @@ def load_cluster_card(cluster_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_family_velocity(family_id: str) -> pl.DataFrame:
+def load_family_velocity(
+    family_id: str, cluster_ids: tuple[str, ...] | None = None
+) -> pl.DataFrame:
     """Annual paper and patent counts for a family (mart_velocity rolled up).
 
     One row per year; paper_count and patent_count summed across the family's
     non-noise clusters. Patents are counted by FILING year and undercount the most
     recent years because PatentsView holds granted patents only and recent filings
     are still in the grant pipeline — the UI fades those trailing years.
+    cluster_ids, if given, restricts the rollup to that subset of the family's
+    clusters (the Family Deepdive page's cluster filter).
     Source: mart_velocity + seed_cluster_family. Output: R2 gold / dev.duckdb.
     """
+    cluster_filter = ""
+    if cluster_ids:
+        ids_sql = ", ".join(f"'{c}'" for c in cluster_ids)
+        cluster_filter = f"AND mv.cluster_id IN ({ids_sql})"
     return _query(
-        """
+        f"""
         SELECT mv.year,
                SUM(mv.paper_count)  AS paper_count,
                SUM(mv.patent_count) AS patent_count
         FROM main_marts.mart_velocity mv
         JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mv.cluster_id
-        WHERE scf.family_id = ? AND mv.cluster_id != 'c_noise'
+        WHERE scf.family_id = ? AND mv.cluster_id != 'c_noise' {cluster_filter}
         GROUP BY mv.year
         ORDER BY mv.year
         """,
@@ -283,14 +313,22 @@ def load_family_velocity(family_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_family_org_leaderboard(family_id: str, side: str, top_n: int = 50) -> pl.DataFrame:
+def load_family_org_leaderboard(
+    family_id: str, side: str, top_n: int = 50, cluster_ids: tuple[str, ...] | None = None
+) -> pl.DataFrame:
     """Top orgs for a family by side ('paper'|'patent'), with total distinct org count.
 
     Returns top_n rows ordered by doc_count DESC.
     Each row carries total_orgs = count of all distinct orgs for this family+side.
+    cluster_ids, if given, restricts the aggregation to that subset of the family's
+    clusters (the Family Deepdive page's cluster filter).
     Source: mart_competitive joined to seed_cluster_family; excludes 'Unresolved' and c_noise.
     Output: R2 gold Parquet or local dev.duckdb.
     """
+    cluster_filter = ""
+    if cluster_ids:
+        ids_sql = ", ".join(f"'{c}'" for c in cluster_ids)
+        cluster_filter = f"AND mc.cluster_id IN ({ids_sql})"
     return _query(
         f"""
         WITH agg AS (
@@ -298,7 +336,7 @@ def load_family_org_leaderboard(family_id: str, side: str, top_n: int = 50) -> p
             FROM main_marts.mart_competitive mc
             JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
             WHERE scf.family_id = ? AND mc.side = ? AND mc.canonical_name != 'Unresolved'
-              AND mc.cluster_id != 'c_noise'
+              AND mc.cluster_id != 'c_noise' {cluster_filter}
             GROUP BY mc.org_id, mc.canonical_name
         ),
         total AS (SELECT COUNT(*) AS total_orgs FROM agg)
@@ -432,14 +470,23 @@ def load_org_profile(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_output_by_family(org_id: str) -> pl.DataFrame:
-    """Patent count per technology family for a given org (patenter perspective)."""
+def load_org_output_by_family(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
+    """Patent count per technology family for a given org (patenter perspective).
+
+    family_ids/cluster_ids, if given, restrict this to the Organisation Profile
+    page's active filter scope.
+    """
+    scope = _scope_clause("scf.family_id", "mc.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT scf.family_id, scf.family_name, SUM(mc.doc_count) AS n_patents
         FROM main_marts.mart_competitive mc
         JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
-        WHERE mc.org_id = ? AND mc.side = 'patent'
+        WHERE mc.org_id = ? AND mc.side = 'patent' {scope}
         GROUP BY scf.family_id, scf.family_name
         ORDER BY n_patents DESC
         """,
@@ -448,13 +495,32 @@ def load_org_output_by_family(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_dataset_totals() -> dict[str, int]:
-    """Total paper and patent counts across all in-scope technology families."""
-    df = _query("""
-        SELECT SUM(n_papers) AS total_papers, SUM(n_patents) AS total_patents
-        FROM main_marts.mart_family
-        WHERE family_id != 'adjacent'
-    """)
+def load_dataset_totals(
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> dict[str, int]:
+    """Total paper and patent counts across all in-scope technology families.
+
+    family_ids/cluster_ids, if given, narrow this to the Organisation Profile
+    page's active filter scope (via mart_gap, which is cluster-grained) instead
+    of the whole dataset (via mart_family) -- this is the denominator behind
+    the "% of all patents/papers" metric cards, so it must match the same scope
+    those cards' numerators are computed over.
+    """
+    if not family_ids and not cluster_ids:
+        df = _query("""
+            SELECT SUM(n_papers) AS total_papers, SUM(n_patents) AS total_patents
+            FROM main_marts.mart_family
+            WHERE family_id != 'adjacent'
+        """)
+    else:
+        scope = _scope_clause("scf.family_id", "mg.cluster_id", family_ids, cluster_ids)
+        df = _query(f"""
+            SELECT SUM(mg.n_papers) AS total_papers, SUM(mg.n_patents) AS total_patents
+            FROM main_marts.mart_gap mg
+            JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mg.cluster_id
+            WHERE mg.cluster_id != 'c_noise' {scope}
+        """)
     row = df.row(0, named=True)
     return {
         "total_papers":  int(row["total_papers"]  or 0),
@@ -463,15 +529,38 @@ def load_dataset_totals() -> dict[str, int]:
 
 
 @st.cache_data(ttl=3600)
-def load_org_top_patent_clusters(org_id: str) -> pl.DataFrame:
-    """Top 5 patent clusters (excluding c_noise) for a given patenter org, with family_id."""
+def load_org_active_scope(org_id: str) -> pl.DataFrame:
+    """Every cluster (with its family) this org has any patent or paper activity in.
+
+    Used only to populate the Organisation Profile sidebar's family/cluster filter
+    options -- independent of whatever filter is currently applied.
+    """
     return _query(
         """
+        SELECT DISTINCT mc.cluster_id, mc.tagline, scf.family_id, scf.family_name
+        FROM main_marts.mart_competitive mc
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
+        WHERE mc.org_id = ? AND mc.cluster_id != 'c_noise'
+        """,
+        [org_id],
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_org_top_patent_clusters(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
+    """Top 5 patent clusters (excluding c_noise) for a given patenter org, with family_id."""
+    scope = _scope_clause("scf.family_id", "mc.cluster_id", family_ids, cluster_ids)
+    return _query(
+        f"""
         SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share,
                scf.family_id
         FROM main_marts.mart_competitive mc
         LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
-        WHERE mc.org_id = ? AND mc.side = 'patent' AND mc.cluster_id != 'c_noise'
+        WHERE mc.org_id = ? AND mc.side = 'patent' AND mc.cluster_id != 'c_noise' {scope}
         ORDER BY mc.doc_count DESC
         LIMIT 5
         """,
@@ -480,13 +569,23 @@ def load_org_top_patent_clusters(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_filing_years(org_id: str) -> pl.DataFrame:
-    """Patent filing count per year for a given org (from fact_patent_filing)."""
+def load_org_filing_years(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
+    """Patent filing count per year for a given org (from fact_patent_filing).
+
+    fact_patent_filing carries cluster_id directly, so family_ids/cluster_ids are
+    applied via a join to seed_cluster_family with no intermediate table needed.
+    """
+    scope = _scope_clause("scf.family_id", "fpf.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
-        SELECT YEAR(filing_date) AS year, COUNT(DISTINCT patent_id) AS n_patents
-        FROM main_marts.fact_patent_filing
-        WHERE org_id = ?
+        f"""
+        SELECT YEAR(fpf.filing_date) AS year, COUNT(DISTINCT fpf.patent_id) AS n_patents
+        FROM main_marts.fact_patent_filing fpf
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fpf.cluster_id
+        WHERE fpf.org_id = ? {scope}
         GROUP BY year
         ORDER BY year
         """,
@@ -495,10 +594,19 @@ def load_org_filing_years(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_intake(org_id: str) -> pl.DataFrame:
-    """Research orgs whose papers are cited by this org's patents (via NPL links)."""
+def load_org_intake(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
+    """Research orgs whose papers are cited by this org's patents (via NPL links).
+
+    family_ids/cluster_ids restrict which of this org's own patents are considered
+    (the patent side of the NPL link), scoping the Organisation Profile filter.
+    """
+    scope = _scope_clause("scf.family_id", "fpf.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT
             fp.org_id AS paper_org_id,
             do2.canonical_name AS paper_org_name,
@@ -507,7 +615,8 @@ def load_org_intake(org_id: str) -> pl.DataFrame:
         JOIN main_marts.fact_npl_link fnl ON fnl.patent_id = fpf.patent_id
         JOIN main_marts.fact_publication fp ON fp.work_id = fnl.work_id
         JOIN main_marts.dim_organization do2 ON do2.org_id = fp.org_id
-        WHERE fpf.org_id = ?
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fpf.cluster_id
+        WHERE fpf.org_id = ? {scope}
         GROUP BY fp.org_id, do2.canonical_name
         ORDER BY n_papers_cited DESC
         LIMIT 10
@@ -517,10 +626,19 @@ def load_org_intake(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_influence(org_id: str) -> pl.DataFrame:
-    """Patenters whose filed patents cite this org's research papers (via NPL links)."""
+def load_org_influence(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
+    """Patenters whose filed patents cite this org's research papers (via NPL links).
+
+    family_ids/cluster_ids restrict which of this org's own papers are considered
+    (the paper side of the NPL link), scoping the Organisation Profile filter.
+    """
+    scope = _scope_clause("scf.family_id", "fp.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT
             fpf.org_id AS patenter_org_id,
             do2.canonical_name AS patenter_name,
@@ -529,8 +647,9 @@ def load_org_influence(org_id: str) -> pl.DataFrame:
         JOIN main_marts.fact_npl_link fnl ON fnl.work_id = fp.work_id
         JOIN main_marts.fact_patent_filing fpf ON fpf.patent_id = fnl.patent_id
         JOIN main_marts.dim_organization do2 ON do2.org_id = fpf.org_id
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fp.cluster_id
         WHERE fp.org_id = ?
-          AND fpf.org_id != ?
+          AND fpf.org_id != ? {scope}
         GROUP BY fpf.org_id, do2.canonical_name
         ORDER BY n_patents DESC
         LIMIT 10
@@ -540,10 +659,15 @@ def load_org_influence(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_flagship_paper(org_id: str) -> pl.DataFrame:
+def load_org_flagship_paper(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
     """Single most-cited paper (by patents) for a given research org."""
+    scope = _scope_clause("scf.family_id", "fp.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT
             fp.work_id,
             dp.title,
@@ -553,7 +677,8 @@ def load_org_flagship_paper(org_id: str) -> pl.DataFrame:
         FROM main_marts.fact_publication fp
         JOIN main_marts.fact_npl_link fnl ON fnl.work_id = fp.work_id
         JOIN main_marts.dim_paper dp ON dp.work_id = fp.work_id
-        WHERE fp.org_id = ?
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fp.cluster_id
+        WHERE fp.org_id = ? {scope}
         GROUP BY fp.work_id, dp.title, dp.publication_date, dp.abstract
         ORDER BY n_citing_patents DESC
         LIMIT 1
@@ -563,10 +688,15 @@ def load_org_flagship_paper(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_flagship_patent(org_id: str) -> pl.DataFrame:
+def load_org_flagship_patent(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
     """Single patent with most NPL paper citations for a given patenter org."""
+    scope = _scope_clause("scf.family_id", "fpf.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT
             fpf.patent_id,
             dp.title,
@@ -575,7 +705,8 @@ def load_org_flagship_patent(org_id: str) -> pl.DataFrame:
         FROM main_marts.fact_patent_filing fpf
         JOIN main_marts.dim_patent dp ON dp.patent_id = fpf.patent_id
         JOIN main_marts.fact_npl_link fnl ON fnl.patent_id = fpf.patent_id
-        WHERE fpf.org_id = ?
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fpf.cluster_id
+        WHERE fpf.org_id = ? {scope}
         GROUP BY fpf.patent_id, dp.title, fpf.filing_date
         ORDER BY n_papers_cited DESC
         LIMIT 1
@@ -653,14 +784,19 @@ def load_trace_links(work_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_paper_output_by_family(org_id: str) -> pl.DataFrame:
+def load_org_paper_output_by_family(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
     """Paper count per technology family for a given org (researcher perspective)."""
+    scope = _scope_clause("scf.family_id", "mc.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT scf.family_id, scf.family_name, SUM(mc.doc_count) AS n_papers
         FROM main_marts.mart_competitive mc
         JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
-        WHERE mc.org_id = ? AND mc.side = 'paper'
+        WHERE mc.org_id = ? AND mc.side = 'paper' {scope}
         GROUP BY scf.family_id, scf.family_name
         ORDER BY n_papers DESC
         """,
@@ -669,15 +805,20 @@ def load_org_paper_output_by_family(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_top_research_clusters(org_id: str) -> pl.DataFrame:
+def load_org_top_research_clusters(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
     """Top 5 research clusters (excluding c_noise) for a given org — researcher side, with family_id."""
+    scope = _scope_clause("scf.family_id", "mc.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT mc.cluster_id, mc.tagline, mc.doc_count, mc.share,
                scf.family_id
         FROM main_marts.mart_competitive mc
         LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = mc.cluster_id
-        WHERE mc.org_id = ? AND mc.side = 'paper' AND mc.cluster_id != 'c_noise'
+        WHERE mc.org_id = ? AND mc.side = 'paper' AND mc.cluster_id != 'c_noise' {scope}
         ORDER BY mc.doc_count DESC
         LIMIT 5
         """,
@@ -686,15 +827,25 @@ def load_org_top_research_clusters(org_id: str) -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_org_paper_years(org_id: str) -> pl.DataFrame:
-    """Research paper count per publication year for a given org."""
+def load_org_paper_years(
+    org_id: str,
+    family_ids: tuple[str, ...] | None = None,
+    cluster_ids: tuple[str, ...] | None = None,
+) -> pl.DataFrame:
+    """Research paper count per publication year for a given org.
+
+    fact_publication carries cluster_id directly, so family_ids/cluster_ids are
+    applied via a join to seed_cluster_family with no intermediate table needed.
+    """
+    scope = _scope_clause("scf.family_id", "fp.cluster_id", family_ids, cluster_ids)
     return _query(
-        """
+        f"""
         SELECT YEAR(dp.publication_date) AS year, COUNT(DISTINCT fp.work_id) AS n_papers
         FROM main_marts.fact_publication fp
         JOIN main_marts.dim_paper dp ON dp.work_id = fp.work_id
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fp.cluster_id
         WHERE fp.org_id = ?
-          AND dp.publication_date IS NOT NULL
+          AND dp.publication_date IS NOT NULL {scope}
         GROUP BY year
         ORDER BY year
         """,

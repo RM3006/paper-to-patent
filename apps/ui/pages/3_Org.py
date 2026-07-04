@@ -19,7 +19,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from render import FAMILY_COLORS, render_nav, render_tour_banner
+from render import FAMILY_COLORS, render_chip_multiselect, render_nav, render_tour_banner
 from streamlit_searchbox import st_searchbox
 
 _SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
@@ -27,6 +27,7 @@ _SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 from data import (
     search_orgs_ilike,
     load_dataset_totals,
+    load_org_active_scope,
     load_org_filing_years,
     load_org_flagship_paper,
     load_org_flagship_patent,
@@ -59,7 +60,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-render_nav("Organisation Profile")
+render_nav("Organisation Profile", filter_sidebar=True)
 render_tour_banner(3)
 
 
@@ -164,19 +165,65 @@ org_name   = profile["canonical_name"]
 match_meth = profile["primary_match_method"]
 confidence = profile["primary_confidence"]
 
+# ── Sidebar filters — scoped to this org's own activity ───────────────────────
+_scope_df = load_org_active_scope(selected_org_id)
+_family_scope = [
+    (r["family_name"], r["family_id"])
+    for r in _scope_df.filter(pl.col("family_id").is_not_null())
+    .select(["family_id", "family_name"]).unique().sort("family_name").to_dicts()
+]
+
+
+def _drop_org_clusters_of_family(fid: str) -> None:
+    """Cascade: dropping a family chip also drops any of its clusters from the cluster filter."""
+    gone = {r["cluster_id"] for r in _scope_df.filter(pl.col("family_id") == fid).to_dicts()}
+    st.session_state["_org_sel_clusters"] = [
+        c for c in st.session_state.get("_org_sel_clusters", []) if c not in gone
+    ]
+
+
+with st.sidebar:
+    st.markdown("#### Filters")
+    _raw_families = render_chip_multiselect(
+        "Technology family",
+        "_org_sel_families",
+        _family_scope,
+        placeholder="Add family…",
+        search_key="org_family_sb",
+        on_remove=_drop_org_clusters_of_family,
+    )
+    _cluster_universe = (
+        _scope_df.filter(pl.col("family_id").is_in(_raw_families)) if _raw_families else _scope_df
+    )
+    _cluster_scope = [
+        (r["tagline"], r["cluster_id"]) for r in _cluster_universe.sort("tagline").to_dicts()
+    ]
+    _raw_clusters = render_chip_multiselect(
+        "Cluster",
+        "_org_sel_clusters",
+        _cluster_scope,
+        placeholder="Add cluster…",
+        search_key="org_cluster_sb",
+    )
+
+family_ids_filter: tuple[str, ...] | None = tuple(_raw_families) if _raw_families else None
+cluster_ids_filter: tuple[str, ...] | None = tuple(_raw_clusters) if _raw_clusters else None
+is_filtered = bool(family_ids_filter or cluster_ids_filter)
+
 # ── Load data ─────────────────────────────────────────────────────────────────
+_scope_args = (family_ids_filter, cluster_ids_filter)
 with st.spinner("Loading…"):
-    output_by_family = load_org_output_by_family(selected_org_id)
-    paper_by_family  = load_org_paper_output_by_family(selected_org_id)
-    top_pat_clusters = load_org_top_patent_clusters(selected_org_id)
-    top_res_clusters = load_org_top_research_clusters(selected_org_id)
-    filing_years     = load_org_filing_years(selected_org_id)
-    paper_years      = load_org_paper_years(selected_org_id)
-    intake           = load_org_intake(selected_org_id)
-    influence        = load_org_influence(selected_org_id)
-    flagship_paper   = load_org_flagship_paper(selected_org_id)
-    flagship_patent  = load_org_flagship_patent(selected_org_id)
-    dataset_totals   = load_dataset_totals()
+    output_by_family = load_org_output_by_family(selected_org_id, *_scope_args)
+    paper_by_family  = load_org_paper_output_by_family(selected_org_id, *_scope_args)
+    top_pat_clusters = load_org_top_patent_clusters(selected_org_id, *_scope_args)
+    top_res_clusters = load_org_top_research_clusters(selected_org_id, *_scope_args)
+    filing_years     = load_org_filing_years(selected_org_id, *_scope_args)
+    paper_years      = load_org_paper_years(selected_org_id, *_scope_args)
+    intake           = load_org_intake(selected_org_id, *_scope_args)
+    influence        = load_org_influence(selected_org_id, *_scope_args)
+    flagship_paper   = load_org_flagship_paper(selected_org_id, *_scope_args)
+    flagship_patent  = load_org_flagship_patent(selected_org_id, *_scope_args)
+    dataset_totals   = load_dataset_totals(*_scope_args)
 
 n_patents_total  = int(output_by_family["n_patents"].sum()) if len(output_by_family) > 0 else 0
 n_papers_total   = int(paper_by_family["n_papers"].sum())  if len(paper_by_family)  > 0 else 0
@@ -223,12 +270,15 @@ st.markdown(
 )
 
 # ── 4 metric cards ─────────────────────────────────────────────────────────────
+_patent_denom_label = "of patents in scope" if is_filtered else "of all patents"
+_paper_denom_label  = "of papers in scope"  if is_filtered else "of all papers"
+
 _om1, _om2, _om3, _om4 = st.columns(4)
 for _col, _val, _lbl in [
     (_om1, f"{n_patents_total:,}", "US patents"),
-    (_om2, f"{pct_patents:.2f}%",  "of all patents"),
+    (_om2, f"{pct_patents:.2f}%",  _patent_denom_label),
     (_om3, f"{n_papers_total:,}",  "research papers"),
-    (_om4, f"{pct_papers:.2f}%",   "of all papers"),
+    (_om4, f"{pct_papers:.2f}%",   _paper_denom_label),
 ]:
     with _col:
         st.markdown(
@@ -261,7 +311,10 @@ with col_patent:
     )
 
     if not has_patents:
-        st.caption("No resolved US patents found for this organisation.")
+        st.caption(
+            "No US patents in the selected filter scope." if is_filtered
+            else "No resolved US patents found for this organisation."
+        )
     else:
         # Patents by family — descending by count
         fam_ids    = output_by_family["family_id"].to_list()
@@ -341,7 +394,10 @@ with col_research:
     )
 
     if not has_papers:
-        st.caption("No resolved research papers found for this organisation.")
+        st.caption(
+            "No research papers in the selected filter scope." if is_filtered
+            else "No resolved research papers found for this organisation."
+        )
     else:
         # Papers by family — descending by count
         pf_ids    = paper_by_family["family_id"].to_list()
@@ -535,7 +591,10 @@ if has_intake or has_influence:
                             config={"displayModeBar": False, "displaylogo": False},
                             key="org_intake")
         else:
-            st.caption("No NPL-linked intake data found.")
+            st.caption(
+                "No NPL-linked intake data in the selected filter scope." if is_filtered
+                else "No NPL-linked intake data found."
+            )
 
     with col_influence:
         if has_influence:
@@ -582,9 +641,16 @@ if has_intake or has_influence:
                             config={"displayModeBar": False, "displaylogo": False},
                             key="org_influence")
         else:
-            st.caption("No NPL-linked influence data found.")
+            st.caption(
+                "No NPL-linked influence data in the selected filter scope." if is_filtered
+                else "No NPL-linked influence data found."
+            )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
+_pct_scope_note = (
+    "the selected filter scope" if is_filtered
+    else "the total across all five technology families"
+)
 st.markdown(
     "<span style='font-size:11px;color:#888888;'>"
     "<strong>Data quality:</strong> "
@@ -593,7 +659,7 @@ st.markdown(
     "(high/medium-confidence links). "
     "US patents only (PatentsView / USPTO). "
     "Papers from OpenAlex (2012–2025). "
-    "Percentage shares are relative to the total across all five technology families "
+    f"Percentage shares are relative to {_pct_scope_note} "
     "(resolved documents only; unresolved orgs excluded)."
     "</span>",
     unsafe_allow_html=True,

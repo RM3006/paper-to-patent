@@ -17,7 +17,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
+from render import (
+    FAMILY_COLORS,
+    FAMILY_LABELS,
+    render_chip_multiselect,
+    render_nav,
+    render_tour_banner,
+)
 
 from data import load_cluster_bubble, load_cluster_card, load_top_orgs
 
@@ -58,7 +64,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-render_nav("Technology Landscape")
+render_nav("Technology Landscape", filter_sidebar=True)
 render_tour_banner(1)
 
 FAMILY_ORDER = ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory", "adjacent", "noise"]
@@ -66,8 +72,40 @@ FAMILY_ORDER = ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory", "a
 # ── Load ─────────────────────────────────────────────────────────────────────────────
 df_all = load_cluster_bubble()
 
-selected_families: list[str] = FAMILY_ORDER
-selected_clusters: list[str] = []
+
+def _drop_clusters_of_family(fid: str) -> None:
+    """Cascade: dropping a family chip also drops any of its clusters from the cluster filter."""
+    gone = {r["cluster_id"] for r in df_all.filter(pl.col("family_id") == fid).to_dicts()}
+    st.session_state["_map_sel_clusters"] = [
+        c for c in st.session_state.get("_map_sel_clusters", []) if c not in gone
+    ]
+
+
+# ── Sidebar filters ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("#### Filters")
+    _raw_families = render_chip_multiselect(
+        "Technology family",
+        "_map_sel_families",
+        [(FAMILY_LABELS[fid], fid) for fid in FAMILY_ORDER],
+        placeholder="Add family…",
+        search_key="map_family_sb",
+        on_remove=_drop_clusters_of_family,
+    )
+    selected_families: list[str] = _raw_families or FAMILY_ORDER
+
+    _cluster_scope = [
+        (r["tagline"], r["cluster_id"])
+        for r in df_all.filter(pl.col("family_id").is_in(selected_families))
+        .sort("tagline").to_dicts()
+    ]
+    selected_clusters: list[str] = render_chip_multiselect(
+        "Cluster",
+        "_map_sel_clusters",
+        _cluster_scope,
+        placeholder="Add cluster…",
+        search_key="map_cluster_sb",
+    )
 
 # ── Header ───────────────────────────────────────────────────────────────────────────
 st.markdown(
@@ -79,7 +117,27 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-df = df_all
+df = df_all.filter(pl.col("family_id").is_in(selected_families))
+if selected_clusters:
+    df = df.filter(pl.col("cluster_id").is_in(selected_clusters))
+
+# Detect clusters hidden by the log scale (0 patents or 0 papers can't be plotted on it).
+_hidden: list[str] = []
+if selected_clusters:
+    for _cid in selected_clusters:
+        _row = df_all.filter(pl.col("cluster_id") == _cid)
+        if len(_row) > 0:
+            _r = _row.row(0, named=True)
+            _np = _r["n_patents"] or 0
+            _npa = _r["n_papers"] or 0
+            if _np == 0 or _npa == 0:
+                if _np == 0 and _npa == 0:
+                    _reason = "0 patents and 0 papers — cannot be plotted on either axis"
+                elif _np == 0:
+                    _reason = f"0 patents — cannot be plotted on the log X axis ({_npa:,} papers)"
+                else:
+                    _reason = f"0 papers — cannot be plotted on the log Y axis ({_np:,} patents)"
+                _hidden.append(f"{_r['tagline']}: {_reason}")
 
 # ── Build bubble chart ────────────────────────────────────────────────────────────────
 fig = go.Figure()
@@ -154,6 +212,19 @@ event = st.plotly_chart(
     key="bubble_chart",
 )
 
+# ── Warning: clusters hidden by log scale ──────────────────────────────────────────────
+if _hidden:
+    _items_html = "".join(f"<li>{h}. Details below.</li>" for h in _hidden)
+    st.markdown(
+        f"<div style='border:1px solid #f0c040;border-left:4px solid #f0c040;"
+        f"border-radius:6px;padding:10px 14px;margin-bottom:0.75rem;"
+        f"background:#fffdf0;font-size:13px;color:#555555;'>"
+        f"<strong style='color:#111111;'>Not visible on chart</strong> — "
+        f"<ul style='margin:4px 0 0 16px;'>{_items_html}</ul>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
 # ── Cluster detail card ───────────────────────────────────────────────────────────────
 selected_cluster_id: str | None = None
 if event and event.selection and event.selection.points:
@@ -163,6 +234,9 @@ if event and event.selection and event.selection.points:
         selected_cluster_id = cdata
     elif isinstance(cdata, list) and len(cdata) > 0:
         selected_cluster_id = str(cdata[0])
+# Sidebar single-cluster selection also drives the detail card (covers 0-patent clusters).
+if selected_cluster_id is None and len(selected_clusters) == 1:
+    selected_cluster_id = selected_clusters[0]
 
 if selected_cluster_id:
     card_df = load_cluster_card(selected_cluster_id)
@@ -326,9 +400,15 @@ if selected_cluster_id:
                 st.caption("No researcher data for this cluster.")
 
 # ── Footer ────────────────────────────────────────────────────────────────────────────
+_is_filtered = bool(selected_families != FAMILY_ORDER or selected_clusters)
+_scope_label = (
+    f"Showing {len(df)} of {len(df_all)} clusters (filtered)."
+    if _is_filtered
+    else f"{len(df)} clusters across 5 technology families."
+)
 st.markdown(
     f"<span style='font-size:11px;color:#888888;'>"
-    f"{len(df)} clusters across 5 technology families. "
+    f"{_scope_label} "
     f"Lag: NPL-linked median where ≥20 citations; ~ prefix = cohort estimate (soft). "
     f"Granted US patents only (PatentsView). Papers from OpenAlex (2012–2025)."
     f"</span>",

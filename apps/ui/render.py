@@ -1,7 +1,12 @@
 """Semantic color constants for the UI. Chrome colors live in app.py CSS."""
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import streamlit as st
+from streamlit_searchbox import st_searchbox
+
+_FILTER_SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
 FAMILY_COLORS: dict[str, str] = {
     "euv":          "#3a4a6b",  # deep navy — editorial "cool technical" palette
@@ -170,27 +175,39 @@ def render_tour_banner(page_step: int) -> None:
         )
 
 
-def render_nav(active: str) -> None:
+def render_nav(active: str, filter_sidebar: bool = False) -> None:
     """Persistent site header rendered at the top of every page.
 
     Brand block (wordmark + subtitle + tour CTA) above a full-width tab strip.
+    Pass filter_sidebar=True on pages that use st.sidebar for data filters --
+    it stays a normal, user-collapsible sidebar instead of being hidden. The
+    auto-generated Streamlit page-nav list inside it is always hidden either
+    way, since the tab strip below is this app's only navigation.
     """
     _font = '"Space Grotesk", -apple-system, system-ui, sans-serif'
 
-    # Suppress decoration stripe, toolbar colour, auto page nav, and sidebar toggle.
-    # Also defines the shared .card family, used on every page. Dynamic per-instance
-    # color (family, org...) goes through --accent / --accent-border, set inline on
-    # the card root -- never baked into the class itself.
+    # Suppress decoration stripe, toolbar colour, auto page nav, and (unless this
+    # page uses it for filters) the sidebar itself. Also defines the shared .card
+    # family, used on every page. Dynamic per-instance color (family, org...)
+    # goes through --accent / --accent-border, set inline on the card root --
+    # never baked into the class itself.
+    _sidebar_css = (
+        ""
+        if filter_sidebar
+        else (
+            "[data-testid='stSidebar'] { display: none !important; }"
+            "[data-testid='stSidebarCollapseButton'] { display: none !important; }"
+            "[data-testid='stExpandSidebarButton'] { display: none !important; }"
+            "[data-testid='collapsedControl'] { display: none !important; }"
+            "[data-testid='stSidebarCollapsedControl'] { display: none !important; }"
+        )
+    )
     st.markdown(
         "<style>"
         "[data-testid='stDecoration'] { display: none !important; }"
         "[data-testid='stHeader'] { background: transparent !important; }"
-        "[data-testid='stSidebar'] { display: none !important; }"
         "[data-testid='stSidebarNav'] { display: none !important; }"
-        "[data-testid='stSidebarCollapseButton'] { display: none !important; }"
-        "[data-testid='stExpandSidebarButton'] { display: none !important; }"
-        "[data-testid='collapsedControl'] { display: none !important; }"
-        "[data-testid='stSidebarCollapsedControl'] { display: none !important; }"
+        f"{_sidebar_css}"
         ".card {"
         "  background:#ffffff;border:1px solid #e6e6e6;border-radius:10px;"
         "  padding:22px 26px;margin-bottom:1rem;"
@@ -289,3 +306,86 @@ def render_nav(active: str) -> None:
         f"<div class='chip-nav'>{tabs_html}</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_chip_multiselect(
+    label: str,
+    session_key: str,
+    options: list[tuple[str, str]],
+    *,
+    placeholder: str,
+    search_key: str,
+    on_remove: Callable[[str], None] | None = None,
+) -> list[str]:
+    """Chip-tag multi-select: an st_searchbox to add a value, one button per chip to remove it.
+
+    `options` is the full (label, value) universe to search over -- matching is
+    substring, case-insensitive, over the label. Selections persist in
+    st.session_state[session_key] and are returned as that same list of values.
+    `on_remove(value)` runs right before the rerun that follows removing a chip,
+    e.g. to cascade-drop cluster selections that belonged to a removed family.
+    """
+    if session_key not in st.session_state:
+        st.session_state[session_key] = []
+
+    label_by_value = {val: lbl for lbl, val in options}
+
+    def _search(query: str) -> list[tuple[str, str]]:
+        if not query:
+            return options
+        q = query.lower()
+        return [(lbl, val) for lbl, val in options if q in lbl.lower()]
+
+    # st_searchbox only reads `default_options` when its own widget state is freshly
+    # (re)initialized -- passing a new `options` list on a later render does NOT
+    # refresh what the dropdown shows before the user types a character. When this
+    # widget's option universe depends on another filter (e.g. cluster options
+    # scoped by the selected family), a changed universe must force a fresh widget
+    # generation here, otherwise the dropdown keeps offering stale, out-of-scope
+    # options picked up from whatever the universe was on first render.
+    _scope_fingerprint = tuple(val for _, val in options)
+    _scope_key = f"_{search_key}_scope_fp"
+    if st.session_state.get(_scope_key) != _scope_fingerprint:
+        st.session_state[_scope_key] = _scope_fingerprint
+        st.session_state.pop(search_key, None)
+        st.session_state.pop(f"_{search_key}_seen_gen", None)
+
+    st.caption(label)
+    picked = st_searchbox(
+        _search,
+        placeholder=placeholder,
+        key=search_key,
+        clear_on_submit=True,
+        style_overrides=_FILTER_SEARCHBOX_STYLE,
+        default_options=options[:20],
+    )
+
+    # st_searchbox keeps returning the same submitted value on every rerun after a
+    # pick -- clear_on_submit only resets the visible text box, not the Python
+    # return value. Without a guard, a rerun triggered by something else entirely
+    # (e.g. clicking a chip's remove button below) looks identical to a fresh pick
+    # and re-appends the value right after it's removed. The library regenerates
+    # `key_react` on every genuine new submission, so it's a reliable "did a new
+    # pick actually happen" signal, independent of whether the picked value repeats.
+    _generation = st.session_state[search_key]["key_react"]
+    _seen_key = f"_{search_key}_seen_gen"
+    if picked and st.session_state.get(_seen_key) != _generation:
+        st.session_state[_seen_key] = _generation
+        if picked not in st.session_state[session_key]:
+            st.session_state[session_key].append(picked)
+            st.rerun()
+
+    selected: list[str] = list(st.session_state[session_key])
+    for value in selected:
+        short = label_by_value.get(value, value)
+        short = short[:30] + "…" if len(short) > 30 else short
+        if st.button(
+            f"× {short}", key=f"rm_{search_key}_{value}",
+            use_container_width=True, type="secondary",
+        ):
+            st.session_state[session_key].remove(value)
+            if on_remove:
+                on_remove(value)
+            st.rerun()
+
+    return list(st.session_state[session_key])
