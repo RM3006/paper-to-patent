@@ -289,7 +289,7 @@ def document_clusters(
         )
     dev_con = _duckdb_lib.connect(str(dev_db_path), read_only=True)
     try:
-        corpus = load_corpus(dev_con)
+        corpus, _excluded = load_corpus(dev_con)
     finally:
         dev_con.close()
     id_to_text = {d["doc_id"]: d["text"] for d in corpus}

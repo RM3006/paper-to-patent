@@ -210,16 +210,27 @@ def corpus_db() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     con.execute(
         "CREATE TABLE main_marts.dim_patent (patent_id VARCHAR, title VARCHAR)"
     )
+    _french_title = "Etude de la commutation resistive dans les oxydes"
+    _french_abstract = (
+        "Cette etude examine les proprietes de commutation resistive dans les "
+        "dispositifs a base d'oxydes metalliques pour applications memoire non "
+        "volatile et les mecanismes physiques sous-jacents."
+    )
     con.execute(
         """
         INSERT INTO main_marts.dim_paper VALUES
             ('W001', ?, ?),
             ('W002', 'Some Title', NULL),
-            ('W003', 'Some Title', '');
+            ('W003', 'Some Title', ''),
+            ('W004', ?, ?),
+            ('W005', 'seL4: seL4 3.0.1', NULL),
+            ('W006', '', ?);
         """,
-        [_GOOD_TITLE, _GOOD_ABSTRACT],
+        [_GOOD_TITLE, _GOOD_ABSTRACT, _french_title, _french_abstract, _GOOD_ABSTRACT],
     )
-    # P001: good title; P002: NULL title (skip); P003: version-style title (skip)
+    # P001: good title; P002: NULL title (no abstract field exists for
+    # patents, so this has no usable text at all -- excluded, not skipped);
+    # P003: version-style title (skip)
     con.execute("""
         INSERT INTO main_marts.dim_patent VALUES
             ('P001', 'High-performance memristive memory device'),
@@ -230,25 +241,55 @@ def corpus_db() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     con.close()
 
 
-def test_load_corpus_skips_nulls_and_empty(
+def test_load_corpus_falls_back_on_null_or_empty_abstract(
     corpus_db: duckdb.DuckDBPyConnection,
 ) -> None:
-    corpus = load_corpus(corpus_db)
-    # W002 (NULL abstract), W003 (empty abstract), P002 (NULL title),
-    # P003 (version-style title) are all skipped
-    assert len(corpus) == 2
+    corpus, _excluded = load_corpus(corpus_db)
+    # W002 (NULL abstract) and W003 (empty abstract) both have a usable
+    # title, so they fall back to title rather than being dropped.
+    w002 = next(d for d in corpus if d["doc_id"] == "W002")
+    w003 = next(d for d in corpus if d["doc_id"] == "W003")
+    assert w002["text_source"] == "title"
+    assert w002["text"] == "Some Title"
+    assert w003["text_source"] == "title"
+    assert w003["text"] == "Some Title"
+
+
+def test_load_corpus_falls_back_on_empty_title_paper_with_good_abstract(
+    corpus_db: duckdb.DuckDBPyConnection,
+) -> None:
+    # W006 has title='' (empty string, not NULL) but a substantial, English
+    # abstract. The SQL gate must not require a non-empty title to admit a
+    # row -- title and abstract can each independently be missing, and this
+    # paper has real, embeddable content in its abstract alone.
+    corpus, _excluded = load_corpus(corpus_db)
+    w006 = next(d for d in corpus if d["doc_id"] == "W006")
+    assert w006["text_source"] == "abstract"
+    assert w006["text"] == _GOOD_ABSTRACT
+
+
+def test_load_corpus_excludes_patent_with_no_title(
+    corpus_db: duckdb.DuckDBPyConnection,
+) -> None:
+    # Patents have no abstract field, so a NULL/empty title leaves no
+    # usable text at all. Must be recorded in excluded_documents, not
+    # silently dropped from patent_rows before the loop ever sees it.
+    _corpus, excluded = load_corpus(corpus_db)
+    assert all(d["doc_id"] != "P002" for d in _corpus)
+    p002 = next(d for d in excluded if d["doc_id"] == "P002")
+    assert p002["doc_type"] == "patent"
+    assert p002["exclusion_reason"] == "no_usable_text"
 
 
 def test_load_corpus_paper_fields(corpus_db: duckdb.DuckDBPyConnection) -> None:
-    corpus = load_corpus(corpus_db)
-    paper = next(d for d in corpus if d["doc_type"] == "paper")
-    assert paper["doc_id"] == "W001"
+    corpus, _excluded = load_corpus(corpus_db)
+    paper = next(d for d in corpus if d["doc_type"] == "paper" and d["doc_id"] == "W001")
     assert paper["text_source"] == "abstract"
     assert paper["text"] == _GOOD_ABSTRACT
 
 
 def test_load_corpus_patent_fields(corpus_db: duckdb.DuckDBPyConnection) -> None:
-    corpus = load_corpus(corpus_db)
+    corpus, _excluded = load_corpus(corpus_db)
     patent = next(d for d in corpus if d["doc_type"] == "patent")
     assert patent["doc_id"] == "P001"
     assert patent["text_source"] == "title"
@@ -258,12 +299,42 @@ def test_load_corpus_patent_fields(corpus_db: duckdb.DuckDBPyConnection) -> None
 def test_load_corpus_excludes_version_style_patent_title(
     corpus_db: duckdb.DuckDBPyConnection,
 ) -> None:
-    corpus = load_corpus(corpus_db)
+    corpus, _excluded = load_corpus(corpus_db)
     assert all(d["doc_id"] != "P003" for d in corpus)
 
 
 def test_load_corpus_all_required_keys(corpus_db: duckdb.DuckDBPyConnection) -> None:
-    corpus = load_corpus(corpus_db)
+    corpus, _excluded = load_corpus(corpus_db)
     required = {"doc_id", "doc_type", "text_source", "text"}
     for doc in corpus:
+        assert required == set(doc.keys())
+
+
+def test_load_corpus_excluded_has_version_style_title_reason(
+    corpus_db: duckdb.DuckDBPyConnection,
+) -> None:
+    _corpus, excluded = load_corpus(corpus_db)
+    w005 = next(d for d in excluded if d["doc_id"] == "W005")
+    assert w005["doc_type"] == "paper"
+    assert w005["exclusion_reason"] == "version_style_title"
+    p003 = next(d for d in excluded if d["doc_id"] == "P003")
+    assert p003["doc_type"] == "patent"
+    assert p003["exclusion_reason"] == "version_style_title"
+
+
+def test_load_corpus_excluded_has_non_english_reason(
+    corpus_db: duckdb.DuckDBPyConnection,
+) -> None:
+    _corpus, excluded = load_corpus(corpus_db)
+    w004 = next(d for d in excluded if d["doc_id"] == "W004")
+    assert w004["doc_type"] == "paper"
+    assert w004["exclusion_reason"] == "non_english_content"
+
+
+def test_load_corpus_excluded_all_required_keys(
+    corpus_db: duckdb.DuckDBPyConnection,
+) -> None:
+    _corpus, excluded = load_corpus(corpus_db)
+    required = {"doc_id", "doc_type", "exclusion_reason"}
+    for doc in excluded:
         assert required == set(doc.keys())

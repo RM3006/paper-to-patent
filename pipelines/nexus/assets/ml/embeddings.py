@@ -25,9 +25,19 @@ A truncated flag is set for any document whose tokenized length exceeds the
 model's 256-token hard limit. The model silently truncates on encode; this flag
 lets downstream analysis treat over-long inputs with appropriate caution.
 
+Documents the gate excludes entirely (version-style title, or non-English
+title+abstract) are also persisted as a second output, excluded_documents —
+computed in the same pass as the embeddings (a multi_asset, not a separate
+asset re-deriving the same decision), so dbt's staging-layer exclusion of
+these same documents from the served corpus can never drift out of sync with
+what this gate actually decided.
+
 Input:   dev.duckdb (main_marts.dim_paper, main_marts.dim_patent)
 Output:  r2://p2p-lake/intermediate/embeddings/v{date}/embeddings.parquet
-Schema:  doc_id, doc_type, text_source, model_version, truncated, embedding (FLOAT[384])
+         r2://p2p-lake/intermediate/excluded_documents/v{date}/excluded_documents.parquet
+Schema:  embeddings — doc_id, doc_type, text_source, model_version, truncated,
+         embedding (FLOAT[384])
+         excluded_documents — doc_id, doc_type, exclusion_reason, model_version
 """
 
 import datetime
@@ -40,7 +50,7 @@ from typing import Any
 import duckdb as _duckdb_lib
 import numpy as np
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetOut, MaterializeResult, OpExecutionContext, multi_asset
 from langdetect import (
     DetectorFactory,
     LangDetectException,
@@ -136,30 +146,68 @@ def resolve_paper_text(title: str, abstract: str) -> tuple[str, str] | None:
     return (abstract, "abstract")
 
 
-def load_corpus(dev_con: "_duckdb_lib.DuckDBPyConnection") -> list[dict[str, str]]:
-    """Return all embeddable documents from dev.duckdb as a unified list.
+def load_corpus(
+    dev_con: "_duckdb_lib.DuckDBPyConnection",
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Return (embeddable corpus, excluded documents) from dev.duckdb.
 
-    Papers  → text_source='abstract' or 'title' (see resolve_paper_text),
-              doc_type='paper', doc_id=work_id
-    Patents → text_source='title', doc_type='patent', doc_id=patent_id
+    Corpus:
+      Papers  → text_source='abstract' or 'title' (see resolve_paper_text),
+                doc_type='paper', doc_id=work_id
+      Patents → text_source='title', doc_type='patent', doc_id=patent_id
 
-    Rows with no trustworthy text in either field are skipped entirely —
-    they would produce meaningless embeddings that distort cluster centroids.
-    See resolve_paper_text and is_version_style_title for the quality gate.
+    Excluded: doc_id, doc_type, exclusion_reason ('version_style_title' or
+    'non_english_content') for documents with no trustworthy text in either
+    field — they would produce meaningless embeddings that distort cluster
+    centroids. See resolve_paper_text and is_version_style_title for the
+    quality gate. Returned (not just dropped) so document_embeddings can
+    persist this list to R2 for dbt to exclude the same documents from the
+    served corpus — a single computation feeding both, so the two can never
+    drift apart the way an independently-written SQL approximation could.
+
+    A NULL/missing abstract is coalesced to '' here (not filtered out by the
+    query) so it goes through the same too-short-abstract branch of
+    resolve_paper_text() as a placeholder abstract, falling back to title
+    instead of being silently dropped before the gate ever sees it — a paper
+    missing its abstract is exactly the same "no usable abstract" case as
+    one with a too-short abstract, not a reason to exclude the document.
+
+    Title is coalesced to '' the same way and is NOT required to be non-empty
+    by the query — title and abstract can each independently be missing (a
+    handful of OpenAlex works have title='' despite a substantial, usable
+    abstract), and gating entry on title alone silently dropped those papers
+    before resolve_paper_text() ever saw them: neither embedded nor recorded
+    in excluded_documents, the same invisible third state the abstract-side
+    fix above was written to close. resolve_paper_text() already handles an
+    empty title correctly (falls through to the abstract). Patents have no
+    abstract field at all, so an empty patent title truly has no usable text;
+    that case is still recorded in excluded_documents rather than silently
+    dropped from patent_rows.
     """
     paper_rows = dev_con.execute(
-        "SELECT work_id, title, abstract FROM main_marts.dim_paper "
-        "WHERE abstract IS NOT NULL AND length(abstract) > 0"
+        "SELECT work_id, COALESCE(title, ''), COALESCE(abstract, '') FROM main_marts.dim_paper "
+        "WHERE length(COALESCE(title, '')) > 0 OR length(COALESCE(abstract, '')) > 0"
     ).fetchall()
     patent_rows = dev_con.execute(
-        "SELECT patent_id, title FROM main_marts.dim_patent "
-        "WHERE title IS NOT NULL AND length(title) > 0"
+        "SELECT patent_id, COALESCE(title, '') FROM main_marts.dim_patent"
     ).fetchall()
 
     corpus: list[dict[str, str]] = []
+    excluded: list[dict[str, str]] = []
     for work_id, title, abstract in paper_rows:
-        resolved = resolve_paper_text(title or "", abstract)
+        resolved = resolve_paper_text(title, abstract)
         if resolved is None:
+            # resolve_paper_text() returns None in exactly two cases: a
+            # version-style title (checked first, internally), or no
+            # trustworthy English text in either field — title may itself be
+            # empty here, not just too short, so this is a best-effort label
+            # rather than a strict "confirmed non-English" claim.
+            reason = (
+                "version_style_title"
+                if is_version_style_title(title)
+                else "non_english_content"
+            )
+            excluded.append({"doc_id": work_id, "doc_type": "paper", "exclusion_reason": reason})
             continue
         text, text_source = resolved
         corpus.append({
@@ -169,7 +217,19 @@ def load_corpus(dev_con: "_duckdb_lib.DuckDBPyConnection") -> list[dict[str, str
             "text": text,
         })
     for patent_id, title in patent_rows:
+        if not title:
+            excluded.append({
+                "doc_id": patent_id,
+                "doc_type": "patent",
+                "exclusion_reason": "no_usable_text",
+            })
+            continue
         if is_version_style_title(title):
+            excluded.append({
+                "doc_id": patent_id,
+                "doc_type": "patent",
+                "exclusion_reason": "version_style_title",
+            })
             continue
         corpus.append({
             "doc_id": patent_id,
@@ -177,7 +237,7 @@ def load_corpus(dev_con: "_duckdb_lib.DuckDBPyConnection") -> list[dict[str, str
             "text_source": "title",
             "text": title,
         })
-    return corpus
+    return corpus, excluded
 
 
 # ---------------------------------------------------------------------------
@@ -185,35 +245,95 @@ def load_corpus(dev_con: "_duckdb_lib.DuckDBPyConnection") -> list[dict[str, str
 # ---------------------------------------------------------------------------
 
 
-@asset(
-    group_name="ml",
-    description=(
-        "Embeds all scope documents with all-MiniLM-L6-v2 (384-dim) on CPU, batched. "
-        "Papers use abstract (falling back to title, or excluding the doc entirely, "
-        "via the quality gate in resolve_paper_text — placeholder/too-short/non-English "
-        "abstracts, version-style titles); patents use title (no abstracts in "
-        "PatentsView bulk data). Records a truncated flag for docs exceeding the "
-        "256-token model limit. Persisted to R2 so re-clustering never re-embeds. "
-        "Depends on: dev.duckdb (main_marts.dim_paper, main_marts.dim_patent). "
-        "Output: r2://p2p-lake/intermediate/embeddings/v{date}/embeddings.parquet"
-    ),
+def _write_parquet_to_r2(
+    df: pl.DataFrame,
+    r2_path: str,
+    r2: R2Resource,
+    duckdb: DuckDBR2Resource,
+    bucket: str,
+) -> None:
+    """Write df to r2_path via local-temp-file stage-then-promote."""
+    staging_r2 = f"{r2_path}.staging"
+    staging_key = staging_r2.removeprefix(f"r2://{bucket}/")
+
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as _f:
+        tmp = pathlib.Path(_f.name)
+    try:
+        df.write_parquet(tmp)
+        with duckdb.get_connection() as con:
+            con.execute(
+                f"COPY (SELECT * FROM read_parquet('{tmp.as_posix()}')) "
+                f"TO '{staging_r2}' (FORMAT PARQUET)"
+            )
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    with duckdb.get_connection() as con:
+        con.execute(
+            f"COPY (SELECT * FROM read_parquet('{staging_r2}')) "
+            f"TO '{r2_path}' (FORMAT PARQUET)"
+        )
+
+    api_token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    if api_token:
+        delete_r2_object(r2.account_id, api_token, bucket, staging_key)
+    else:
+        logger.warning("CLOUDFLARE_API_TOKEN not set; staging file left: %s", staging_key)
+
+
+@multi_asset(
+    outs={
+        "document_embeddings": AssetOut(
+            group_name="ml",
+            description=(
+                "Embeds all scope documents with all-MiniLM-L6-v2 (384-dim) on CPU, batched. "
+                "Papers use abstract (falling back to title, or excluding the doc entirely, "
+                "via the quality gate in resolve_paper_text — placeholder/too-short/non-English "
+                "abstracts, version-style titles); patents use title (no abstracts in "
+                "PatentsView bulk data). Records a truncated flag for docs exceeding the "
+                "256-token model limit. Persisted to R2 so re-clustering never re-embeds. "
+                "Depends on: dev.duckdb (main_marts.dim_paper, main_marts.dim_patent). "
+                "Output: r2://p2p-lake/intermediate/embeddings/v{date}/embeddings.parquet"
+            ),
+        ),
+        "excluded_documents": AssetOut(
+            group_name="ml",
+            description=(
+                "Documents the embedding quality gate excluded entirely (version-style "
+                "title, or title+abstract both detected non-English) — see load_corpus. "
+                "Computed in the same pass as document_embeddings, not a separately "
+                "maintained filter, so dbt's staging-layer exclusion (stg_openalex_works, "
+                "stg_patents_scoped) can never drift from what Part 5 actually decided. "
+                "Depends on: dev.duckdb (main_marts.dim_paper, main_marts.dim_patent). "
+                "Output: r2://p2p-lake/intermediate/excluded_documents/v{date}/excluded_documents.parquet"
+            ),
+        ),
+    },
 )
 def document_embeddings(
     context: OpExecutionContext,
     r2: R2Resource,
     duckdb: DuckDBR2Resource,
-) -> None:
-    """Embed scope documents (papers + patents) and write to R2.
+) -> tuple[MaterializeResult[Any], MaterializeResult[Any]]:
+    """Embed scope documents (papers + patents), and write both outputs to R2.
 
-    Produces: r2://p2p-lake/intermediate/embeddings/v{date}/embeddings.parquet
+    Produces: embeddings.parquet (the corpus) and excluded_documents.parquet
+    (what the gate dropped and why) — one computation, two artifacts, so dbt
+    can exclude exactly the same documents from the served corpus.
     Depends on: dev.duckdb built by `dbt build` (Part 4 / Step 0c).
     Output: r2://p2p-lake/intermediate/embeddings/v{date}/embeddings.parquet
+            r2://p2p-lake/intermediate/excluded_documents/v{date}/excluded_documents.parquet
     """
     snapshot_date = datetime.date.today().isoformat()
     bucket = r2.bucket
     r2_path = f"r2://{bucket}/intermediate/embeddings/v{snapshot_date}/embeddings.parquet"
+    excluded_r2_path = (
+        f"r2://{bucket}/intermediate/excluded_documents/v{snapshot_date}/excluded_documents.parquet"
+    )
 
-    # Idempotency: skip if snapshot already written today
+    # Idempotency: skip if snapshot already written today (both outputs are
+    # always produced together in this same function call, so checking the
+    # embeddings path alone is a sufficient gate for both).
     with duckdb.get_connection() as con:
         try:
             n = con.execute(f"SELECT COUNT(*) FROM read_parquet('{r2_path}')").fetchone()
@@ -222,7 +342,12 @@ def document_embeddings(
             existing = None
     if existing is not None:
         context.log.info("Snapshot %s exists (%s rows). Skipping.", r2_path, f"{existing:,}")
-        return
+        return (
+            MaterializeResult(asset_key="document_embeddings", metadata={"r2_path": r2_path}),
+            MaterializeResult(
+                asset_key="excluded_documents", metadata={"r2_path": excluded_r2_path}
+            ),
+        )
 
     dev_db_path = pathlib.Path(os.environ.get("DBT_DUCKDB_PATH", "dev.duckdb"))
     if not dev_db_path.exists():
@@ -240,15 +365,15 @@ def document_embeddings(
     dev_con = _duckdb_lib.connect(str(dev_db_path), read_only=True)
     try:
         context.log.info("Loading corpus from dev.duckdb…")
-        corpus = load_corpus(dev_con)
+        corpus, excluded = load_corpus(dev_con)
     finally:
         dev_con.close()
 
     n_papers = sum(1 for d in corpus if d["doc_type"] == "paper")
     n_patents = sum(1 for d in corpus if d["doc_type"] == "patent")
     context.log.info(
-        "Corpus: %s docs (%s papers, %s patents).",
-        f"{len(corpus):,}", f"{n_papers:,}", f"{n_patents:,}",
+        "Corpus: %s docs (%s papers, %s patents). Excluded: %s.",
+        f"{len(corpus):,}", f"{n_papers:,}", f"{n_patents:,}", f"{len(excluded):,}",
     )
 
     texts = [d["text"] for d in corpus]
@@ -295,46 +420,47 @@ def document_embeddings(
             "embedding": pl.List(pl.Float32),
         },
     )
-
-    # Write to R2 via stage-then-promote
-    staging_r2 = f"{r2_path}.staging"
-    staging_key = staging_r2.removeprefix(f"r2://{bucket}/")
-
-    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as _f:
-        tmp = pathlib.Path(_f.name)
-    try:
-        df.write_parquet(tmp)
-        with duckdb.get_connection() as con:
-            con.execute(
-                f"COPY (SELECT * FROM read_parquet('{tmp.as_posix()}')) "
-                f"TO '{staging_r2}' (FORMAT PARQUET)"
-            )
-    finally:
-        tmp.unlink(missing_ok=True)
-
-    with duckdb.get_connection() as con:
-        con.execute(
-            f"COPY (SELECT * FROM read_parquet('{staging_r2}')) "
-            f"TO '{r2_path}' (FORMAT PARQUET)"
-        )
-
-    api_token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
-    if api_token:
-        delete_r2_object(r2.account_id, api_token, bucket, staging_key)
-    else:
-        logger.warning("CLOUDFLARE_API_TOKEN not set; staging file left: %s", staging_key)
-
+    _write_parquet_to_r2(df, r2_path, r2, duckdb, bucket)
     context.log.info("Written %s rows → %s", f"{len(df):,}", r2_path)
-    context.add_output_metadata(
+
+    excluded_df = pl.DataFrame(
         {
-            "snapshot_date": snapshot_date,
-            "total_docs": len(df),
-            "n_papers": n_papers,
-            "n_patents": n_patents,
-            "n_truncated": n_truncated,
-            "pct_truncated": round(100.0 * n_truncated / max(len(df), 1), 2),
-            "model_version": _MODEL_NAME,
-            "embedding_dim": 384,
-            "r2_path": r2_path,
-        }
+            "doc_id": [d["doc_id"] for d in excluded],
+            "doc_type": [d["doc_type"] for d in excluded],
+            "exclusion_reason": [d["exclusion_reason"] for d in excluded],
+            "model_version": [_MODEL_NAME] * len(excluded),
+        },
+        schema={
+            "doc_id": pl.String,
+            "doc_type": pl.String,
+            "exclusion_reason": pl.String,
+            "model_version": pl.String,
+        },
+    )
+    _write_parquet_to_r2(excluded_df, excluded_r2_path, r2, duckdb, bucket)
+    context.log.info("Written %s rows → %s", f"{len(excluded_df):,}", excluded_r2_path)
+
+    return (
+        MaterializeResult(
+            asset_key="document_embeddings",
+            metadata={
+                "snapshot_date": snapshot_date,
+                "total_docs": len(df),
+                "n_papers": n_papers,
+                "n_patents": n_patents,
+                "n_truncated": n_truncated,
+                "pct_truncated": round(100.0 * n_truncated / max(len(df), 1), 2),
+                "model_version": _MODEL_NAME,
+                "embedding_dim": 384,
+                "r2_path": r2_path,
+            },
+        ),
+        MaterializeResult(
+            asset_key="excluded_documents",
+            metadata={
+                "snapshot_date": snapshot_date,
+                "total_excluded": len(excluded_df),
+                "r2_path": excluded_r2_path,
+            },
+        ),
     )
