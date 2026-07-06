@@ -3,22 +3,21 @@ version: 2
 models:
   - name: int_org_crosswalk
     description: >
-      Org crosswalk sourced from R2 — re-exposes the Part 3 entity-resolution
-      output inside the dbt graph so marts can ref() it. One row per
-      (source, source_id); dim_organization collapses this to one row per
-      org_id. Passthrough only — no filtering or enrichment at this layer.
+      The organisation-matching results, made available for the rest of the
+      data model to build on. One row per (population, native identifier);
+      dim_organization collapses this to one row per organisation.
     columns:
       - name: org_id
-        description: "{{ doc('org_id') }} Not unique in this model — multiple (source, source_id) rows can share the same org_id."
+        description: "{{ doc('org_id') }} Not unique in this model — multiple records can resolve to the same organisation."
         tests: [not_null]
       - name: source
-        description: "'patentsview' or 'openalex' — which corpus source_id belongs to."
+        description: "'patentsview' or 'openalex' — which population source_id belongs to."
         tests: [not_null]
       - name: source_id
-        description: "Native source identifier: PatentsView assignee_id when source='patentsview', OpenAlex institution_id when source='openalex'."
+        description: "The native identifier for this record in its own population (an assignee identifier for patents, an institution identifier for papers)."
         tests: [not_null]
       - name: canonical_name
-        description: "Human-readable organisation name for this source row. May differ across rows sharing the same org_id; dim_organization picks one per the match_method priority order."
+        description: "Human-readable organisation name for this record. May differ across records resolving to the same organisation; dim_organization picks the most trustworthy one to show."
       - name: match_method
         description: "{{ doc('match_method') }}"
         tests: [not_null]

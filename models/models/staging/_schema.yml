@@ -3,35 +3,33 @@ version: 2
 models:
   - name: stg_openalex_works
     description: >
-      OpenAlex scope works, type-cast and cleaned. Excludes Harvard Dataverse
-      dataset entries (doi 10.7910), filename-like titles, software-release
-      note titles OpenAlex mistypes as type:article, and any doc_id the Part
-      5 embedding quality gate excluded entirely (version-style title, or
-      title+abstract both detected non-English — see
-      ml_intermediate.excluded_documents).
+      Papers in scope for this atlas, cleaned and standardised. Excludes
+      non-research entries that the source misclassifies as papers (dataset
+      files, software release notes) and any paper that was screened out
+      entirely during quality checks (e.g. its title looked like a version
+      number, or its content couldn't be identified as English).
     columns:
       - name: work_url
-        description: "Full OpenAlex work URL, passed through unchanged from the source's openalex_id column. work_id is the short form extracted from this."
+        description: "A web link to this paper's record in the source literature database. work_id is the short identifier extracted from this."
         tests: [not_null]
       - name: work_id
-        description: "{{ doc('work_id') }} Extracted from work_url via regexp (e.g. `W2741809807`). Primary key of this model."
+        description: "{{ doc('work_id') }} Primary key of this model."
         tests: [not_null, unique]
       - name: doi
-        description: "DOI URL as OpenAlex reports it. NULL is kept — preprints without a DOI are legitimate and not excluded."
+        description: "This paper's DOI (Digital Object Identifier), if it has one. NULL is expected and kept — a paper legitimately having no DOI (e.g. certain preprints) is not treated as an error."
       - name: doi_bare
-        description: "doi lowercased with the `https?://(dx.)?doi.org/` prefix stripped, for exact-match joins. NULL when doi is NULL."
+        description: "The DOI without its web-link prefix, for faster exact-match comparisons. NULL when doi is NULL."
       - name: title
-        description: "Paper title, as reconstructed by OpenAlex."
+        description: "Paper title."
         tests: [not_null]
       - name: type
         description: >
-          OpenAlex work type. The ingest asset filters to
-          type:article|preprint|review at the API level (see openalex.py);
-          this test guards that filter never regresses silently. Note:
-          OpenAlex itself mistypes some non-research records (e.g.
-          software-release DOIs) as 'article' — this filter is necessary but
-          not sufficient to exclude all non-article noise, which is why this
-          model also applies its own filename/software-release-title filters.
+          The kind of publication this is — article, preprint, or review.
+          Scope for this atlas is limited to these three. Note that the
+          source occasionally mislabels a non-research record (e.g. a
+          software release announcement) as an article, so this label alone
+          doesn't guarantee the entry is genuine research — this atlas
+          applies additional checks to catch the ones it can.
         tests:
           - accepted_values:
               arguments:
@@ -40,48 +38,48 @@ models:
         description: "{{ doc('publication_date') }}"
         tests: [not_null]
       - name: publication_year
-        description: "Year component of publication_date, cast to integer."
+        description: "Year component of publication_date."
       - name: language
-        description: "OpenAlex-reported language code for the work (e.g. 'en'). Ingest scope requires language:en; not re-validated at this layer."
+        description: "The reported language of this paper. Scope for this atlas is limited to English-language papers."
       - name: abstract
-        description: "Abstract, reconstructed by the ingest asset from OpenAlex's abstract_inverted_index. NULL where OpenAlex has no abstract."
+        description: "Paper abstract. NULL where the source has none available."
       - name: primary_topic_id
-        description: "OpenAlex topic URL — one of the 4 scope topics (T11338 EUV, T10299 Silicon Photonics, T11429 Lasers, T10502 Advanced Memory and Neural Computing)."
+        description: "The subject-area topic this paper is primarily about, drawn from a fixed set of topics in scope for this atlas (EUV lithography, silicon photonics, lasers, or advanced memory and neural computing)."
       - name: primary_topic_name
-        description: "Human-readable OpenAlex topic name corresponding to primary_topic_id."
+        description: "Human-readable name for primary_topic_id."
       - name: institution_ids
-        description: "List of OpenAlex institution URLs across all authorships on this work. Exploded to one row per (paper, institution) downstream in fact_publication, not at this layer."
+        description: "Every co-authoring institution's identifier for this paper, as a list. Expanded to one row per (paper, institution) further downstream, in fact_publication."
       - name: institution_rors
-        description: "List of ROR URLs across all authorships, same order as institution_ids. Not currently consumed downstream of staging — a candidate ROR-bridge join key for entity resolution (see int_organization_crosswalk match_method='ror')."
+        description: "The standardised registry identifier for each co-authoring institution, in the same order as institution_ids. Not currently used downstream — a candidate signal for improving future organisation matching."
       - name: institution_display_names
-        description: "List of institution display names across all authorships, same order as institution_ids. Passthrough for debugging/display; not a join key."
+        description: "Display name for each co-authoring institution, in the same order as institution_ids. For reference/debugging; not used as a matching key."
 
   - name: stg_patents_scoped
     description: >
-      Scope-filtered patents (CPC match + filing_date 2014–2025), type-cast.
-      Excludes any doc_id the Part 5 embedding quality gate excluded
-      entirely (see ml_intermediate.excluded_documents).
+      Patents in scope for this atlas (matching the relevant classification
+      codes, filed between 2014 and 2025), cleaned and standardised.
+      Excludes any patent that was screened out entirely during quality
+      checks (e.g. its title looked like a version number).
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }} Primary key of this model."
         tests: [not_null, unique]
       - name: title
-        description: "Patent title, as granted (PatentsView patent_title)."
+        description: "Patent title, as granted."
       - name: filing_date
         description: "{{ doc('filing_date') }}"
         tests: [not_null]
       - name: grant_date
-        description: "Grant date (PatentsView patent_date). Metadata only; never used in time metrics (CLAUDE.md rule 2)."
+        description: "The date this patent was formally granted. Shown for reference only — never used to measure timing."
       - name: patent_type
-        description: "utility | design | plant | reissue | defensive_publication, as reported by PatentsView."
+        description: "utility | design | plant | reissue | defensive_publication."
 
   - name: stg_assignees
     description: >
-      PatentsView disambiguated assignees joined to scope (inner join to
-      stg_patents_scoped — assignees of out-of-scope patents are dropped).
-      Filtered to organisation-type assignees (assignee_type in 2, 3, 6, 7);
-      individual-inventor assignees are excluded entirely, not carried
-      through with a NULL org_name.
+      Assignees of patents in scope for this atlas — the parties each patent
+      is granted to. Limited to organisation-type assignees; individual
+      inventors are excluded entirely rather than carried through with a
+      blank organisation name.
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }}"
@@ -92,21 +90,21 @@ models:
                 to: ref('stg_patents_scoped')
                 field: patent_id
       - name: assignee_id
-        description: "PatentsView disambiguated assignee UUID — the patent-side entity-resolution identity, joined to int_organization_crosswalk downstream."
+        description: "Identifier for this assignee, used to resolve it to an organisation identity."
         tests: [not_null]
       - name: org_name
-        description: "PatentsView disambiguated organisation name (disambig_assignee_organization). Never NULL in this model — rows with a NULL organisation name are filtered out at the source, since this model keeps organisation-type assignees only."
+        description: "Organisation name for this assignee, as recorded on the patent. Never NULL in this model, since it's limited to organisation-type assignees."
         tests: [not_null]
       - name: assignee_type
-        description: "PatentsView assignee_type code, restricted to '2' (US company), '3' (foreign company), '6', '7' (other organisation types) by this model's WHERE filter. '4'/'5' (individuals) are excluded."
+        description: "Whether this assignee is a US company, foreign company, or another organisation type. Individual inventors are excluded from this model entirely."
       - name: assignee_sequence
-        description: "Order of this assignee among the patent's assignees (0 = primary/first-listed), cast to integer. Used by fact_patent_filing/mart_gap to pick one primary assignee per patent."
+        description: "Order of this assignee among the patent's assignees (0 = primary/first-listed) — used to pick one primary assignee per patent when a patent has several."
 
   - name: stg_cpc
     description: >
-      CPC classification codes for scope patents only (inner join to
-      stg_patents_scoped). Keeps every CPC row per patent, not just the
-      primary one — cpc_sequence = 0 identifies the primary code downstream.
+      Classification codes for patents in scope for this atlas. Keeps every
+      code assigned to each patent, not just the primary one — a
+      cpc_sequence of 0 identifies the primary code further downstream.
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }}"
@@ -117,26 +115,27 @@ models:
                 to: ref('stg_patents_scoped')
                 field: patent_id
       - name: cpc_group
-        description: "Full CPC group code (e.g. `G03F7/2004`) — the level the scope filter's prefix match operates on."
+        description: "Full classification code (e.g. `G03F7/2004`) identifying a specific patented technique."
         tests: [not_null]
       - name: cpc_subclass
-        description: "CPC subclass (e.g. `G03F`) — the parent of cpc_group."
+        description: "Broader classification grouping (e.g. `G03F`) that cpc_group belongs to."
       - name: cpc_class
-        description: "CPC class (e.g. `G03`) — the parent of cpc_subclass."
+        description: "Broader classification grouping still (e.g. `G03`) that cpc_subclass belongs to."
       - name: cpc_section
-        description: "CPC section (e.g. `G`) — the top of the CPC hierarchy."
+        description: "The top-level classification grouping (e.g. `G`) that everything below it belongs to."
       - name: cpc_type
-        description: "PatentsView CPC classification type code (inventional vs additional), as reported by the source."
+        description: "Whether this is the patent's primary invention classification or an additional one."
       - name: cpc_sequence
-        description: "Order of this CPC code among the patent's CPC assignments, cast to integer. 0 identifies the primary CPC code, used downstream for family_id derivation (fact_patent_filing) and the scope filter."
+        description: "Order of this code among the patent's classification codes. 0 identifies the primary code, used further downstream to determine each patent's technology family."
 
   - name: stg_npl
     description: >
-      NPL "other reference" strings for scope patents (inner join to
-      stg_patents_scoped). Does NOT attempt matching here — raw text is
-      preserved for the Python NPL matcher (Part 4 Step 2); only a DOI
-      pre-extraction is done at this layer, as a convenience input to that
-      matcher, not a substitute for it.
+      Citation text for patents in scope for this atlas, specifically the
+      references to non-patent literature (research papers, as opposed to
+      other patents). No matching to a specific paper happens at this
+      layer — the raw citation text is preserved as-is for the
+      citation-matching process, with only a best-effort identifier
+      extraction done here as a convenience input to that process.
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }}"
@@ -147,18 +146,18 @@ models:
                 to: ref('stg_patents_scoped')
                 field: patent_id
       - name: ref_sequence
-        description: "Order of this NPL reference among the patent's other_reference entries, cast to integer (other_reference_sequence)."
+        description: "Order of this citation among the patent's non-patent-literature references."
       - name: ref_text
-        description: "Free-text citation string (other_reference_text) — the raw input the Python NPL matcher parses to resolve a paper reference."
+        description: "The raw citation text as it appears on the patent — the input the citation-matching process parses to try to resolve a specific paper reference."
         tests: [not_null]
       - name: doi_extracted
-        description: "DOI extracted from ref_text via regexp, lowercased with trailing punctuation stripped (citation strings routinely end in a period or comma, which would otherwise break exact-join matching). NULL when no DOI pattern is found in the reference text."
+        description: "A paper identifier (DOI) found directly in the citation text, if any. NULL when no such identifier could be found in the text — the citation may still be resolvable by other means further downstream."
 
   - name: stg_patent_citations
-    description: "Patent-to-patent citation edges where the citing patent is in scope (inner join to stg_patents_scoped on the citing side only)."
+    description: "Patent-to-patent citation edges, where the citing patent is one of the patents in scope for this atlas."
     columns:
       - name: citing_patent_id
-        description: "{{ doc('patent_id') }} The scope patent doing the citing (PatentsView patent_id)."
+        description: "{{ doc('patent_id') }} The in-scope patent doing the citing."
         tests:
           - not_null
           - relationships:
@@ -166,5 +165,5 @@ models:
                 to: ref('stg_patents_scoped')
                 field: patent_id
       - name: cited_patent_id
-        description: "{{ doc('patent_id') }} The (possibly out-of-scope) patent being cited (PatentsView citation_patent_id). Not filtered against stg_patents_scoped, so it is not guaranteed to resolve there."
+        description: "{{ doc('patent_id') }} The patent being cited — may or may not itself be in scope for this atlas."
         tests: [not_null]

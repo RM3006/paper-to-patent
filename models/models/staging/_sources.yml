@@ -3,185 +3,181 @@ version: 2
 sources:
   - name: openalex_raw
     description: >
-      OpenAlex works raw Parquet on R2 (r2://p2p-lake/raw/openalex/).
-      Views created at run-start via the create_external_sources() macro.
+      Raw papers data from the source literature database, before any
+      cleaning or scope filtering.
     tables:
       - name: works
         description: >
-          164,072 scope works (topics T11338/T10299/T11429/T10502, 2012-2025,
-          language:en, has_abstract:true).
+          164,072 papers matching this atlas's scope (specific subject-area
+          topics, 2012–2025, English language, with an abstract available).
         columns:
           - name: openalex_id
-            description: OpenAlex work URL (https://openalex.org/W…)
+            description: A web link to this paper's record in the source literature database.
           - name: doi
-            description: DOI URL — primary join key for NPL matcher
+            description: This paper's DOI (Digital Object Identifier) — the standard identifier used to recognise it elsewhere, including in a citing patent.
           - name: title
-            description: Paper title
+            description: Paper title.
           - name: type
             description: >
-              OpenAlex work type. Ingest filters to article|preprint|review at
-              the API level (see stg_openalex_works schema.yml for the guard test).
+              The kind of publication this is (article, preprint, or
+              review). Note that the source occasionally mislabels a
+              non-research entry (e.g. a software release announcement) as
+              an article.
           - name: publication_date
-            description: "Publication date (YYYY-MM-DD) — citation-lag anchor"
+            description: "Publication date — the anchor for paper-side time comparisons."
           - name: publication_year
-            description: Year (redundant with date; kept for fast filtering)
+            description: Year (redundant with the full date, kept for fast filtering).
           - name: language
-            description: Language code (en only in scope)
+            description: Reported language of the paper (English only in scope).
           - name: abstract
-            description: Reconstructed from abstract_inverted_index; NULL if absent
+            description: Paper abstract; NULL when the source has none available.
           - name: primary_topic_id
-            description: OpenAlex topic URL (one of 4 scope topics)
+            description: The subject-area topic this paper is primarily about (one of the topics in scope for this atlas).
           - name: primary_topic_name
-            description: Human-readable topic name
+            description: Human-readable topic name.
           - name: institution_ids
-            description: List of OpenAlex institution URLs from all authorships
+            description: Every co-authoring institution's identifier for this paper, as a list.
           - name: institution_rors
-            description: List of ROR URLs from all authorships
+            description: Standardised registry identifier for each co-authoring institution.
           - name: institution_display_names
-            description: List of institution display names from all authorships
+            description: Display name for each co-authoring institution.
 
   - name: patentsview_raw
     description: >
-      PatentsView bulk TSV converted to Parquet on R2 (r2://p2p-lake/raw/patentsview/).
-      Views created at run-start via the create_external_sources() macro.
+      Raw patents data from the US patent office's bulk records, before any
+      cleaning or scope filtering.
     tables:
       - name: patents
-        description: Core patent metadata (9.4M rows, full corpus)
+        description: Core patent metadata across the full patent record (9.4M rows).
         columns:
           - name: patent_id
-            description: USPTO patent number (String; may be prefixed for design/plant/reissue)
+            description: US patent number.
           - name: patent_type
-            description: utility / design / plant / reissue / defensive_publication
+            description: utility / design / plant / reissue / defensive_publication.
           - name: patent_date
-            description: "Grant date (YYYY-MM-DD) — metadata only, never used for time metrics"
+            description: "Grant date — reference only, never used to measure timing."
           - name: patent_title
-            description: Title as granted
+            description: Title as granted.
           - name: num_claims
-            description: Number of claims
+            description: Number of claims.
 
       - name: applications
-        description: Filing metadata — provides the citation-lag anchor filing_date (9.45M rows)
+        description: Filing metadata, providing each patent's filing date (9.45M rows).
         columns:
           - name: patent_id
-            description: Links to patents.patent_id (one row per patent, no duplicates)
+            description: Links to patents.patent_id (one row per patent).
           - name: filing_date
-            description: "Filing date (YYYY-MM-DD) — the citation-lag anchor"
+            description: "Filing date — the anchor for patent-side time comparisons."
           - name: application_id
-            description: USPTO application serial number
+            description: Application serial number.
 
       - name: patents_scoped
-        description: Scope-filtered corpus — CPC match + filing_date 2014–2025 (33,578 rows)
+        description: Patents matching this atlas's scope — relevant classification codes, filed between 2014 and 2025 (33,578 rows).
         columns:
           - name: patent_id
-            description: Scope-matched patent; all downstream assets join against this set
+            description: A scope-matched patent.
           - name: filing_date
-            description: Filing date from g_application (citation-lag anchor)
+            description: Filing date.
           - name: patent_title
-            description: Title as granted
+            description: Title as granted.
           - name: patent_date
-            description: Grant date — metadata only
+            description: Grant date — reference only.
 
       - name: assignees
-        description: Disambiguated patent assignees (8.75M rows)
+        description: Patent assignees, resolved to a consistent identifier across filings (8.75M rows).
         columns:
           - name: patent_id
-            description: Links to patents.patent_id
+            description: Links to patents.patent_id.
           - name: assignee_id
-            description: Disambiguated assignee UUID — patent-side ER identity
+            description: Identifier for this assignee.
           - name: disambig_assignee_organization
-            description: Disambiguated organisation name (NULL for individual assignees)
+            description: Organisation name (NULL for individual assignees).
           - name: assignee_type
-            description: 2=US company, 3=foreign company, 4-7=individuals/govt
+            description: 2=US company, 3=foreign company, 4-7=individuals/other.
 
       - name: cpc
-        description: CPC classification assignments (59.8M rows, multiple per patent)
+        description: Classification code assignments (59.8M rows, several per patent).
         columns:
           - name: patent_id
-            description: Links to patents.patent_id
+            description: Links to patents.patent_id.
           - name: cpc_group
-            description: Full group code (e.g. G03F7/2004) — scope filter uses prefix match here
+            description: Full classification code (e.g. G03F7/2004).
 
       - name: npl
-        description: Non-patent literature references (65.2M rows full corpus)
+        description: Citations to non-patent literature — i.e. to research papers, rather than to other patents (65.2M rows across the full patent record).
         columns:
           - name: patent_id
-            description: Citing patent
+            description: Citing patent.
           - name: other_reference_sequence
-            description: Order among NPL refs for this patent
+            description: Order among this patent's non-patent-literature citations.
           - name: other_reference_text
-            description: Free-text citation string (raw input for NPL matcher)
+            description: Raw citation text.
 
       - name: citations
-        description: Patent-to-patent citation edges (152.6M rows)
+        description: Patent-to-patent citation edges (152.6M rows).
         columns:
           - name: patent_id
-            description: Citing patent
+            description: Citing patent.
           - name: citation_patent_id
-            description: Cited patent
+            description: Cited patent.
 
   - name: er_intermediate
     description: >
-      Entity-resolution and NPL-matcher intermediate outputs on R2.
-      Views created at run-start via the create_external_sources() macro.
+      Organisation-matching and citation-matching results — the output of
+      resolving organisation identities and paper↔patent citation links.
     tables:
       - name: org_crosswalk
         description: >
-          int_organization_crosswalk — 16,198 rows, 14,209 distinct org_ids.
-          One row per (source, source_id). Every org in scope with match_method + confidence.
+          16,198 records resolving to 14,209 distinct organisations. One
+          row per (population, native identifier), each stating how it was
+          matched and how confident that match is.
         columns:
           - name: org_id
             description: "{{ doc('org_id') }}"
             tests: [not_null]
           - name: source
-            description: patentsview or openalex
+            description: Which population this record comes from — patentsview or openalex.
             tests: [not_null]
           - name: source_id
-            description: assignee_id (PV) or institution_id (OA)
+            description: The native identifier for this record in its own population (an assignee identifier for patents, an institution identifier for papers).
             tests: [not_null]
           - name: canonical_name
-            description: Human-readable org name
+            description: Human-readable organisation name.
           - name: match_method
-            description: "{{ doc('match_method') }} Only native_id | seed_crosswalk | fuzzy_high | ror occur in this source (fuzzy_review/npl_citation/org_cooccurrence/ror_bridge don't apply to the org crosswalk)."
+            description: "{{ doc('match_method') }}"
             tests: [not_null]
           - name: confidence
             description: "{{ doc('confidence') }}"
             tests: [not_null]
 
       - name: npl_links
-        description: >
-          Python NPL matcher output (Step 2). One row per resolved paper↔patent edge.
-          Written by the npl_links_raw Dagster asset to r2://p2p-lake/intermediate/npl/.
+        description: One row per resolved paper↔patent citation link.
         columns:
           - name: patent_id
-            description: "{{ doc('patent_id') }} Citing patent (in scope)."
+            description: "{{ doc('patent_id') }} The citing, in-scope patent."
             tests: [not_null]
           - name: work_id
-            description: "{{ doc('work_id') }} Matched OpenAlex work."
+            description: "{{ doc('work_id') }} The matched paper."
             tests: [not_null]
           - name: match_method
-            description: "{{ doc('match_method') }} Always npl_citation for this source (DOI or fuzzy-title route)."
+            description: "{{ doc('match_method') }}"
             tests: [not_null]
           - name: confidence
-            description: "{{ doc('confidence') }} high (DOI route) or medium (fuzzy-title route)."
+            description: "{{ doc('confidence') }}"
             tests: [not_null]
           - name: doi_extracted
-            description: DOI extracted from ref_text (NULL for fuzzy-title matches)
+            description: Paper identifier (DOI) found directly in the citation text, when there was one.
 
   - name: ml_intermediate
     description: >
-      ML pipeline intermediate outputs on R2 (r2://p2p-lake/intermediate/).
-      Views created at run-start via the create_external_sources() macro.
-      Each view is only registered when the corresponding R2 path is non-empty
-      (i.e. after the Part 5 Dagster ML assets have been materialised).
+      Clustering and cluster-labelling results. Each table here is only
+      available once clustering has been computed for the current corpus.
     tables:
       - name: clusters
-        description: >
-          UMAP + HDBSCAN output — one row per document.
-          Written by the document_clusters Dagster asset to
-          r2://p2p-lake/intermediate/clusters/v{date}/clusters.parquet.
+        description: Cluster assignment and map position for every document that has been through clustering.
         columns:
           - name: doc_id
-            description: OpenAlex work_id (papers) or USPTO patent_id (patents)
+            description: "{{ doc('work_id') }} for papers, {{ doc('patent_id') }} for patents."
             tests: [not_null]
           - name: doc_type
             description: "'paper' | 'patent'"
@@ -190,48 +186,37 @@ sources:
             description: "{{ doc('cluster_id') }}"
             tests: [not_null]
           - name: umap_x
-            description: 2D UMAP x-coordinate (float32)
+            description: Horizontal position on the technology map.
           - name: umap_y
-            description: 2D UMAP y-coordinate (float32)
+            description: Vertical position on the technology map.
           - name: model_version
-            description: Embedding model used (all-MiniLM-L6-v2)
+            description: Which version of the underlying similarity model produced this position.
 
       - name: cluster_labels
-        description: >
-          Claude Haiku-generated cluster labels — one row per cluster.
-          Written by the cluster_labels Dagster asset to
-          r2://p2p-lake/intermediate/cluster_labels/v{date}/cluster_labels.parquet.
+        description: Plain-English name and description for every cluster.
         columns:
           - name: cluster_id
-            description: Cluster identifier string — PK
+            description: "{{ doc('cluster_id') }} Primary key of this table."
             tests: [not_null]
           - name: tagline
-            description: "Short human-readable technology family name (2–6 words)"
+            description: "Short human-readable name for the cluster (2–6 words)."
             tests: [not_null]
           - name: summary_friendly
-            description: "2–3 plain-English sentences describing what the cluster is about"
+            description: "2–3 plain-English sentences describing what the cluster is about."
             tests: [not_null]
           - name: top_terms
-            description: "List[String] — top c-TF-IDF discriminating terms for this cluster"
+            description: "The terms that most distinguish this cluster from the rest of the corpus."
 
       - name: excluded_documents
         description: >
-          Documents the embedding quality gate (resolve_paper_text /
-          is_version_style_title, see embeddings.py) excluded entirely —
-          version-style titles (software release notes) or title+abstract
-          both detected non-English. Written by the document_embeddings
-          Dagster asset (a multi_asset alongside the embeddings output
-          itself — one computation, two artifacts, so this list can never
-          drift from what the gate actually decided) to
-          r2://p2p-lake/intermediate/excluded_documents/v{date}/excluded_documents.parquet.
-          stg_openalex_works and stg_patents_scoped exclude these doc_ids
-          from the served corpus. This is a real cross-pipeline dependency:
-          on a fresh build, before Part 5 has ever run, this source has zero
-          rows and the staging exclusion is a no-op (not an error) — see
-          create_external_sources() and MEMORY.md.
+          Documents that were screened out of the corpus entirely before
+          clustering — e.g. a title that looked like a version number
+          rather than a real title, or content that couldn't be identified
+          as English. Papers and patents excluded here don't appear
+          anywhere else in this atlas at all.
         columns:
           - name: doc_id
-            description: OpenAlex work_id (papers) or USPTO patent_id (patents)
+            description: "{{ doc('work_id') }} for papers, {{ doc('patent_id') }} for patents."
             tests: [not_null]
           - name: doc_type
             description: "'paper' | 'patent'"
@@ -240,4 +225,4 @@ sources:
             description: "'version_style_title' | 'non_english_content'"
             tests: [not_null]
           - name: model_version
-            description: Embedding model used (all-MiniLM-L6-v2)
+            description: Which version of the underlying quality-check model made this decision.

@@ -1,97 +1,118 @@
 {% docs __overview__ %}
-# Paper → Patent — dbt project
+# Paper → Patent — "The Chips Behind AI"
 
-**"The Chips Behind AI"** — tracing science-adjacent microchip hardware (EUV
-lithography, silicon photonics, neuromorphic & in-memory compute) from research
-paper to US patent. This project transforms two raw corpora landed in
-Cloudflare R2 by a separate Dagster pipeline — OpenAlex scientific works and
-PatentsView US patents — into a Gold star schema that links papers to the
-patents citing them, clusters everything into named technology families, and
-measures citation lag, IP concentration, and research-to-patent breadth.
+This atlas traces science-adjacent microchip hardware — EUV lithography,
+silicon photonics, neuromorphic computing, and in-memory/emerging memory —
+from research paper to US patent. It brings together two independent
+populations of documents:
 
-**Layout**
+- **Papers**: global scientific literature on these technologies.
+- **Patents**: US-granted patents in the same technology space.
 
-- `staging/` — one model per scope-filtered source table (OpenAlex works,
-  PatentsView patents/assignees/CPC/NPL/citations), type-cast and filtered to
-  the CPC + topic scope contract.
-- `intermediate/` — `int_org_crosswalk`, which re-exposes the entity-resolution
-  crosswalk (built in the Dagster pipeline, Part 3) inside the dbt graph.
-- `marts/` — the Gold star schema: `dim_organization`, `dim_cpc`,
-  `dim_technology_cluster`, `dim_paper`, `dim_patent`, their fact tables, and
-  the presentation marts (`mart_competitive`, `mart_gap`, `mart_velocity`,
-  `mart_family`) that back the Streamlit UI.
-- `queries/` — `idea_journey`, the canonical per-organisation paper→patent
-  narrative query.
+The two are connected in three ways:
 
-**Where to start**: `dim_organization` is the entity that both papers and
-patents resolve to; `dim_technology_cluster` is the entity every document is
-assigned to. Open either model's page and follow the lineage graph.
+1. **Direct citation links** — a patent that cites a specific paper as prior
+   art (a "non-patent-literature" reference). This is the strongest evidence
+   of a documented link between a specific piece of research and a specific
+   patent, and it carries a **citation lag**: the time between the paper's
+   publication and the citing patent's filing. This is a lag, not a "lead
+   time" — a patent can cite a paper for many reasons, and the interval says
+   nothing about whether that research caused the invention.
+2. **Organisation identity** — papers and patents are each attributed to
+   organisations (universities, companies, research labs). The same
+   organisation appearing in both populations is resolved to one identity, so
+   "how much does this organisation publish vs. patent" is a real comparison
+   rather than two disconnected name strings.
+3. **Technology clusters** — every paper and patent is placed into one of a
+   few hundred clusters of closely related work, based on the similarity of
+   its text. Each cluster gets a short, plain-English name and description.
+   Clusters roll up further into a handful of headline technology families
+   (EUV Lithography, Silicon Photonics, Lasers, Neuromorphic Computing,
+   In-Memory & Emerging Memory).
 
-Source-by-source detail (URLs, license, refresh cadence, gotchas) lives in
-[`docs/data_source_manifest.md`](https://github.com/RM3006/paper-to-patent/blob/main/docs/data_source_manifest.md);
-design rationale lives in
-[`ARCHITECTURE.md`](https://github.com/RM3006/paper-to-patent/blob/main/ARCHITECTURE.md);
-the CPC/topic scope contract lives in `ROADMAP.md` Part 0.
+**Two important caveats baked into every number in this atlas:**
 
-**US-only lens**: PatentsView covers US patents only. Every patent-side count
-and share in this project is a US-patenting statistic, never a global-filing
-one (CLAUDE.md rule 4).
+- **The patent side is US-only.** Every patent count, share, and concentration
+  measure here describes US patenting activity specifically — never global
+  patent filings. A technology can be researched heavily worldwide and show
+  up as "US-patent-light" here simply because the patenting happened
+  elsewhere.
+- **Not every link is equally certain.** Every organisation match and every
+  paper↔patent link carries two things: how it was matched, and how
+  confident that match is (high, medium, or low). A hard citation link and a
+  soft "these two orgs are probably the same" guess are never presented as
+  if they were the same kind of evidence.
+
+**Where to start**: the organisation entity is the thing both papers and
+patents resolve to — open it and follow the connections outward. The
+technology-cluster entity is the thing every document is assigned to, and is
+the natural way to browse "what's happening in EUV lithography" or "who's
+active in neuromorphic computing."
 {% enddocs %}
 
 {% docs org_id %}
-Canonical organisation identifier spanning both OpenAlex institutions and
-PatentsView assignees (e.g. `org_nvidia`, `org_pv_…`, `org_oa_…`), resolved via
-`int_organization_crosswalk` (CLAUDE.md rule 1: cross-dataset org joins never
-use a raw name string). Primary key of `dim_organization`.
+Canonical identifier for one organisation (e.g. a specific university,
+company, or lab), spanning both the paper-side and patent-side populations.
+The same real-world organisation can appear under different names or IDs in
+each population; this identifier resolves them to one entity so a company's
+publishing activity and patenting activity can be compared directly, rather
+than joined on a raw name string that would miss spelling variants,
+subsidiaries, and renamed institutions.
 {% enddocs %}
 
 {% docs match_method %}
-Provenance of this row's match — one of `native_id`, `ror`, `seed_crosswalk`,
-`ror_bridge`, `fuzzy_high`, `fuzzy_review`, `npl_citation`, `org_cooccurrence`.
-Always paired with `confidence`; no org match or paper↔patent edge exists in a
-mart without both (CLAUDE.md provenance & confidence pattern). `fuzzy_review`
-rows never reach a mart silently — they are resolved or excluded upstream.
+How this match or link was established — ranging from an exact shared
+identifier (most certain) through a curated lookup, an automated fuzzy name
+match, to a resolved citation. Always shown alongside a confidence tier, so
+a reader can judge how much weight a given match deserves. Matches too
+uncertain to trust outright are never included silently — they're either
+resolved by a human reviewer or left out.
 {% enddocs %}
 
 {% docs confidence %}
-Trust tier for this match or link — `high`, `medium`, or `low`. Paired with
-`match_method`. The UI shows this distinction; an NPL-citation-linked edge is
-never presented the same way as an org-cooccurrence signal (CLAUDE.md
-provenance & confidence pattern).
+How much trust to place in this match or link — high, medium, or low.
+Shown alongside match_method so a hard, direct link (e.g. a patent explicitly
+citing a specific paper) is never presented the same way as a soft,
+inferred one (e.g. two organisations that merely look similar by name).
 {% enddocs %}
 
 {% docs cluster_id %}
-Technology cluster identifier from the UMAP + HDBSCAN pipeline (e.g. `c_0`,
-`c_1`), including the noise cluster `c_noise` for documents HDBSCAN could not
-assign. Primary key of `dim_technology_cluster`; NULL on fact rows until the
-Part 5 ML pipeline has run and dbt has rebuilt.
+The technology cluster this document belongs to — a group of papers and
+patents whose text is closely related, given a short human-readable name
+and description. Includes a "noise" cluster for documents too dissimilar
+from everything else to group meaningfully. Empty until the clustering step
+of the pipeline has been run for the current corpus.
 {% enddocs %}
 
 {% docs work_id %}
-OpenAlex short work ID (e.g. `W2741809807`) — primary key of `dim_paper` and
-the join key for every paper-side fact and link in the project.
+Identifier for one paper in the global scientific literature — the anchor
+for every paper-side fact and link in this atlas.
 {% enddocs %}
 
 {% docs patent_id %}
-USPTO patent number — primary key of `dim_patent` and the join key for every
-patent-side fact and link in the project.
+Identifier for one US patent — the anchor for every patent-side fact and
+link in this atlas.
 {% enddocs %}
 
 {% docs filing_date %}
-Patent filing date (YYYY-MM-DD), from PatentsView `g_application`. The
-citation-lag anchor for every patent-side time metric (CLAUDE.md rule 2) —
-grant date (`patent_date`) is never used for timing, only shown as metadata.
+The date this patent's application was filed. This, not the later grant
+date, is the anchor for every patent-side time comparison in this atlas:
+filing reflects when the invention was actually put forward, while grant
+date is delayed by however long the patent office took to review it — a
+delay that has nothing to do with the underlying research or invention
+timeline.
 {% enddocs %}
 
 {% docs publication_date %}
-OpenAlex publication date (YYYY-MM-DD) — the citation-lag anchor for every
-paper-side time metric (CLAUDE.md rule 2).
+The date this paper was published — the anchor for every paper-side time
+comparison in this atlas.
 {% enddocs %}
 
 {% docs citation_lag %}
-The interval between a paper's `publication_date` and a citing patent's
-`filing_date`, via a resolved NPL link. Called **citation lag**, never "lead
-time" or "time to market" — those phrases imply an R&D-to-commercialisation
-causation this data does not support (CLAUDE.md rule 2). Grant date carries
-years of administrative lag and is never used for this metric.
+The time between a paper's publication and the filing of a patent that
+cites it as prior art. Called a citation lag, deliberately not "lead time"
+or "time to market": a citation records that a patent examiner or applicant
+pointed to this paper, not that the paper caused or enabled the invention.
+Grant date is never used for this measurement, since it reflects patent-office
+processing time rather than anything about the research or invention.
 {% enddocs %}
