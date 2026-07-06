@@ -1,3 +1,4 @@
+# pyright: basic
 """
 Trace an Idea — Surface 4.
 
@@ -21,8 +22,8 @@ from datetime import timedelta
 
 import plotly.graph_objects as go
 import streamlit as st
-from render import FAMILY_COLORS, FAMILY_LABELS, confidence_badge, render_nav, render_tour_banner
-from streamlit_searchbox import st_searchbox
+from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
+from streamlit_searchbox import StyleOverrides, st_searchbox
 
 from data import load_trace_family_stat, load_trace_links, load_trace_paper, search_papers_ilike
 
@@ -53,7 +54,7 @@ st.markdown("""
 render_nav("Trace a Paper")
 render_tour_banner(4)
 
-_SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+_SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
 
 def _hex_rgba(hex_color: str, alpha: float) -> str:
@@ -81,7 +82,8 @@ chosen_id: str | None = st_searchbox(
     style_overrides=_SEARCHBOX_STYLE,
     default_options=_default_paper_options,
 )
-_default_work_id = "W2802367674"  # A Survey of ReRAM-Based Architectures for Processing-In-Memory and Neural Networks
+# A Survey of ReRAM-Based Architectures for Processing-In-Memory and Neural Networks
+_default_work_id = "W2802367674"
 work_id: str = chosen_id or _default_work_id
 
 # ── Load paper + links ────────────────────────────────────────────────────────
@@ -96,6 +98,10 @@ if len(paper_df) == 0:
 paper    = paper_df.row(0, named=True)
 n_citing = len(links_df)
 pub_date = paper.get("publication_date")
+if pub_date is None:
+    st.error("Paper is missing a publication date. The warehouse may need a rebuild.")
+    st.stop()
+assert pub_date is not None  # dim_paper.publication_date is not_null; narrows for pyright
 pub_year = int(str(pub_date)[:4]) if pub_date else 2014
 pub_decimal = pub_year + ((pub_date.month - 1) / 12.0 if pub_date else 0.0)
 
@@ -179,6 +185,7 @@ if n_citing == 0:
     with st.container(key="atlas_insight"):
         st.info("No citing patents found in the current NPL link set.")
 else:
+    assert pub_date is not None  # narrowed above; re-asserted for pyright across the branch
     links = links_df.to_dicts()
     links_with_lag = [
         r for r in links
@@ -204,6 +211,7 @@ else:
 
     # Lollipop stems: horizontal line from pub_date to filing_date
     for i, row in enumerate(links_with_lag):
+        assert pub_date is not None  # type-narrowing doesn't cross the loop boundary
         fig.add_shape(
             type="line",
             x0=pub_date.isoformat(), x1=row["filing_date"].isoformat(),
@@ -212,6 +220,7 @@ else:
         )
 
     # Publication anchor: vertical line at pub_date
+    assert pub_date is not None  # type-narrowing doesn't cross the loop boundary above
     fig.add_vline(
         x=pub_date.isoformat(),
         line=dict(color=family_color, width=2),
@@ -306,8 +315,8 @@ else:
 st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 st.markdown(
     "<span style='font-size:11px;color:#888888;'>"
-    "<strong>Citation lag</strong> is the interval between a paper's publication date and a patent's "
-    "filing date, measured only where a verified NPL reference link exists. "
+    "<strong>Citation lag</strong> is the interval between a paper's publication date and a "
+    "patent's filing date, measured only where a verified NPL reference link exists. "
     "It is not R&D-to-market time and does not imply causation. "
     "Patents are US-only (PatentsView)."
     "</span>",

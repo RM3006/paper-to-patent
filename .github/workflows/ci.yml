@@ -31,10 +31,10 @@ jobs:
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: dummy
 
       - name: Lint (ruff)
-        run: uv run ruff check pipelines/nexus/
+        run: uv run ruff check pipelines/nexus/ apps/ui/
 
       - name: Type check (pyright)
-        run: uv run pyright pipelines/nexus/
+        run: uv run pyright pipelines/nexus/ apps/ui/
 
       - name: Test (pytest)
         run: uv run pytest

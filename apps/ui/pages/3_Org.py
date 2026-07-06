@@ -1,3 +1,4 @@
+# pyright: basic
 """
 Organisation Profile — Surface 3.
 
@@ -20,12 +21,9 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 from render import FAMILY_COLORS, render_chip_multiselect, render_nav, render_tour_banner
-from streamlit_searchbox import st_searchbox
-
-_SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+from streamlit_searchbox import StyleOverrides, st_searchbox
 
 from data import (
-    search_orgs_ilike,
     load_dataset_totals,
     load_org_active_scope,
     load_org_filing_years,
@@ -39,7 +37,10 @@ from data import (
     load_org_profile,
     load_org_top_patent_clusters,
     load_org_top_research_clusters,
+    search_orgs_ilike,
 )
+
+_SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
 st.set_page_config(
     page_title="Organisation Profile — The Chips Behind AI",
@@ -242,7 +243,9 @@ for r in output_by_family.to_dicts():
 for r in paper_by_family.to_dicts():
     _family_counts[r["family_id"]] = _family_counts.get(r["family_id"], 0) + int(r["n_papers"])
 
-dominant_family = max(_family_counts, key=_family_counts.get) if _family_counts else "noise"
+dominant_family = (
+    max(_family_counts, key=lambda k: _family_counts[k]) if _family_counts else "noise"
+)
 org_color = FAMILY_COLORS.get(dominant_family, "#888888")
 
 # ── Role descriptor ───────────────────────────────────────────────────────────
@@ -303,10 +306,10 @@ col_patent, col_research = st.columns(2, gap="large")
 # ── PATENT SIDE ───────────────────────────────────────────────────────────────
 with col_patent:
     st.markdown(
-        f"<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
-        f"text-transform:uppercase;color:#555555;"
-        f"padding-bottom:4px;margin-bottom:0.75rem;"
-        f"border-bottom:1px solid #555555;'>Patent output</div>",
+        "<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
+        "text-transform:uppercase;color:#555555;"
+        "padding-bottom:4px;margin-bottom:0.75rem;"
+        "border-bottom:1px solid #555555;'>Patent output</div>",
         unsafe_allow_html=True,
     )
 
@@ -364,7 +367,9 @@ with col_patent:
                 text=[str(v) for v in nps], textposition="outside", cliponaxis=False,
             ))
             fig_fy.update_layout(
-                title=dict(text="US patent filings per year", font=dict(size=11, color="#888888"), x=0),
+                title=dict(
+                    text="US patent filings per year", font=dict(size=11, color="#888888"), x=0,
+                ),
                 height=170,
                 margin=dict(l=0, r=10, t=28, b=5),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
@@ -386,10 +391,10 @@ with col_patent:
 # ── RESEARCH SIDE ─────────────────────────────────────────────────────────────
 with col_research:
     st.markdown(
-        f"<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
-        f"text-transform:uppercase;color:#555555;"
-        f"padding-bottom:4px;margin-bottom:0.75rem;"
-        f"border-bottom:1px solid #555555;'>Research output</div>",
+        "<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
+        "text-transform:uppercase;color:#555555;"
+        "padding-bottom:4px;margin-bottom:0.75rem;"
+        "border-bottom:1px solid #555555;'>Research output</div>",
         unsafe_allow_html=True,
     )
 
@@ -478,7 +483,8 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
             f"</div>"
             f"<div style='flex:1;min-width:0;padding-left:16px;border-left:1px solid #e6e6e6;'>"
             f"<div style='font-size:9px;font-weight:700;letter-spacing:.1em;"
-            f"text-transform:uppercase;color:#aaaaaa;margin-bottom:8px;'>Most NPL-citing patent</div>"
+            f"text-transform:uppercase;color:#aaaaaa;margin-bottom:8px;'>"
+            f"Most NPL-citing patent</div>"
             f"<div style='font-size:14px;font-weight:700;color:#111111;"
             f"line-height:1.45;margin-bottom:10px;'>{fpt['title']}</div>"
             f"<div style='font-size:11px;color:#888888;'>"
@@ -521,7 +527,7 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
     )
 
     st.markdown(
-        f"<div style='display:flex;align-items:flex-start;'>"
+        "<div style='display:flex;align-items:flex-start;'>"
         + patent_html + divider + paper_html
         + "</div>",
         unsafe_allow_html=True,
@@ -534,13 +540,13 @@ has_influence = len(influence) > 0
 if has_intake or has_influence:
     st.markdown("<div style='margin-top:4rem;'></div>", unsafe_allow_html=True)
     st.markdown(
-        f"<div style='text-align:center;'>"
-        f"<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
-        f"text-transform:uppercase;color:#888888;margin-bottom:4px;'>"
-        f"The citation bridge — via NPL links</div>"
-        f"<div style='font-size:12px;color:#888888;margin-bottom:1.5rem;'>"
-        f"Who feeds this org's patents with research, and whose patents build on its work."
-        f"</div></div>",
+        "<div style='text-align:center;'>"
+        "<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
+        "text-transform:uppercase;color:#888888;margin-bottom:4px;'>"
+        "The citation bridge — via NPL links</div>"
+        "<div style='font-size:12px;color:#888888;margin-bottom:1.5rem;'>"
+        "Who feeds this org's patents with research, and whose patents build on its work."
+        "</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -579,7 +585,10 @@ if has_intake or has_influence:
                 margin=dict(l=0, r=60, t=28, b=5),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 font=dict(size=11, color="#111111"),
-                xaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False, showticklabels=False, showspikes=False),
+                xaxis=dict(
+                    showgrid=True, gridcolor="#f0f0f0", zeroline=False,
+                    showticklabels=False, showspikes=False,
+                ),
                 yaxis=dict(tickmode="array", tickvals=iid, ticktext=truncated_i,
                            showgrid=False, zeroline=False, autorange="reversed", showspikes=False),
                 hovermode="y",
@@ -629,7 +638,10 @@ if has_intake or has_influence:
                 margin=dict(l=0, r=60, t=28, b=5),
                 plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
                 font=dict(size=11, color="#111111"),
-                xaxis=dict(showgrid=True, gridcolor="#f0f0f0", zeroline=False, showticklabels=False, showspikes=False),
+                xaxis=dict(
+                    showgrid=True, gridcolor="#f0f0f0", zeroline=False,
+                    showticklabels=False, showspikes=False,
+                ),
                 yaxis=dict(tickmode="array", tickvals=infid, ticktext=truncated_inf,
                            showgrid=False, zeroline=False, autorange="reversed", showspikes=False),
                 hovermode="y",
@@ -649,7 +661,7 @@ if has_intake or has_influence:
 # ── Footer ────────────────────────────────────────────────────────────────────
 _pct_scope_note = (
     "the selected filter scope" if is_filtered
-    else "the total across all five technology families"
+    else "the total across all three technology families"
 )
 st.markdown(
     "<span style='font-size:11px;color:#888888;'>"

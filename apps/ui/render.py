@@ -1,31 +1,28 @@
+# pyright: basic
 """Semantic color constants for the UI. Chrome colors live in app.py CSS."""
 from __future__ import annotations
 
 from collections.abc import Callable
 
 import streamlit as st
-from streamlit_searchbox import st_searchbox
+from streamlit_searchbox import StyleOverrides, st_searchbox
 
-_FILTER_SEARCHBOX_STYLE = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
+_FILTER_SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
 FAMILY_COLORS: dict[str, str] = {
-    "euv":          "#3a4a6b",  # deep navy — editorial "cool technical" palette
-    "si_photonics": "#5a8fa8",  # steel blue
-    "lasers":       "#c1666b",  # dusty rose
-    "neuromorphic": "#7a6c91",  # slate purple
-    "in_memory":    "#6a9c89",  # sage green
-    "adjacent":     "#94a3b8",  # slate — muted, not headline
-    "noise":        "#d1d5db",  # light grey — frontier / unclustered
+    "euv":                    "#3a4a6b",  # deep navy — editorial "cool technical" palette
+    "silicon_photonics":      "#5a8fa8",  # steel blue (was si_photonics; now includes lasers)
+    "neuromorphic_in_memory": "#7a6c91",  # slate purple (was neuromorphic; now includes in_memory)
+    "adjacent":               "#94a3b8",  # slate — muted, not headline
+    "noise":                  "#d1d5db",  # light grey — frontier / unclustered
 }
 
 FAMILY_LABELS: dict[str, str] = {
-    "euv":          "EUV Lithography",
-    "si_photonics": "Silicon Photonics & Optical I/O",
-    "lasers":       "Lasers & Light Sources",
-    "neuromorphic": "Neuromorphic / Brain-inspired",
-    "in_memory":    "In-Memory & Emerging Memory",
-    "adjacent":     "Adjacent / Cross-family",
-    "noise":        "Frontier / Unclustered",
+    "euv":                    "EUV Lithography",
+    "silicon_photonics":      "Silicon Photonics & Lasers",
+    "neuromorphic_in_memory": "Neuromorphic & In-Memory Compute",
+    "adjacent":               "Adjacent / Cross-family",
+    "noise":                  "Frontier / Unclustered",
 }
 
 PAPER_COLOR = "#3b82f6"    # blue  — academic
@@ -246,7 +243,7 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
             f"The Chips Behind AI</div>"
             f"<div style='color:#888888;font-size:0.9rem;'>"
             f"Tracing global semiconductor research papers to US patents "
-            f"across 5 technology families · 2012–2025"
+            f"across 3 technology families · 2012–2025"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -263,7 +260,9 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
                     "Organisation Profile", "Trace a Paper",
                 ]
                 st.session_state["tour_step"] = 0
-                st.session_state["tour_return_page"] = TOUR_STEPS[_nav_labels.index(active)].page_file
+                st.session_state["tour_return_page"] = (
+                    TOUR_STEPS[_nav_labels.index(active)].page_file
+                )
                 if active != "Overview":
                     st.switch_page("app.py")
                 else:

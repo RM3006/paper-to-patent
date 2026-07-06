@@ -51,6 +51,9 @@ select = ["E", "F", "I", "UP", "B"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "none"
+# extraPaths lets pyright resolve the apps/ui/pages/*.py -> data.py/render.py
+# sys.path.insert import pattern used at runtime by the Streamlit pages.
+extraPaths = ["apps/ui"]
 
 [tool.pytest.ini_options]
 testpaths = ["pipelines/nexus/tests"]

@@ -1,7 +1,8 @@
+# pyright: basic
 """
 The Chips Behind AI — front door (Surface 1).
 
-Five technology family rows (horizontal, full-width) each showing patent share,
+Three technology family rows (horizontal, full-width) each showing patent share,
 paper / patent volumes, top patenters, top researchers, and a family-colored
 Explore button. A guided tour (5 stops) narrates the key contrasts.
 Source marts: mart_family, mart_competitive, seed_cluster_family.
@@ -24,14 +25,23 @@ st.set_page_config(
 _FONT = '"Space Grotesk", -apple-system, system-ui, sans-serif'
 
 # Family IDs in display order (excludes adjacent / noise).
-_FAMILY_IDS = ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
+_FAMILY_IDS = ["euv", "silicon_photonics", "neuromorphic_in_memory"]
 
 _FAMILY_DESC: dict[str, str] = {
-    "euv": "Extreme-UV optics that print transistors smaller than a virus — the bottleneck of the entire chip industry.",
-    "si_photonics": "Moving data as light pulses through silicon, replacing copper wires to cut latency and power inside AI servers.",
-    "lasers": "Coherent light sources integrated at chip scale, enabling the transceivers that hold data-centre networks together.",
-    "neuromorphic": "Brain-inspired chips that process data the way neurons fire, trading raw clock speed for dramatic energy efficiency.",
-    "in_memory": "Processing data where it is stored so the chip never has to fetch it across slow memory buses.",
+    "euv": (
+        "Extreme-UV optics that print transistors smaller than a virus — "
+        "the bottleneck of the entire chip industry."
+    ),
+    "silicon_photonics": (
+        "Moving data as light instead of electricity — from the on-chip lasers "
+        "that generate it to the silicon waveguides that route it — cutting "
+        "latency and power inside AI data centres."
+    ),
+    "neuromorphic_in_memory": (
+        "Chips that compute the way neurons do and store data where they compute "
+        "it, trading raw clock speed for dramatic energy efficiency by skipping "
+        "the slow trip to memory."
+    ),
 }
 
 # ── CSS — shared chrome ───────────────────────────────────────────────────────────
@@ -173,19 +183,25 @@ def _html_family_card(
         f"display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
         f"<div style='font-family:{_FONT};font-size:18px;font-weight:800;"
         f"color:#ffffff;line-height:1;'>{pct:.0f}%</div>"
-        f"<div style='font-size:9px;color:rgba(255,255,255,0.75);margin-top:3px;white-space:nowrap;'>patent share</div>"
+        f"<div style='font-size:9px;color:rgba(255,255,255,0.75);margin-top:3px;"
+        f"white-space:nowrap;'>patent share</div>"
         f"</div>"
-        f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='display:flex;flex-direction:column;"
+        f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{row['n_patents']:,}</div>"
-        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>granted US patents</div>"
+        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>"
+        f"granted US patents</div>"
         f"</div>"
-        f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='display:flex;flex-direction:column;"
+        f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{lag_str}</div>"
-        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>citation lag</div>"
+        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>"
+        f"citation lag</div>"
         f"</div>"
-        f"<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
+        f"<div style='display:flex;flex-direction:column;"
+        f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{row['n_papers']:,}</div>"
         f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>papers</div>"
@@ -244,7 +260,7 @@ def main() -> None:
 
     st.markdown(
         "<div style='font-size:14px;color:#555555;line-height:1.65;margin-bottom:1.4rem;'>"
-        "These are the 5 main technology families powering the next generation of AI hardware — "
+        "These are the 3 main technology families powering the next generation of AI hardware — "
         "from the extreme-ultraviolet optics that print the world's smallest transistors to the "
         "brain-inspired chips that process data the way neurons do. "
         "Each row shows how much of the global research has been captured as US patents, "
@@ -265,8 +281,10 @@ def main() -> None:
     st.markdown(
         "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
         "font-size:11px;color:#aaaaaa;line-height:1.6;'>"
-        "<strong>Scope:</strong> Granted US patents only (PatentsView / USPTO, filing dates 2014–2025). "
-        "In-scope research papers from OpenAlex (2012–2025, English, matched to EUV, silicon photonics, lasers, neuromorphic, and in-memory compute topics). "
+        "<strong>Scope:</strong> Granted US patents only (PatentsView / USPTO, filing dates "
+        "2014–2025). "
+        "In-scope research papers from OpenAlex (2012–2025, English, matched to EUV, silicon "
+        "photonics, lasers, neuromorphic, and in-memory compute topics). "
         "Citation links are non-patent-literature (NPL) references from USPTO filings. "
         "Lag = paper publication date → citing patent filing date; never grant date. "
         "Patent counts after 2019 understate activity due to grant-processing delay. "

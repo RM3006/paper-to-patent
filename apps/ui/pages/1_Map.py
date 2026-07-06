@@ -1,3 +1,4 @@
+# pyright: basic
 """
 Technology Landscape — Surface 4.
 
@@ -67,7 +68,7 @@ st.markdown("""
 render_nav("Technology Landscape", filter_sidebar=True)
 render_tour_banner(1)
 
-FAMILY_ORDER = ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory", "adjacent", "noise"]
+FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "adjacent", "noise"]
 
 # ── Load ─────────────────────────────────────────────────────────────────────────────
 df_all = load_cluster_bubble()
@@ -227,8 +228,8 @@ if _hidden:
 
 # ── Cluster detail card ───────────────────────────────────────────────────────────────
 selected_cluster_id: str | None = None
-if event and event.selection and event.selection.points:
-    pt = event.selection.points[0]
+if event and event["selection"] and event["selection"]["points"]:
+    pt = event["selection"]["points"][0]
     cdata = pt.get("customdata")
     if isinstance(cdata, str):
         selected_cluster_id = cdata
@@ -361,11 +362,14 @@ if selected_cluster_id:
                     _pat_ev = st.plotly_chart(
                         _bar_chart(pat_df, "TOP PATENTERS — by granted US patents", family_color),
                         use_container_width=True,
-                        config={"displayModeBar": False, "displaylogo": False, "doubleClick": False},
+                        config={
+                            "displayModeBar": False, "displaylogo": False, "doubleClick": False,
+                        },
                         key="bar_patent",
                         on_select="rerun",
                     )
-                _pat_pts = _pat_ev.selection.points if (_pat_ev and _pat_ev.selection) else []
+                _pat_sel = _pat_ev and _pat_ev["selection"]
+                _pat_pts = _pat_sel["points"] if _pat_sel else []
                 if _pat_pts:
                     _pi    = _pat_pts[0].get("point_index", 0)
                     _oid   = pat_df["org_id"].to_list()[_pi]
@@ -383,11 +387,14 @@ if selected_cluster_id:
                     _res_ev = st.plotly_chart(
                         _bar_chart(res_df, "TOP RESEARCHERS — by papers", family_color),
                         use_container_width=True,
-                        config={"displayModeBar": False, "displaylogo": False, "doubleClick": False},
+                        config={
+                            "displayModeBar": False, "displaylogo": False, "doubleClick": False,
+                        },
                         key="bar_paper",
                         on_select="rerun",
                     )
-                _res_pts = _res_ev.selection.points if (_res_ev and _res_ev.selection) else []
+                _res_sel = _res_ev and _res_ev["selection"]
+                _res_pts = _res_sel["points"] if _res_sel else []
                 if _res_pts:
                     _pi    = _res_pts[0].get("point_index", 0)
                     _oid   = res_df["org_id"].to_list()[_pi]
@@ -404,7 +411,7 @@ _is_filtered = bool(selected_families != FAMILY_ORDER or selected_clusters)
 _scope_label = (
     f"Showing {len(df)} of {len(df_all)} clusters (filtered)."
     if _is_filtered
-    else f"{len(df)} clusters across 5 technology families."
+    else f"{len(df)} clusters across 3 technology families."
 )
 st.markdown(
     f"<span style='font-size:11px;color:#888888;'>"
