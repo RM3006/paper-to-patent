@@ -1,0 +1,170 @@
+version: 2
+
+models:
+  - name: stg_openalex_works
+    description: >
+      OpenAlex scope works, type-cast and cleaned. Excludes Harvard Dataverse
+      dataset entries (doi 10.7910), filename-like titles, software-release
+      note titles OpenAlex mistypes as type:article, and any doc_id the Part
+      5 embedding quality gate excluded entirely (version-style title, or
+      title+abstract both detected non-English — see
+      ml_intermediate.excluded_documents).
+    columns:
+      - name: work_url
+        description: "Full OpenAlex work URL, passed through unchanged from the source's openalex_id column. work_id is the short form extracted from this."
+        tests: [not_null]
+      - name: work_id
+        description: "{{ doc('work_id') }} Extracted from work_url via regexp (e.g. `W2741809807`). Primary key of this model."
+        tests: [not_null, unique]
+      - name: doi
+        description: "DOI URL as OpenAlex reports it. NULL is kept — preprints without a DOI are legitimate and not excluded."
+      - name: doi_bare
+        description: "doi lowercased with the `https?://(dx.)?doi.org/` prefix stripped, for exact-match joins. NULL when doi is NULL."
+      - name: title
+        description: "Paper title, as reconstructed by OpenAlex."
+        tests: [not_null]
+      - name: type
+        description: >
+          OpenAlex work type. The ingest asset filters to
+          type:article|preprint|review at the API level (see openalex.py);
+          this test guards that filter never regresses silently. Note:
+          OpenAlex itself mistypes some non-research records (e.g.
+          software-release DOIs) as 'article' — this filter is necessary but
+          not sufficient to exclude all non-article noise, which is why this
+          model also applies its own filename/software-release-title filters.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["article", "preprint", "review"]
+      - name: publication_date
+        description: "{{ doc('publication_date') }}"
+        tests: [not_null]
+      - name: publication_year
+        description: "Year component of publication_date, cast to integer."
+      - name: language
+        description: "OpenAlex-reported language code for the work (e.g. 'en'). Ingest scope requires language:en; not re-validated at this layer."
+      - name: abstract
+        description: "Abstract, reconstructed by the ingest asset from OpenAlex's abstract_inverted_index. NULL where OpenAlex has no abstract."
+      - name: primary_topic_id
+        description: "OpenAlex topic URL — one of the 4 scope topics (T11338 EUV, T10299 Silicon Photonics, T11429 Lasers, T10502 Advanced Memory and Neural Computing)."
+      - name: primary_topic_name
+        description: "Human-readable OpenAlex topic name corresponding to primary_topic_id."
+      - name: institution_ids
+        description: "List of OpenAlex institution URLs across all authorships on this work. Exploded to one row per (paper, institution) downstream in fact_publication, not at this layer."
+      - name: institution_rors
+        description: "List of ROR URLs across all authorships, same order as institution_ids. Not currently consumed downstream of staging — a candidate ROR-bridge join key for entity resolution (see int_organization_crosswalk match_method='ror')."
+      - name: institution_display_names
+        description: "List of institution display names across all authorships, same order as institution_ids. Passthrough for debugging/display; not a join key."
+
+  - name: stg_patents_scoped
+    description: >
+      Scope-filtered patents (CPC match + filing_date 2014–2025), type-cast.
+      Excludes any doc_id the Part 5 embedding quality gate excluded
+      entirely (see ml_intermediate.excluded_documents).
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: title
+        description: "Patent title, as granted (PatentsView patent_title)."
+      - name: filing_date
+        description: "{{ doc('filing_date') }}"
+        tests: [not_null]
+      - name: grant_date
+        description: "Grant date (PatentsView patent_date). Metadata only; never used in time metrics (CLAUDE.md rule 2)."
+      - name: patent_type
+        description: "utility | design | plant | reissue | defensive_publication, as reported by PatentsView."
+
+  - name: stg_assignees
+    description: >
+      PatentsView disambiguated assignees joined to scope (inner join to
+      stg_patents_scoped — assignees of out-of-scope patents are dropped).
+      Filtered to organisation-type assignees (assignee_type in 2, 3, 6, 7);
+      individual-inventor assignees are excluded entirely, not carried
+      through with a NULL org_name.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: assignee_id
+        description: "PatentsView disambiguated assignee UUID — the patent-side entity-resolution identity, joined to int_organization_crosswalk downstream."
+        tests: [not_null]
+      - name: org_name
+        description: "PatentsView disambiguated organisation name (disambig_assignee_organization). Never NULL in this model — rows with a NULL organisation name are filtered out at the source, since this model keeps organisation-type assignees only."
+        tests: [not_null]
+      - name: assignee_type
+        description: "PatentsView assignee_type code, restricted to '2' (US company), '3' (foreign company), '6', '7' (other organisation types) by this model's WHERE filter. '4'/'5' (individuals) are excluded."
+      - name: assignee_sequence
+        description: "Order of this assignee among the patent's assignees (0 = primary/first-listed), cast to integer. Used by fact_patent_filing/mart_gap to pick one primary assignee per patent."
+
+  - name: stg_cpc
+    description: >
+      CPC classification codes for scope patents only (inner join to
+      stg_patents_scoped). Keeps every CPC row per patent, not just the
+      primary one — cpc_sequence = 0 identifies the primary code downstream.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: cpc_group
+        description: "Full CPC group code (e.g. `G03F7/2004`) — the level the scope filter's prefix match operates on."
+        tests: [not_null]
+      - name: cpc_subclass
+        description: "CPC subclass (e.g. `G03F`) — the parent of cpc_group."
+      - name: cpc_class
+        description: "CPC class (e.g. `G03`) — the parent of cpc_subclass."
+      - name: cpc_section
+        description: "CPC section (e.g. `G`) — the top of the CPC hierarchy."
+      - name: cpc_type
+        description: "PatentsView CPC classification type code (inventional vs additional), as reported by the source."
+      - name: cpc_sequence
+        description: "Order of this CPC code among the patent's CPC assignments, cast to integer. 0 identifies the primary CPC code, used downstream for family_id derivation (fact_patent_filing) and the scope filter."
+
+  - name: stg_npl
+    description: >
+      NPL "other reference" strings for scope patents (inner join to
+      stg_patents_scoped). Does NOT attempt matching here — raw text is
+      preserved for the Python NPL matcher (Part 4 Step 2); only a DOI
+      pre-extraction is done at this layer, as a convenience input to that
+      matcher, not a substitute for it.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: ref_sequence
+        description: "Order of this NPL reference among the patent's other_reference entries, cast to integer (other_reference_sequence)."
+      - name: ref_text
+        description: "Free-text citation string (other_reference_text) — the raw input the Python NPL matcher parses to resolve a paper reference."
+        tests: [not_null]
+      - name: doi_extracted
+        description: "DOI extracted from ref_text via regexp, lowercased with trailing punctuation stripped (citation strings routinely end in a period or comma, which would otherwise break exact-join matching). NULL when no DOI pattern is found in the reference text."
+
+  - name: stg_patent_citations
+    description: "Patent-to-patent citation edges where the citing patent is in scope (inner join to stg_patents_scoped on the citing side only)."
+    columns:
+      - name: citing_patent_id
+        description: "{{ doc('patent_id') }} The scope patent doing the citing (PatentsView patent_id)."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: cited_patent_id
+        description: "{{ doc('patent_id') }} The (possibly out-of-scope) patent being cited (PatentsView citation_patent_id). Not filtered against stg_patents_scoped, so it is not guaranteed to resolve there."
+        tests: [not_null]

@@ -1,0 +1,580 @@
+version: 2
+
+models:
+  - name: dim_organization
+    description: >
+      One row per canonical org_id spanning both OpenAlex institutions and
+      PatentsView assignees. Built from int_organization_crosswalk (Part 3):
+      multiple source rows (one per (source, source_id)) collapse to one
+      dimension row, keeping the highest-priority canonical_name
+      (seed_crosswalk > fuzzy_high > native_id > ror). 14,209 distinct org_ids.
+    columns:
+      - name: org_id
+        description: "{{ doc('org_id') }} Primary key of this model."
+        tests:
+          - unique
+          - not_null
+      - name: canonical_name
+        description: "Human-readable organisation name, taken from the highest-priority source row for this org_id (see model description for the priority order)."
+        tests:
+          - not_null
+      - name: primary_match_method
+        description: "{{ doc('match_method') }} Reflects the method of the row that won the canonical_name priority ranking, not necessarily every source row for this org."
+        tests:
+          - not_null
+      - name: primary_confidence
+        description: "{{ doc('confidence') }} Paired with primary_match_method."
+        tests:
+          - not_null
+
+  - name: dim_cpc
+    description: "One row per distinct CPC group code appearing in scope patents, with its parent subclass/class/section for roll-up filtering."
+    columns:
+      - name: cpc_group
+        description: "Full CPC group code (e.g. `G03F7/2004`) — the level the scope filter's prefix match operates on. Primary key of this model."
+        tests:
+          - unique
+          - not_null
+      - name: cpc_subclass
+        description: "CPC subclass (e.g. `G03F`) — the parent of cpc_group."
+      - name: cpc_class
+        description: "CPC class (e.g. `G03`) — the parent of cpc_subclass."
+      - name: cpc_section
+        description: "CPC section (e.g. `G`) — the top of the CPC hierarchy."
+
+  - name: dim_technology_cluster
+    description: >
+      One row per technology cluster from the UMAP + HDBSCAN pipeline,
+      including the noise cluster c_noise (fixed "Frontier / Unclustered"
+      label). Populated after the Part 5 cluster_labels Dagster asset runs
+      and dbt is rebuilt; empty before then.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Primary key of this model."
+        tests:
+          - unique
+          - not_null
+      - name: tagline
+        description: "Claude-Haiku-written short technology family name (2–6 words), grounded only in the cluster's top terms and representative documents (CLAUDE.md two-tier readability pattern). Fixed to 'Frontier / Unclustered' for c_noise."
+        tests:
+          - not_null
+      - name: summary_friendly
+        description: "Claude-Haiku-written 2–3 sentence plain-English description of the cluster, grounded only in the cluster's top terms and representative documents."
+        tests:
+          - not_null
+      - name: top_terms
+        description: "List[String] of the top c-TF-IDF discriminating terms for this cluster — the grounding input for tagline/summary_friendly, not reader-facing on its own."
+
+  - name: fact_document_cluster
+    description: >
+      One row per document (paper or patent) in the ML embedding corpus,
+      mapping it to a technology cluster with 2D UMAP coordinates. Filtered
+      to doc_ids still present in the current scoped staging models, so a
+      staging-layer filter change without a re-cluster drops the orphaned doc
+      from this fact rather than surfacing it as a dangling point on the map
+      (see MEMORY.md, Part 0-7 checkpoint review Issue 1). Populated after
+      the Part 5 document_clusters Dagster asset runs and dbt is rebuilt.
+    columns:
+      - name: doc_id
+        description: "{{ doc('work_id') }} for doc_type='paper' (joins dim_paper); {{ doc('patent_id') }} for doc_type='patent' (joins dim_patent). Primary key of this model."
+        tests:
+          - not_null
+          - unique
+      - name: doc_type
+        description: "'paper' | 'patent' — which dimension doc_id resolves against."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["paper", "patent"]
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: umap_x
+        description: "2D UMAP x-coordinate (float32) for the Streamlit technology-map scattergl."
+        tests: [not_null]
+      - name: umap_y
+        description: "2D UMAP y-coordinate (float32) for the Streamlit technology-map scattergl."
+        tests: [not_null]
+      - name: model_version
+        description: "Embedding model used to produce this row's vector (all-MiniLM-L6-v2)."
+        tests: [not_null]
+
+  - name: dim_paper
+    description: >
+      One row per OpenAlex work in scope (162,787 rows post-dedup filter).
+      Harvard Dataverse image/dataset entries excluded (doi 10.7910 or
+      filename-like titles) — see stg_openalex_works. cluster_id is
+      back-filled from fact_document_cluster and is NULL until the Part 5 ML
+      pipeline has run and dbt has rebuilt.
+    columns:
+      - name: work_id
+        description: "{{ doc('work_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: work_url
+        description: "Full OpenAlex work URL (e.g. `https://openalex.org/W2741809807`) — work_id is the short form of this URL."
+      - name: doi
+        description: "DOI URL. Primary join key used by the NPL matcher to resolve a patent's non-patent-literature citation back to this paper. NULL where OpenAlex has no DOI for the work."
+      - name: doi_bare
+        description: "DOI stripped of the `https://doi.org/` prefix, lowercased — used for fast exact-match joins without repeating the URL parsing. NULL where doi is NULL."
+      - name: title
+        description: "Paper title, as reconstructed by OpenAlex."
+        tests: [not_null]
+      - name: publication_date
+        description: "{{ doc('publication_date') }}"
+        tests: [not_null]
+      - name: publication_year
+        description: "Year component of publication_date — kept alongside the full date for fast annual grouping (e.g. mart_velocity) without a date_part call in every query."
+      - name: abstract
+        description: "Abstract, reconstructed from OpenAlex's abstract_inverted_index. NULL where OpenAlex has no abstract for the work."
+      - name: primary_topic_id
+        description: "OpenAlex topic URL — one of the 4 scope topics (T11338 EUV, T10299 Silicon Photonics, T11429 Lasers, T10502 Advanced Memory and Neural Computing). Drives this paper's own family_id in fact_publication."
+      - name: primary_topic_name
+        description: "Human-readable OpenAlex topic name corresponding to primary_topic_id."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Back-filled from fact_document_cluster; NULL before Part 5 ML pipeline runs."
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+
+  - name: dim_patent
+    description: >
+      One row per scope patent (33,578 rows, CPC match + filing_date
+      2014–2025). cluster_id is back-filled from fact_document_cluster and
+      is NULL until the Part 5 ML pipeline has run and dbt has rebuilt.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: title
+        description: "Patent title, as granted."
+        tests: [not_null]
+      - name: filing_date
+        description: "{{ doc('filing_date') }}"
+        tests: [not_null]
+      - name: grant_date
+        description: "Grant date, from PatentsView. Metadata only — carries years of administrative lag and is never used for any time metric (CLAUDE.md rule 2)."
+      - name: patent_type
+        description: "utility | design | plant | reissue | defensive_publication."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Back-filled from fact_document_cluster; NULL before Part 5 ML pipeline runs."
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+
+  - name: fact_publication
+    description: >
+      One row per (paper, institution) combination — institution_ids is
+      exploded from a list, so a multi-institution paper appears once per
+      institution. org_id is attached via the crosswalk on institution_id;
+      NULL is allowed for the rare institution OpenAlex has that the
+      crosswalk doesn't cover. cluster_id is denormalised from
+      fact_document_cluster for fast analytical queries without a join.
+    columns:
+      - name: work_id
+        description: "{{ doc('work_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_paper')
+                field: work_id
+      - name: publication_date
+        description: "{{ doc('publication_date') }}"
+        tests: [not_null]
+      - name: publication_year
+        description: "Year component of publication_date."
+      - name: primary_topic_id
+        description: "OpenAlex topic URL for this paper — see dim_paper.primary_topic_id."
+      - name: primary_topic_name
+        description: "Human-readable topic name for primary_topic_id."
+      - name: title
+        description: "Paper title, carried through for family_id keyword classification (see family_id)."
+      - name: abstract
+        description: "Paper abstract, carried through for family_id keyword classification when primary_topic_id is T10502 (see family_id). NULL where OpenAlex has none."
+      - name: institution_id
+        description: "OpenAlex institution URL for one authorship on this paper — the grain-defining column exploded from the paper's institution_ids list."
+        tests: [not_null]
+      - name: org_id
+        description: "{{ doc('org_id') }} NULL when institution_id has no int_organization_crosswalk entry."
+      - name: org_match_method
+        description: "{{ doc('match_method') }} NULL when org_id is NULL."
+      - name: org_confidence
+        description: "{{ doc('confidence') }} NULL when org_id is NULL."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Denormalised from fact_document_cluster; NULL before Part 5 ML pipeline runs."
+      - name: family_id
+        description: >
+          This paper's OWN direct family (euv | si_photonics | lasers |
+          neuromorphic | in_memory), derived from its own primary_topic_id —
+          independent of which cluster it algorithmically landed in. T10502
+          ("Advanced Memory and Neural Computing") covers both neuromorphic
+          and in-memory compute and can't be split by topic ID alone, so
+          those papers are classified by a keyword match on the paper's own
+          title + abstract (never the cluster's tagline — a cluster-level
+          tie-break would just inherit the cluster's majority, the exact
+          attribution problem this column exists to avoid). This is the
+          authoritative column for family-level counting; seed_cluster_family
+          (joined via cluster_id) is a display label for the cluster as a
+          whole, not a per-document fact. NULL when neither the topic nor the
+          keyword match resolves.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
+
+  - name: fact_patent_filing
+    description: >
+      One row per (patent, assignee) combination. org_id is attached via the
+      crosswalk on assignee_id; NULL is allowed for individual assignees or
+      those not in the crosswalk. cluster_id is denormalised from
+      fact_document_cluster for fast analytical queries without a join.
+      Anchored on filing_date — never grant_date.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_patent')
+                field: patent_id
+      - name: filing_date
+        description: "{{ doc('filing_date') }}"
+        tests: [not_null]
+      - name: grant_date
+        description: "Grant date. Metadata only; never used in time metrics (CLAUDE.md rule 2)."
+      - name: patent_type
+        description: "utility | design | plant | reissue | defensive_publication."
+      - name: primary_cpc
+        description: "This patent's cpc_sequence = 0 CPC group code — the primary classification used both for family_id derivation here and for the CPC scope filter. NULL when the patent has no cpc_sequence = 0 row in stg_cpc."
+      - name: family_id
+        description: >
+          This patent's OWN direct family (euv | si_photonics | lasers |
+          neuromorphic | in_memory), derived from its own primary_cpc prefix
+          — independent of which cluster it algorithmically landed in. This
+          is the authoritative column for family-level counting (patent
+          share, HHI, leaderboards): seed_cluster_family (joined via
+          cluster_id) is a display label for the cluster as a whole and
+          should never be used to attribute an individual document's family,
+          since ~44% of clusters mix Lasers/Silicon-Photonics or
+          Neuromorphic/In-Memory content (measured 2026-07-04). NULL when
+          primary_cpc doesn't match any of the 5 prefixes.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
+      - name: assignee_id
+        description: "PatentsView disambiguated assignee UUID — the patent-side entity-resolution identity, joined to the crosswalk to derive org_id."
+      - name: assignee_name
+        description: "PatentsView disambiguated organisation name for assignee_id. NULL for individual assignees."
+      - name: assignee_sequence
+        description: "Order of this assignee among the patent's assignees (0 = primary/first-listed). Used by mart_gap to pick one primary assignee per patent for HHI."
+      - name: org_id
+        description: "{{ doc('org_id') }} NULL when assignee_id is an individual or has no int_organization_crosswalk entry."
+      - name: org_match_method
+        description: "{{ doc('match_method') }} NULL when org_id is NULL."
+      - name: org_confidence
+        description: "{{ doc('confidence') }} NULL when org_id is NULL."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Denormalised from fact_document_cluster; NULL before Part 5 ML pipeline runs."
+
+  - name: fact_patent_citation
+    description: "Patent-to-patent citation edges where the citing patent is in scope. Passthrough of stg_patent_citations at the mart layer; no filtering or enrichment beyond scope."
+    columns:
+      - name: citing_patent_id
+        description: "{{ doc('patent_id') }} The scope patent doing the citing."
+        tests: [not_null]
+      - name: cited_patent_id
+        description: "{{ doc('patent_id') }} The (possibly out-of-scope) patent being cited. Not guaranteed to resolve against dim_patent."
+        tests: [not_null]
+
+  - name: mart_competitive
+    description: >
+      Competitive landscape mart. Grain: (cluster_id, side, org_id_key).
+      side='patent': distinct US patents assigned to org per cluster.
+      side='paper': distinct papers attributed to org per cluster (a paper
+      with N co-authoring institutions counts once per org, so paper-side
+      shares can sum > 100% per cluster — a co-attribution share, not a
+      partitioned one; see share). This is a descriptive count of who
+      appears on each side, not an NPL-linked signal — an org on both sides
+      of a cluster is not implied to have a causal link between its own
+      papers and its own patents. Unresolved orgs (no crosswalk match) are
+      included with canonical_name='Unresolved', never silently dropped.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: tagline
+        description: "Cluster tagline, denormalised from dim_technology_cluster for display without a join."
+        tests: [not_null]
+      - name: side
+        description: "'patent' (assignee side) | 'paper' (institution side)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["patent", "paper"]
+      - name: org_id_key
+        description: "coalesce(org_id, 'unresolved') — never NULL, safe as a groupable/joinable key even for unresolved orgs."
+        tests: [not_null]
+      - name: canonical_name
+        description: "{{ doc('org_id') }} display name, or 'Unresolved' when org_id is NULL."
+        tests: [not_null]
+      - name: match_method
+        description: "{{ doc('match_method') }} 'none' when org_id is NULL (unresolved)."
+        tests: [not_null]
+      - name: confidence
+        description: "{{ doc('confidence') }} 'low' when org_id is NULL (unresolved)."
+        tests: [not_null]
+      - name: doc_count
+        description: "Distinct patents (side='patent') or distinct papers (side='paper') attributed to this org in this cluster."
+        tests: [not_null]
+      - name: share
+        description: "doc_count / cluster_total for this (cluster, side). In [0, 1] per org; paper-side shares can sum > 100% across all orgs in a cluster (see model description)."
+        tests: [not_null]
+      - name: cluster_total
+        description: "Distinct document count for this side in this cluster — the denominator of share."
+        tests: [not_null]
+      - name: rank_in_cluster
+        description: "Rank by doc_count, descending, within each (cluster_id, side). 1 = the top org for that side of that cluster."
+        tests: [not_null]
+
+  - name: mart_gap
+    description: >
+      Per-cluster summary: citation lag, concentration gap, and research
+      breadth. Grain: one row per cluster_id (c_noise included, flagged
+      is_noise). HHI (Herfindahl-Hirschman Index, [0, 1] scale) is computed
+      over each patent's primary assignee (assignee_sequence=0 preferred,
+      else lowest non-null sequence), denominator restricted to resolved
+      (non-NULL org_id) patents so unresolved patents don't dilute measured
+      concentration — pct_unresolved_patents documents the exclusion rate.
+      npl_median_lag_years is the hard NPL-linked citation lag; cohort_lag_years
+      is a soft, non-NPL-linked estimate (see each column).
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: tagline
+        description: "Cluster tagline, denormalised from dim_technology_cluster for display without a join."
+      - name: is_noise
+        description: "TRUE only for cluster_id = 'c_noise'. Exclude from headline findings; c_noise is included in this mart for completeness, not as a reportable technology family."
+        tests: [not_null]
+      - name: n_patents
+        description: "Total scope patents in this cluster (resolved + unresolved org)."
+        tests: [not_null]
+      - name: n_assignees
+        description: "Distinct resolved org_ids among this cluster's patents' primary assignees. Comparable to n_research_orgs on the paper side."
+      - name: pct_unresolved_patents
+        description: "Percent of this cluster's patents whose primary assignee has no org_id (individual assignee or no crosswalk entry) — excluded from both the HHI numerator and denominator."
+      - name: hhi
+        description: >
+          HHI in [0, 1] (NULL when resolved_patents < 10). Descriptive concentration
+          within US patents only — not a global geography comparison (CLAUDE.md rule 4).
+      - name: hhi_reportable
+        description: "TRUE when this cluster has >= 10 resolved patents, i.e. hhi is non-NULL and safe to display."
+        tests: [not_null]
+      - name: n_oa_institutions
+        description: "Distinct OpenAlex institution_ids (sub-org level; IBM Research Almaden ≠ IBM Research Zürich)."
+        tests: [not_null]
+      - name: n_research_orgs
+        description: "Distinct org_ids post-ER among this cluster's papers — org-level granularity, directly comparable to n_assignees."
+        tests: [not_null]
+      - name: n_papers
+        description: "Total scope papers in this cluster."
+        tests: [not_null]
+      - name: npl_n_links
+        description: "Count of NPL-linked pairs backing npl_median_lag_years for this cluster."
+        tests: [not_null]
+      - name: npl_reportable
+        description: "TRUE when npl_n_links >= 20, i.e. npl_median_lag_years is non-NULL and safe to display."
+        tests: [not_null]
+      - name: npl_median_lag_years
+        description: >
+          Median citation lag in years (publication_date → patent filing_date, via NPL link).
+          NULL when npl_n_links < 20. Never described as lead time (CLAUDE.md rule 2).
+      - name: cohort_med_pub_year
+        description: "Median publication_year among this cluster's papers. Input to cohort_lag_years."
+      - name: cohort_med_filing_year
+        description: "Median filing year among this cluster's patents. Input to cohort_lag_years."
+      - name: cohort_lag_years
+        description: >
+          SOFT ESTIMATE: cohort_med_filing_year − cohort_med_pub_year.
+          NOT derived from NPL links — the papers and patents contributing to each median
+          need not be directly linked to each other. May be negative (patents pre-date
+          the research cohort in the cluster). Present alongside npl_median_lag_years so
+          the UI can show both the hard, linked signal and this weaker cohort-level signal
+          without conflating them.
+
+  - name: mart_velocity
+    description: >
+      Technology velocity mart. Grain: (cluster_id, year) — a pure annual
+      time series of paper and patent counts. Citation lag and cohort lag
+      are per-cluster scalars and live in mart_gap instead, not here. c_noise
+      rows are included; filter is_noise = false for headline findings.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: year
+        description: "Calendar year — publication_year for papers, extract(year from filing_date) for patents. Present whenever either series has at least one row for this (cluster, year)."
+        tests: [not_null]
+      - name: tagline
+        description: "Cluster tagline, denormalised from dim_technology_cluster for display without a join."
+        tests: [not_null]
+      - name: is_noise
+        description: "TRUE only for cluster_id = 'c_noise'. Exclude from headline trend findings."
+        tests: [not_null]
+      - name: paper_count
+        description: "Distinct papers published in this cluster in this year. 0 (not NULL) when the cluster had patent activity but no papers that year."
+        tests: [not_null]
+      - name: patent_count
+        description: "Distinct patents filed in this cluster in this year. 0 (not NULL) when the cluster had paper activity but no patents that year."
+        tests: [not_null]
+
+  - name: seed_cluster_family
+    description: >
+      Cluster → DISPLAY family assignment, using the original 3 Part 0 scope
+      families (euv / silicon_photonics / neuromorphic_in_memory) + adjacent.
+      Computed fresh every dbt run from CPC group prefix (patents) and OpenAlex
+      primary_topic_id (papers). Reverted from an earlier 5-way split (2026-07-04):
+      purity measurement showed ~44% of clusters genuinely mix Lasers with Silicon
+      Photonics or Neuromorphic with In-Memory content, so a 5-way cluster label
+      would misattribute a meaningful share of documents. This table is a display
+      label for the cluster as a whole (map colour, cluster card) -- it is NOT
+      used for family-level counting. fact_patent_filing.family_id and
+      fact_publication.family_id carry each document's own direct family (5-way)
+      and are the authoritative source for any patent-share, HHI, or leaderboard
+      number.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Excludes c_noise (never assigned a display family)."
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: family_id
+        description: "'euv' | 'silicon_photonics' | 'neuromorphic_in_memory' | 'adjacent' (default when no member document has a resolvable family signal). Plurality vote across member documents — see model description."
+        tests: [not_null]
+      - name: family_name
+        description: "Human-readable display name for family_id (e.g. 'EUV Lithography')."
+        tests: [not_null]
+      - name: family_sort_order
+        description: "Fixed display order for the 4 families (1=EUV, 2=Silicon Photonics, 3=Neuromorphic & In-Memory, 4=Adjacent)."
+        tests: [not_null]
+
+  - name: mart_family
+    description: >
+      Family-level scorecard — one row per technology family. Presentation
+      rollup over ~303 clusters via seed_cluster_family (c_noise excluded).
+      The 5 headline families are EUV Lithography, Silicon Photonics &
+      Optical I/O, Lasers & Light Sources, Neuromorphic / Brain-inspired, and
+      In-Memory & Emerging Memory; "adjacent" is included but excluded from
+      headline UI charts. patent_share is the key industrial-dominance
+      signal. median_lag_years_weighted is weighted by npl_n_links per
+      contributing cluster. Top assignee/researcher is a mode across
+      cluster-level #1 orgs (approximate, not a true cross-cluster distinct
+      count). US-patent lens only; stated in the UI (CLAUDE.md rule 4).
+    columns:
+      - name: family_id
+        description: "Primary key of this model — see seed_cluster_family.family_id for the enumeration."
+        tests: [not_null, unique]
+      - name: family_name
+        description: "Human-readable display name for family_id."
+        tests: [not_null]
+      - name: family_sort_order
+        description: "Fixed display order for the families."
+        tests: [not_null]
+      - name: n_papers
+        description: "Sum of n_papers across this family's clusters (mart_gap)."
+        tests: [not_null]
+      - name: n_patents
+        description: "Sum of n_patents across this family's clusters (mart_gap)."
+        tests: [not_null]
+      - name: n_clusters
+        description: "Count of clusters rolled up into this family (excludes c_noise)."
+        tests: [not_null]
+      - name: patent_share
+        description: "n_patents / (n_patents + n_papers). Higher = more IP-intensive relative to research volume for this family. Descriptive, US-patent-only; not a claim about global patenting activity."
+      - name: n_research_orgs_sum
+        description: "Sum of n_research_orgs across this family's clusters. Approximate — sums per-cluster distinct-org counts rather than deduping an org appearing in multiple clusters of the same family."
+      - name: n_assignees_sum
+        description: "Sum of n_assignees across this family's clusters. Same cross-cluster approximation caveat as n_research_orgs_sum."
+      - name: median_lag_years_weighted
+        description: "Weighted average of each contributing cluster's npl_median_lag_years, weighted by that cluster's npl_n_links. NULL contribution from clusters where npl_reportable is false. Never described as lead time (CLAUDE.md rule 2)."
+      - name: total_npl_links
+        description: "Sum of npl_n_links across this family's npl_reportable clusters — the weight-of-evidence denominator behind median_lag_years_weighted."
+      - name: top_assignee_name
+        description: "Mode of each contributing cluster's #1-ranked patent assignee (mart_competitive, side='patent', rank_in_cluster=1) across the family's clusters. An approximate 'who leads this family' signal, not a family-wide patent-count leaderboard."
+      - name: top_researcher_name
+        description: "Mode of each contributing cluster's #1-ranked paper institution (mart_competitive, side='paper', rank_in_cluster=1) across the family's clusters. Same approximation caveat as top_assignee_name."
+
+  - name: fact_npl_link
+    description: >
+      Resolved paper↔patent edges via non-patent-literature citations. The
+      citation-lag interval (publication_date → filing_date) is computed
+      here from the joined dim_paper/dim_patent dates. Only pairs where the
+      paper was published before the patent was filed are kept (a citation
+      of a paper published after the patent's filing date would be a data
+      error, not a valid lag). All rows carry match_method + confidence
+      (CLAUDE.md provenance & confidence pattern). Populated after the Part 4
+      Step 2 NPL matcher has run.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_patent')
+                field: patent_id
+      - name: work_id
+        description: "{{ doc('work_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_paper')
+                field: work_id
+      - name: match_method
+        description: "{{ doc('match_method') }} Always 'npl_citation' for this model — resolved via DOI or fuzzy-title route (see doi_extracted)."
+        tests: [not_null]
+      - name: confidence
+        description: "{{ doc('confidence') }} 'high' for the DOI route, 'medium' for the fuzzy-title route."
+        tests: [not_null]
+      - name: doi_extracted
+        description: "DOI extracted from the patent's NPL other_reference_text. NULL for fuzzy-title matches, where no DOI was found in the citation string."
+      - name: publication_date
+        description: "{{ doc('publication_date') }} Denormalised from dim_paper; input to citation_lag_days/citation_lag_years."
+        tests: [not_null]
+      - name: filing_date
+        description: "{{ doc('filing_date') }} Denormalised from dim_patent; input to citation_lag_days/citation_lag_years."
+        tests: [not_null]
+      - name: citation_lag_days
+        description: "{{ doc('citation_lag') }} Expressed in days: datediff('day', publication_date, filing_date)."
+        tests: [not_null]
+      - name: citation_lag_years
+        description: "{{ doc('citation_lag') }} Expressed in years: citation_lag_days / 365.25, rounded to 2 decimals."
+        tests: [not_null]

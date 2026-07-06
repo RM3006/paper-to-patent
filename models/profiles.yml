@@ -35,3 +35,14 @@ paper_to_patent:
           region: auto
       extensions:
         - httpfs
+    docs:
+      # Used only by the dbt-docs GitHub Actions workflow, with
+      # --vars '{"source_root": "models/fixtures"}': source_root then points
+      # read_parquet()/glob() at local zero-row fixture stubs instead of R2,
+      # so no CLOUDFLARE_*/httpfs secret is needed for this target at all.
+      # File-based (not :memory:) so the workflow's separate `dbt build` and
+      # `dbt docs generate` invocations share the same materialized relations
+      # — :memory: would reset between commands and produce an empty catalog.
+      type: duckdb
+      path: "docs_build.duckdb"
+      threads: 4

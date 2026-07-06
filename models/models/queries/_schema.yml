@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: idea_journey
+    description: >
+      Canonical "idea journey" query for a given organisation: every paper it
+      published, every patent it filed, and any NPL link connecting a
+      specific paper to a specific patent (fact_npl_link, populated after
+      Part 4 Step 2). One row per (org, paper, patent) combination produced
+      by the cross of that org's papers and patents — filter by org_id in a
+      downstream WHERE clause (`SELECT * FROM main_marts.idea_journey WHERE
+      org_id = 'org_nvidia'`); most orgs have far fewer real (paper, patent)
+      pairs than the full cross-product, but the view does not pre-filter to
+      NPL-linked pairs only, since an unlinked paper/patent still belongs to
+      the org's journey. Materialised as a real view (not an analysis) so it
+      participates in the dbt graph and a `ref()` rename elsewhere breaks it
+      loudly instead of silently drifting.
+    columns:
+      - name: org_id
+        description: "{{ doc('org_id') }}"
+      - name: org_name
+        description: "{{ doc('org_id') }} display name, from dim_organization.canonical_name."
+      - name: work_id
+        description: "{{ doc('work_id') }} NULL when this org has no papers."
+      - name: paper_title
+        description: "Title of the paper, from dim_paper. NULL when work_id is NULL."
+      - name: publication_date
+        description: "{{ doc('publication_date') }} NULL when work_id is NULL."
+      - name: doi
+        description: "DOI URL of the paper, from dim_paper. NULL when work_id is NULL or OpenAlex has no DOI for the work."
+      - name: primary_topic_name
+        description: "OpenAlex topic name for the paper, from dim_paper."
+      - name: patent_id
+        description: "{{ doc('patent_id') }} NULL when this org has no patents."
+      - name: patent_title
+        description: "Title of the patent, from dim_patent. NULL when patent_id is NULL."
+      - name: filing_date
+        description: "{{ doc('filing_date') }} NULL when patent_id is NULL."
+      - name: grant_date
+        description: "Grant date of the patent, from dim_patent. Metadata only; never used for time metrics (CLAUDE.md rule 2)."
+      - name: primary_cpc
+        description: "Primary CPC group code of the patent, from fact_patent_filing."
+      - name: npl_match_method
+        description: "{{ doc('match_method') }} NULL until this (paper, patent) pair has a resolved NPL link."
+      - name: npl_confidence
+        description: "{{ doc('confidence') }} NULL until this (paper, patent) pair has a resolved NPL link."
+      - name: citation_lag_days
+        description: "{{ doc('citation_lag') }} Expressed in days. NULL until this (paper, patent) pair has a resolved NPL link."
+      - name: citation_lag_years
+        description: "{{ doc('citation_lag') }} Expressed in years. NULL until this (paper, patent) pair has a resolved NPL link."
