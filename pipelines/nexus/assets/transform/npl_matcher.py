@@ -33,6 +33,7 @@ from nexus.assets.ingest.openalex import delete_r2_object
 from nexus.logging import logger
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
+from nexus.resources.warehouse import connect_warehouse
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -250,13 +251,8 @@ def npl_links_raw(
         context.log.info("Snapshot %s exists (%s rows). Skipping.", r2_path, f"{existing:,}")
         return
 
-    # Open dev.duckdb for reading/writing gold eval
-    dev_db_path = pathlib.Path(os.environ.get("DBT_DUCKDB_PATH", "dev.duckdb"))
-    if not dev_db_path.exists():
-        raise FileNotFoundError(
-            f"dev.duckdb not found at {dev_db_path}. Run 'dbt build' (Step 1) first."
-        )
-    dev_con = _duckdb_lib.connect(str(dev_db_path))
+    # Open the warehouse for reading staging + reading/writing the gold eval table
+    dev_con = connect_warehouse(read_only=False)
 
     try:
         # Load OA works

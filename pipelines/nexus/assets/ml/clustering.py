@@ -17,7 +17,6 @@ import os
 import pathlib
 import tempfile
 
-import duckdb as _duckdb_lib
 import numpy as np
 import polars as pl
 from dagster import OpExecutionContext, asset
@@ -28,6 +27,7 @@ from nexus.assets.ml.embeddings import load_corpus
 from nexus.logging import logger
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
+from nexus.resources.warehouse import connect_warehouse
 
 _UMAP_N_NEIGHBORS = 15
 _UMAP_MIN_DIST = 0.1
@@ -282,12 +282,7 @@ def document_clusters(
     )
 
     # Load original texts for c-TF-IDF
-    dev_db_path = pathlib.Path(os.environ.get("DBT_DUCKDB_PATH", "dev.duckdb"))
-    if not dev_db_path.exists():
-        raise FileNotFoundError(
-            f"dev.duckdb not found at {dev_db_path}. Run 'dbt build' first."
-        )
-    dev_con = _duckdb_lib.connect(str(dev_db_path), read_only=True)
+    dev_con = connect_warehouse()
     try:
         corpus, _excluded = load_corpus(dev_con)
     finally:

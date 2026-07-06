@@ -61,6 +61,7 @@ from nexus.assets.ingest.openalex import delete_r2_object
 from nexus.logging import logger
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
+from nexus.resources.warehouse import connect_warehouse
 
 DetectorFactory.seed = 0  # deterministic language detection across runs
 
@@ -349,12 +350,6 @@ def document_embeddings(
             ),
         )
 
-    dev_db_path = pathlib.Path(os.environ.get("DBT_DUCKDB_PATH", "dev.duckdb"))
-    if not dev_db_path.exists():
-        raise FileNotFoundError(
-            f"dev.duckdb not found at {dev_db_path}. Run 'dbt build' first."
-        )
-
     # Lazy import: keeps module importable in tests without downloading the model
     context.log.info("Loading model %s…", _MODEL_NAME)
     from sentence_transformers import SentenceTransformer  # noqa: PLC0415
@@ -362,9 +357,9 @@ def document_embeddings(
     tokenizer = model.tokenizer
 
     # Load corpus from the mart layer
-    dev_con = _duckdb_lib.connect(str(dev_db_path), read_only=True)
+    dev_con = connect_warehouse()
     try:
-        context.log.info("Loading corpus from dev.duckdb…")
+        context.log.info("Loading corpus from the warehouse…")
         corpus, excluded = load_corpus(dev_con)
     finally:
         dev_con.close()

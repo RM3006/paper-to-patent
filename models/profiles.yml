@@ -13,3 +13,25 @@ paper_to_patent:
           secret: "{{ env_var('CLOUDFLARE_R2_SECRET_ACCESS_KEY') }}"
       extensions:
         - httpfs
+    prod:
+      # Materialises the warehouse into MotherDuck. Reads raw Parquet from R2 via
+      # httpfs during the build; writes staging/intermediate/marts to MotherDuck.
+      # MOTHERDUCK_TOKEN (read-write) must be set in the environment — DuckDB's
+      # motherduck extension reads it automatically when opening an md: path.
+      type: duckdb
+      path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'paper_to_patent') }}"
+      threads: 4
+      secrets:
+        - type: r2
+          name: r2
+          account_id: "{{ env_var('CLOUDFLARE_ACCOUNT_ID') }}"
+          key_id: "{{ env_var('CLOUDFLARE_R2_ACCESS_KEY_ID') }}"
+          secret: "{{ env_var('CLOUDFLARE_R2_SECRET_ACCESS_KEY') }}"
+          # region 'auto' is REQUIRED here: the raw-Parquet read executes in
+          # MotherDuck's cloud, which otherwise passes its own AWS region (e.g.
+          # eu-central-1) to R2, which R2 rejects (valid: wnam/enam/weur/eeur/
+          # apac/oc/auto). The local `dev` target reads R2 on the laptop, where
+          # the default already resolves correctly, so it does not need this.
+          region: auto
+      extensions:
+        - httpfs

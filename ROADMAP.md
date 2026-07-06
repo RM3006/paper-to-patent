@@ -329,7 +329,7 @@ This is the analytical payload. Every mart carries a top-of-file comment stating
 
 **Effort**: 12–18 h.
 
-**Architecture note**: the app reads the small gold Parquet from R2 with **in-process DuckDB** (`httpfs` + a read-only R2 token), cached with `st.cache_data` / `st.cache_resource`. The UI only touches the gold layer (single-digit MB) — never the raw corpus — so cold start stays fast.
+**Architecture note**: the app reads the marts from **MotherDuck** with **in-process DuckDB** (`md:` + a read-only MotherDuck token), cached with `st.cache_data` / `st.cache_resource`. The UI only touches the marts (single-digit MB) — never the raw corpus — so cold start stays fast.
 
 **Deliverables**
 - Streamlit app on Community Cloud:
@@ -345,13 +345,13 @@ This is the analytical payload. Every mart carries a top-of-file comment stating
 - Favicon, page title, 1200×630 `og:image`.
 
 **Tasks**
-1. Build the read layer: a cached DuckDB connection over R2 and one query function per panel (each is one SQL statement against a gold Parquet).
+1. Build the read layer: a cached DuckDB connection to MotherDuck (`md:`) and one query function per panel (each is one SQL statement against `main_marts.*`).
 2. Build the map with `scattergl`; wire `st.session_state` for selection.
 3. Build the cluster, competitive, and idea-journey panels.
 4. Show `confidence` and `match_method` everywhere a link or match appears. Label citation lag correctly everywhere it appears.
 5. Tour content as a stateful sequence; "reading this map" card; empty/loading/error states.
 6. Methodology footer: US-only patents, English-only papers, citation lag definition, NPL coverage notes, Marx/Fuegi gold eval reference.
-7. Deploy to Streamlit Community Cloud with the read-only R2 token in Secrets. Generate the `og:image` from the running map.
+7. Deploy to Streamlit Community Cloud with the read-only MotherDuck token in Secrets. Generate the `og:image` from the running map.
 
 **Exit criteria**
 - Public Streamlit URL works in incognito.
@@ -436,4 +436,4 @@ If a checkpoint fails, **do not skip ahead.** Fix it first.
 3. **Semantic "find related work"** — in-warehouse cosine (DuckDB array functions); "papers/patents like this one." (~half a part)
 4. **Citation-network tab** — patent→patent and paper→patent edges as an explorable graph. (~1–2 parts)
 5. **Incremental Dagster assets + scheduled refresh** — turns the one-shot build into a living atlas. (~1 part)
-6. **Managed warehouse migration** (MotherDuck) — only if a later version's volume genuinely outgrows DuckDB. (~half a part)
+6. ~~**Managed warehouse migration** (MotherDuck)~~ — **done**: adopted as the served warehouse (dbt `--target prod` materialises into it; the app reads from it). See ARCHITECTURE.md §5.

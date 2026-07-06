@@ -1,8 +1,9 @@
+# pyright: basic
 """Data loading layer for the Streamlit UI.
 
 Dev:  reads from the local dev.duckdb warehouse.
-Prod: reads from the R2 gold Parquet layer via DuckDB in-memory + httpfs.
-      Activated by setting R2_READ_KEY_ID in the environment.
+Prod: reads from the MotherDuck warehouse (md:<MOTHERDUCK_DATABASE>).
+      Activated by setting MOTHERDUCK_TOKEN in the environment.
 """
 
 from __future__ import annotations
@@ -16,57 +17,25 @@ import streamlit as st
 
 _LOCAL_DB = pathlib.Path(__file__).parent.parent.parent / "models" / "dev.duckdb"
 
-# Mirrors gold_export._GOLD_MODELS — must stay in sync when new models are added.
-_R2_SUBDIRS: dict[str, str] = {
-    "dim_cpc": "dims",
-    "dim_organization": "dims",
-    "dim_paper": "dims",
-    "dim_patent": "dims",
-    "dim_technology_cluster": "dims",
-    "fact_document_cluster": "facts",
-    "fact_npl_link": "facts",
-    "fact_patent_citation": "facts",
-    "fact_patent_filing": "facts",
-    "fact_publication": "facts",
-    "mart_competitive": "marts",
-    "mart_family": "marts",
-    "mart_gap": "marts",
-    "mart_velocity": "marts",
-    "seed_cluster_family": "seeds",
-}
+
+def _md_mode() -> bool:
+    return bool(os.environ.get("MOTHERDUCK_TOKEN"))
 
 
-def _r2_mode() -> bool:
-    return bool(os.environ.get("R2_READ_KEY_ID"))
+def _make_md_conn() -> duckdb.DuckDBPyConnection:
+    """MotherDuck connection; the marts live in the main_marts schema.
 
-
-def _make_r2_conn() -> duckdb.DuckDBPyConnection:
-    """In-memory DuckDB with main_marts.* views pointing at the R2 gold snapshot."""
-    account = os.environ["R2_ACCOUNT_ID"]
-    key = os.environ["R2_READ_KEY_ID"]
-    secret = os.environ["R2_READ_SECRET"]
-    bucket = os.environ.get("R2_BUCKET", "p2p-lake")
-    snap = os.environ["R2_SNAPSHOT_DATE"]  # e.g. "2026-06-27"
-
-    conn = duckdb.connect()
-    conn.execute(f"""
-        CREATE OR REPLACE SECRET r2_read (
-            TYPE r2,
-            ACCOUNT_ID '{account}',
-            KEY_ID '{key}',
-            SECRET '{secret}'
-        )
-    """)
-    conn.execute("CREATE SCHEMA IF NOT EXISTS main_marts")
-    for table, subdir in _R2_SUBDIRS.items():
-        path = f"r2://{bucket}/gold/{subdir}/{table}/v{snap}/{table}.parquet"
-        conn.execute(f"CREATE VIEW main_marts.{table} AS SELECT * FROM read_parquet('{path}')")
-    return conn
+    MOTHERDUCK_TOKEN is read automatically by DuckDB's motherduck extension on
+    connect. Use a read-only (read-scaling) token here — never the read-write
+    build token that the pipeline uses.
+    """
+    db = os.environ.get("MOTHERDUCK_DATABASE", "paper_to_patent")
+    return duckdb.connect(f"md:{db}")
 
 
 def _query(sql: str, params: list[object] | None = None) -> pl.DataFrame:
-    if _r2_mode():
-        conn = _make_r2_conn()
+    if _md_mode():
+        conn = _make_md_conn()
         try:
             return conn.execute(sql, params or []).pl()
         finally:
@@ -74,8 +43,8 @@ def _query(sql: str, params: list[object] | None = None) -> pl.DataFrame:
     if not _LOCAL_DB.exists():
         raise FileNotFoundError(
             f"Local DuckDB warehouse not found at {_LOCAL_DB}.\n"
-            "Run 'dbt run' from models/ to build it, "
-            "or set R2_READ_KEY_ID for production deployment."
+            "Run 'dbt build' from models/ to build it, "
+            "or set MOTHERDUCK_TOKEN for production deployment."
         )
     with duckdb.connect(str(_LOCAL_DB), read_only=True) as conn:
         return conn.execute(sql, params or []).pl()
@@ -373,7 +342,7 @@ def load_top_orgs(cluster_ids: tuple[str, ...], side: str, top_n: int = 10) -> p
 
 @st.cache_data(ttl=3600)
 def _load_seed_orgs_for_searchbox() -> list[tuple[str, str]]:
-    """All active resolved orgs as (name, id) tuples for the empty-query default in the searchbox."""
+    """All active resolved orgs as (name, id) tuples for the searchbox's empty-query default."""
     df = _query("""
         SELECT org_id, canonical_name
         FROM main_marts.dim_organization
@@ -810,7 +779,7 @@ def load_org_top_research_clusters(
     family_ids: tuple[str, ...] | None = None,
     cluster_ids: tuple[str, ...] | None = None,
 ) -> pl.DataFrame:
-    """Top 5 research clusters (excluding c_noise) for a given org — researcher side, with family_id."""
+    """Top 5 research clusters (excluding c_noise) for an org — researcher side, with family_id."""
     scope = _scope_clause("scf.family_id", "mc.cluster_id", family_ids, cluster_ids)
     return _query(
         f"""

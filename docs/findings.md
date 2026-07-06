@@ -1,6 +1,6 @@
 # findings.md — Headline numbers for "The Chips Behind AI"
 
-All numbers here are reproducible by querying the gold marts in `dev.duckdb`.
+All numbers here are reproducible by querying the marts in MotherDuck (or a local `dev.duckdb` build).
 Exact queries are shown under each finding.
 
 **Snapshot**: 2026-07-04 (post embedding-quality-gate re-cluster; 238 clusters, 3-way

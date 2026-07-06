@@ -34,7 +34,7 @@ A curious teenager should grasp the map in 90 seconds. An R&D strategist or VC a
 
 ## Tech stack
 
-Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS · Cloudflare R2 · Parquet · DuckDB · dbt-core + dbt-duckdb · `polars` · `sentence-transformers` (`all-MiniLM-L6-v2`) · `umap-learn` + `hdbscan` · `langdetect` · `rapidfuzz` · Streamlit · Plotly (`scattergl`) · Claude Haiku (cluster labels)
+Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS · Cloudflare R2 · Parquet · DuckDB + MotherDuck (served warehouse) · dbt-core + dbt-duckdb · `polars` · `sentence-transformers` (`all-MiniLM-L6-v2`) · `umap-learn` + `hdbscan` · `langdetect` · `rapidfuzz` · Streamlit · Plotly (`scattergl`) · Claude Haiku (cluster labels)
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for design rationale and [`ROADMAP.md`](ROADMAP.md) for the build plan.
 
@@ -60,8 +60,8 @@ cp .env.example .env.local   # fill in credentials
 uv sync
 uv run --env-file .env.local dagster asset materialize -m nexus --select openalex_works_raw
 uv run pytest
-uv run ruff check pipelines/nexus/
-uv run pyright pipelines/nexus/
+uv run ruff check pipelines/nexus/ apps/ui/
+uv run pyright pipelines/nexus/ apps/ui/
 ```
 
 See [`SETUP.md`](SETUP.md) for the full credential checklist.
