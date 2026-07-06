@@ -20,7 +20,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from render import FAMILY_COLORS, render_chip_multiselect, render_nav, render_tour_banner
 from streamlit_searchbox import StyleOverrides, st_searchbox
 
 from data import (
@@ -39,6 +38,7 @@ from data import (
     load_org_top_research_clusters,
     search_orgs_ilike,
 )
+from render import FAMILY_COLORS, render_chip_multiselect, render_nav, render_tour_banner
 
 _SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 

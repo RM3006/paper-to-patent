@@ -22,10 +22,10 @@ from datetime import timedelta
 
 import plotly.graph_objects as go
 import streamlit as st
-from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
 from streamlit_searchbox import StyleOverrides, st_searchbox
 
 from data import load_trace_family_stat, load_trace_links, load_trace_paper, search_papers_ilike
+from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
 
 st.set_page_config(
     page_title="Trace a Paper — The Chips Behind AI",

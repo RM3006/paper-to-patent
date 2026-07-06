@@ -18,6 +18,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
+
+from data import load_cluster_bubble, load_cluster_card, load_top_orgs
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
@@ -25,8 +27,6 @@ from render import (
     render_nav,
     render_tour_banner,
 )
-
-from data import load_cluster_bubble, load_cluster_card, load_top_orgs
 
 st.set_page_config(
     page_title="Technology Landscape — The Chips Behind AI",

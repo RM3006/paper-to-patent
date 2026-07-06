@@ -19,19 +19,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from render import (
-    FAMILY_COLORS,
-    FAMILY_LABELS,
-    render_chip_multiselect,
-    render_nav,
-    render_tour_banner,
-)
 
 from data import (
     load_family_clusters,
     load_family_org_leaderboard,
     load_family_scorecard,
     load_family_velocity,
+)
+from render import (
+    FAMILY_COLORS,
+    FAMILY_LABELS,
+    render_chip_multiselect,
+    render_nav,
+    render_tour_banner,
 )
 
 st.set_page_config(

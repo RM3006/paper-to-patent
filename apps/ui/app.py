@@ -11,9 +11,9 @@ Source marts: mart_family, mart_competitive, seed_cluster_family.
 from __future__ import annotations
 
 import streamlit as st
-from render import FAMILY_COLORS, render_nav, render_tour_banner
 
 from data import load_family_scorecard, load_family_top_orgs
+from render import FAMILY_COLORS, render_nav, render_tour_banner
 
 st.set_page_config(
     page_title="The Chips Behind AI",

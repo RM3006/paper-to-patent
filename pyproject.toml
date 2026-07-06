@@ -47,6 +47,14 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+# Without this, ruff's isort classifies apps/ui/{data,render,tour}.py by scanning
+# the filesystem for a same-named source at the project root -- a top-level data/
+# directory (raw PatentsView TSV downloads, gitignored) makes `data` resolve as
+# first-party on a machine that has downloaded it, but not on a clean checkout
+# (CI), producing environment-dependent import-sort results. Pin explicitly.
+[tool.ruff.lint.isort]
+known-first-party = ["data", "render", "tour"]
+
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
