@@ -47,15 +47,13 @@ These are **not** defined in `app.py`; they are imported from `render.py` and us
 
 ### Technology families
 
-Five headline families plus one muted "adjacent" slot. Used in the UMAP scatter, scorecard tiles, and family-detail leaderboards.
+Three headline families plus one muted "adjacent" slot. Used in the UMAP scatter, scorecard tiles, and family-detail leaderboards.
 
 | Family | `FAMILY_COLORS` key | HEX | RGB | Rationale |
 |---|---|---|---|---|
 | EUV Lithography | `"euv"` | `#3a4a6b` | `rgb(58, 74, 107)` | Deep navy — cool, technical, industrial |
-| Silicon Photonics & Optical I/O | `"si_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Steel blue — light through glass and silicon |
-| Lasers & Light Sources | `"lasers"` | `#c1666b` | `rgb(193, 102, 107)` | Dusty rose — coherent light, warm without danger-red |
-| Neuromorphic / Brain-inspired | `"neuromorphic"` | `#7a6c91` | `rgb(122, 108, 145)` | Slate purple — neural/biological-digital bridge |
-| In-Memory & Emerging Memory | `"in_memory"` | `#6a9c89` | `rgb(106, 156, 137)` | Sage green — storage, data, growth |
+| Silicon Photonics & Lasers | `"silicon_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Steel blue — light through glass and silicon |
+| Neuromorphic & In-Memory Compute | `"neuromorphic_in_memory"` | `#7a6c91` | `rgb(122, 108, 145)` | Slate purple — neural/biological-digital bridge |
 | Adjacent / Out of Headline | `"adjacent"` | `#94a3b8` | `rgb(148, 163, 184)` | Slate — muted, not headline-worthy |
 | Frontier / Unclustered | `"noise"` | `#d1d5db` | `rgb(209, 213, 219)` | Light grey — unclustered / frontier documents |
 

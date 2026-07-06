@@ -1,3 +1,4 @@
+# pyright: basic
 """
 Family Detail — Surface 2.
 
@@ -67,21 +68,15 @@ _FAMILY_DESC: dict[str, str] = {
         "Extreme-UV optics that print transistors smaller than a virus — "
         "the bottleneck of the entire chip industry."
     ),
-    "si_photonics": (
-        "Moving data as light pulses through silicon, replacing copper wires "
-        "to cut latency and power inside AI servers."
+    "silicon_photonics": (
+        "Moving data as light instead of electricity — from the on-chip lasers "
+        "that generate it to the silicon waveguides that route it — cutting "
+        "latency and power inside AI data centres."
     ),
-    "lasers": (
-        "Coherent light sources integrated at chip scale, enabling the transceivers "
-        "that hold data-centre networks together."
-    ),
-    "neuromorphic": (
-        "Brain-inspired chips that process data the way neurons fire, trading raw "
-        "clock speed for dramatic energy efficiency."
-    ),
-    "in_memory": (
-        "Processing data where it is stored so the chip never has to fetch it "
-        "across slow memory buses."
+    "neuromorphic_in_memory": (
+        "Chips that compute the way neurons do and store data where they compute "
+        "it, trading raw clock speed for dramatic energy efficiency by skipping "
+        "the slow trip to memory."
     ),
 }
 

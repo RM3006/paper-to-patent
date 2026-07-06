@@ -1,3 +1,4 @@
+# pyright: basic
 """Guided tour definition — "The Chips Behind AI".
 
 Five stops, one per page. Each step narrates the key insight of its page
@@ -17,7 +18,7 @@ class TourStep:
 
 TOUR_STEPS: list[TourStep] = [
     TourStep(
-        title="Five technology families powering AI hardware",
+        title="Three technology families powering AI hardware",
         narration=(
             "Each row is one technology family, from extreme-UV lithography that prints "
             "transistors smaller than a virus, to in-memory computing that eliminates "
@@ -47,7 +48,7 @@ TOUR_STEPS: list[TourStep] = [
     TourStep(
         title="Inside a technology family",
         narration=(
-            "Use the pills at the top to switch between the five technology families. "
+            "Use the pills at the top to switch between the three technology families. "
             "The metrics strip shows patent share, paper count, citation lag, and HHI "
             "(a concentration index measuring how few organisations dominate the IP). "
             "The leaderboards rank who files the most patents and publishes the most papers. "
