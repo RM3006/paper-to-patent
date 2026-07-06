@@ -213,3 +213,31 @@ sources:
             tests: [not_null]
           - name: top_terms
             description: "List[String] — top c-TF-IDF discriminating terms for this cluster"
+
+      - name: excluded_documents
+        description: >
+          Documents the embedding quality gate (resolve_paper_text /
+          is_version_style_title, see embeddings.py) excluded entirely —
+          version-style titles (software release notes) or title+abstract
+          both detected non-English. Written by the document_embeddings
+          Dagster asset (a multi_asset alongside the embeddings output
+          itself — one computation, two artifacts, so this list can never
+          drift from what the gate actually decided) to
+          r2://p2p-lake/intermediate/excluded_documents/v{date}/excluded_documents.parquet.
+          stg_openalex_works and stg_patents_scoped exclude these doc_ids
+          from the served corpus. This is a real cross-pipeline dependency:
+          on a fresh build, before Part 5 has ever run, this source has zero
+          rows and the staging exclusion is a no-op (not an error) — see
+          create_external_sources() and MEMORY.md.
+        columns:
+          - name: doc_id
+            description: OpenAlex work_id (papers) or USPTO patent_id (patents)
+            tests: [not_null]
+          - name: doc_type
+            description: "'paper' | 'patent'"
+            tests: [not_null]
+          - name: exclusion_reason
+            description: "'version_style_title' | 'non_english_content'"
+            tests: [not_null]
+          - name: model_version
+            description: Embedding model used (all-MiniLM-L6-v2)

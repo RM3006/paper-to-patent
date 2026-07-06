@@ -86,6 +86,18 @@
     {% if labels_date %}
       {% do run_query("CREATE OR REPLACE VIEW ml_intermediate.cluster_labels AS SELECT * FROM read_parquet('r2://p2p-lake/intermediate/cluster_labels/v" ~ labels_date ~ "/cluster_labels.parquet')") %}
     {% endif %}
+
+    -- excluded_documents: unlike clusters/cluster_labels above, this view is
+    -- ALWAYS created (never conditionally skipped), because stg_openalex_works
+    -- and stg_patents_scoped reference it unconditionally in a NOT IN filter.
+    -- Before Part 5 has ever run, it resolves to an empty relation, making
+    -- that filter a no-op rather than a compile/run error on a fresh build.
+    {% set excluded_docs_date = latest_snapshot_date('intermediate/excluded_documents', 'excluded_documents.parquet') %}
+    {% if excluded_docs_date %}
+      {% do run_query("CREATE OR REPLACE VIEW ml_intermediate.excluded_documents AS SELECT * FROM read_parquet('r2://p2p-lake/intermediate/excluded_documents/v" ~ excluded_docs_date ~ "/excluded_documents.parquet')") %}
+    {% else %}
+      {% do run_query("CREATE OR REPLACE VIEW ml_intermediate.excluded_documents AS SELECT NULL::VARCHAR AS doc_id, NULL::VARCHAR AS doc_type, NULL::VARCHAR AS exclusion_reason, NULL::VARCHAR AS model_version WHERE FALSE") %}
+    {% endif %}
   {% endif %}
 
   -- hook must return SQL; this is a no-op sentinel

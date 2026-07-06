@@ -9,7 +9,13 @@
   - Casts and cleans the raw Parquet fields.
   - Extracts the short work ID (W123…) from the URL for joins.
   - Keeps institution list columns for the org attachment step.
-  Depends on: sources.openalex_raw.works
+  - Excludes doc_ids in ml_intermediate.excluded_documents (papers the Part 5
+    embedding quality gate excluded entirely -- version-style title, or
+    title+abstract both non-English). This is a real dependency on Part 5
+    having run: on a fresh build before it ever has, that source is an empty
+    relation and this filter is a no-op, not an error -- see
+    create_external_sources() and MEMORY.md.
+  Depends on: sources.openalex_raw.works, sources.ml_intermediate.excluded_documents
   Output: dev.duckdb staging.stg_openalex_works
 */
 
@@ -68,4 +74,12 @@ where openalex_id is not null
       title,
       '^[A-Za-z][A-Za-z0-9_-]*\s*:\s*[A-Za-z][A-Za-z0-9_-]*\s+v?[0-9]+\.[0-9]+(\.[0-9]+)?(\s*\(.*\))?$'
       || '|^[A-Za-z][A-Za-z0-9_-]*\s+v?[0-9]+\.[0-9]+(\.[0-9]+)?(\s*\(.*\))?$'
+  )
+  -- Exclude documents the Part 5 embedding quality gate excluded entirely
+  -- (version-style title, or title+abstract both detected non-English) --
+  -- the authoritative source, computed by the same code that decides what
+  -- gets embedded, not a separately-maintained SQL approximation of it.
+  and regexp_extract(openalex_id, 'W([0-9]+)', 0) not in (
+      select doc_id from {{ source('ml_intermediate', 'excluded_documents') }}
+      where doc_type = 'paper'
   )
