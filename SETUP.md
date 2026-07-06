@@ -1,21 +1,22 @@
 # SETUP.md — Prerequisites for the Paper → Patent Build
 
-This checklist enumerates every account, token, and local tool required before Part 1 begins. Almost everything fits in a free tier. The only out-of-pocket cost is a few dollars of Anthropic API spend in Part 5 (cluster labelling — dozens of calls, not thousands), so realistically **under $5 total**. There is no GPU spend (embeddings run on CPU) and no managed-warehouse compute cap (DuckDB runs locally and reads Parquet straight from R2).
+This checklist enumerates every account, token, and local tool required before Part 1 begins. Almost everything fits in a free tier. The only out-of-pocket cost is a few dollars of Anthropic API spend in Part 5 (cluster labelling — dozens of calls, not thousands), so realistically **under $5 total**. There is no GPU spend (embeddings run on CPU); the only managed service is MotherDuck, used on its free tier (the served marts are single-digit MB, comfortably within it).
 
 **The critical path item is the Part 0 NPL feasibility spike**, not an API key. PatentsView bulk data (Phase D1) downloads immediately with no key. Run the spike before building any infrastructure — it gates everything.
 
-On completion, the following five values exist in a gitignored `.env.local`:
+On completion, the following six values exist in a gitignored `.env.local`:
 
 ```
 CLOUDFLARE_ACCOUNT_ID=...
 CLOUDFLARE_R2_ACCESS_KEY_ID=...          # read-write, build machine only
 CLOUDFLARE_R2_SECRET_ACCESS_KEY=...
+MOTHERDUCK_TOKEN=...                      # read-write token for the build pipeline (dbt --target prod)
 OPENALEX_MAILTO=...                       # your email — config for the OpenAlex polite pool, not a credential
 ANTHROPIC_API_KEY=...
 # PATENTSVIEW_API_KEY=...                 # optional — only needed for PatentSearch API supplementary queries
 ```
 
-A second, **read-only** R2 token is generated later for the Streamlit app (Phase F) and lives in Streamlit Cloud's secrets, not here.
+A second, **read-only** MotherDuck token (a read-scaling token) is preferred for the Streamlit app (Phase F) and would live in Streamlit Cloud's secrets, not here — but read-scaling tokens require a paid MotherDuck tier. On the free tier, the app reuses the same read-write `MOTHERDUCK_TOKEN` (see F1 for the accepted risk).
 
 ---
 
@@ -72,8 +73,8 @@ One-time install on the development machine.
 
 ## Phase C — Storage and warehouse
 
-### C1. Cloudflare R2 — the data lake (raw + gold Parquet)
-- **Why**: holds every raw-layer Parquet file from OpenAlex and PatentsView, and the gold marts the app reads. Zero egress fees, which matters because DuckDB (build and serve) and the embedding asset all read from here.
+### C1. Cloudflare R2 — the data lake (raw + intermediate Parquet)
+- **Why**: holds every raw-layer and intermediate Parquet file from OpenAlex, PatentsView, entity resolution, and the ML stage. Zero egress fees, which matters because the dbt build (local DuckDB and MotherDuck) and the embedding asset all read from here.
 - **Used in**: every Part from 1 onward.
 - **Cost**: free up to 10 GB storage and 10M reads/month. The project uses ~1–2 GB total.
 - **Catch**: Cloudflare requires a payment method on file even for free-tier R2. No charge unless usage exceeds the limit.
@@ -84,12 +85,23 @@ One-time install on the development machine.
   4. Retain the **Access Key ID**, **Secret Access Key**, and the **Account ID** (visible in the R2 sidebar URL).
 - **Secrets**: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`.
 
-### C2. DuckDB — the embedded warehouse
-- **Why**: DuckDB *is* the warehouse. dbt-duckdb builds staging/intermediate/marts locally (free, fast), reading raw Parquet from R2 via `httpfs` and writing the gold layer back to R2 as Parquet. The Streamlit app queries those gold Parquet files with in-process DuckDB. No managed warehouse, no service, no compute cap.
+### C2. DuckDB + MotherDuck — the warehouse
+- **Why**: DuckDB is the engine; **MotherDuck** (managed DuckDB) is the served warehouse. dbt-duckdb builds staging → intermediate → marts, reading raw Parquet from R2 via `httpfs`. The Dagster pipeline builds into MotherDuck (`dbt build --target prod`); a local `dev.duckdb` (`--target dev`) is kept for fast, offline iteration. The Streamlit app queries MotherDuck with in-process DuckDB (`md:`) — same engine, so the SQL and dbt adapter are unchanged.
 - **Used in**: Parts 4, 5, 6, 7.
-- **Cost**: free. DuckDB is a Python library installed with the project's dependencies; there is no account and no token.
+- **Cost**: DuckDB is a free Python library (no account). MotherDuck has a free tier that easily covers the single-digit-MB served marts; see C3.
 - **Day-one check (do not skip)**: before designing the pipeline around it, confirm DuckDB can read a test Parquet file from R2 with the R2 secret (`CREATE SECRET` of type `r2`/`s3` + `SELECT * FROM read_parquet('s3://...')`). The R2 credential wiring is the single most common integration snag; prove it in 20 minutes, not in week three. The exact secret syntax lives in `docs/data_source_manifest.md`.
-- **Running dbt (Part 4+)**: `cd models && dbt build` (dbt-duckdb engine, configured against R2 in `profiles.yml`).
+- **Running dbt (Part 4+)**: `cd models && dbt build` builds the local `dev.duckdb` (`dev` target); `dbt build --target prod` builds into MotherDuck. Both are configured in `profiles.yml`.
+
+### C3. MotherDuck — the served warehouse
+- **Why**: managed DuckDB. dbt materialises the marts into it (`--target prod`) and the Streamlit app reads from it, because a hosted Streamlit Community Cloud container can't reach a laptop's local `dev.duckdb`. Same engine as DuckDB — identical SQL and dbt adapter (`md:` path).
+- **Used in**: Parts 6, 7 (the production build target and the app's read path).
+- **Cost**: free tier (verify current limits at motherduck.com — they change). The served marts are single-digit MB, well inside it.
+- **Steps**:
+  1. Sign up at `app.motherduck.com`.
+  2. Create a database named `paper_to_patent` (or set `MOTHERDUCK_DATABASE`). Connecting to `md:paper_to_patent` also creates it on first write.
+  3. **Settings → Access Tokens → Create Token** (read-write) for the build pipeline → `MOTHERDUCK_TOKEN` in `.env.local`.
+  4. Prefer a **read-only** ("read-scaling") token for the app in Phase F — but this token type requires a paid MotherDuck tier. On the free tier, skip this step and reuse the read-write token for the app too (see F1).
+- **Secrets**: `MOTHERDUCK_TOKEN` (read-write, build machine); `MOTHERDUCK_DATABASE` optional (default `paper_to_patent`).
 
 ---
 
@@ -163,7 +175,7 @@ One-time install on the development machine.
 - **Steps**:
   1. Sign in at share.streamlit.io via GitHub OAuth.
   2. At Part 7, point it at `apps/ui/streamlit_app.py`.
-  3. In **Cloudflare → R2 → API Tokens**, create a second token with **read-only** ("Object Read only") scope for the app. Add its three values to Streamlit Cloud's **Secrets** UI (account id + read access key + read secret). The app reads gold Parquet from R2 with these; it never gets the read-write build credentials.
+  3. Prefer a **read-only** (read-scaling) MotherDuck token for the app — but MotherDuck's free tier cannot issue one. **On the free tier**, add the same read-write `MOTHERDUCK_TOKEN` and `MOTHERDUCK_DATABASE=paper_to_patent` to Streamlit Cloud's **Secrets** UI instead. Accepted risk: the warehouse is fully derived from R2 and rebuilt by `dbt build --target prod` in about a minute, so a leaked token means downtime, not data loss — but keep the app **private** (not public) while on this token, and rotate the token + redeploy if it ever leaks. Switch to a genuine read-only token the moment the MotherDuck account is upgraded.
 - **Secrets**: configured in the Streamlit Cloud UI, not in `.env.local`.
 
 ---
@@ -181,7 +193,7 @@ One-time install on the development machine.
 
 ## Out of scope (tools deliberately excluded)
 
-- **Managed warehouse (MotherDuck / Snowflake / BigQuery)** — DuckDB over R2 Parquet covers build and serve at ~1–2 GB; the served dataset is single-digit MB. A managed warehouse would add a service, a credential, and a usage cap for no benefit at this scale. (Revisit only if a future version's volume outgrows DuckDB.)
+- **Heavyweight managed warehouse (Snowflake / BigQuery)** — overkill at ~1–2 GB. MotherDuck (managed DuckDB) *is* used as the served warehouse (a hosted Streamlit container can't reach a local `dev.duckdb`), but a Snowflake/BigQuery-class service adds cost and a credential for no benefit at this scale.
 - **Modal / any serverless GPU** — `all-MiniLM-L6-v2` runs on CPU in minutes; no GPU is justified. Reconsider only if a hosted FastAPI backend is added in v2.
 - **Qdrant / dedicated vector DB** — the product is clustering, not similarity search. UMAP coords sit in the warehouse; in-warehouse cosine covers any future need.
 - **AWS / GCP / Azure** — R2 + DuckDB are cheaper and simpler at this volume. (GCP's BigQuery + Google Patents Public Data is the right move only if v2 adds global patent coverage.)
