@@ -61,6 +61,7 @@ jobs:
 
   docs-build:
     name: dbt docs generate
+    needs: deploy-prod
     runs-on: ubuntu-latest
 
     steps:
@@ -77,26 +78,23 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: dbt build (materialize fixture stubs so the catalog has real column types)
-        # Uses the `docs` target: a file-based DuckDB, not `ci`'s :memory:, so this
-        # build and the docs-generate step below share the same relations.
-        # source_root points at the zero-row fixture stubs in models/fixtures/, so
-        # this job never touches R2 or MotherDuck — no CLOUDFLARE_*/MOTHERDUCK_TOKEN
-        # secrets are used here (see the separate deploy-prod job for the one that does).
-        run: >
-          uv run dbt build
-          --project-dir models
-          --profiles-dir models
-          --target docs
-          --vars '{"source_root": "models/fixtures"}'
-
-      - name: dbt docs generate
+      - name: dbt docs generate (against the real MotherDuck warehouse)
+        # Runs after deploy-prod, against the prod target -- so the published
+        # catalog reflects the real schema AND real row counts/stats from the
+        # rebuild that job just did, instead of an all-zero fixture stand-in.
+        # No separate build step needed here: MotherDuck is a persistent
+        # shared database, not an ephemeral local file, so this job can just
+        # connect and introspect what deploy-prod already materialized.
         run: >
           uv run dbt docs generate
           --project-dir models
           --profiles-dir models
-          --target docs
-          --vars '{"source_root": "models/fixtures"}'
+          --target prod
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
