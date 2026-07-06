@@ -32,10 +32,10 @@ Rules that follow from it:
 
 ## Tech stack (fixed — ask before deviating)
 
-Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS (with `dagster-dbt`) · Cloudflare R2 · Parquet · DuckDB (embedded analytical warehouse) · dbt-core + dbt-duckdb · `polars` (not pandas) · `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) · `umap-learn` + `hdbscan` (BERTopic is an acceptable wrapper) · `scikit-learn` · `rapidfuzz` (ER fuzzy bridge; `splink` only if rapidfuzz precision on the eval set falls below 0.95) · Streamlit (Community Cloud) · Plotly (`scattergl`) · Claude Haiku for cluster labels.
+Python 3.11+ · `uv` · `ruff` · `pyright` strict · `pytest` · Terraform 1.9+ · Dagster OSS (with `dagster-dbt`) · Cloudflare R2 · Parquet · DuckDB (embedded engine) + MotherDuck (served warehouse) · dbt-core + dbt-duckdb · `polars` (not pandas) · `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) · `umap-learn` + `hdbscan` (BERTopic is an acceptable wrapper) · `scikit-learn` · `langdetect` (abstract-quality gate before embedding — see ROADMAP Part 5) · `rapidfuzz` (ER fuzzy bridge; `splink` only if rapidfuzz precision on the eval set falls below 0.95) · Streamlit (Community Cloud) · `streamlit-searchbox` (ILIKE org search combobox) · Plotly (`scattergl`) · Claude Haiku for cluster labels.
 
 **Deliberately not in the stack** (divergence from prior projects — reasons in `ARCHITECTURE.md`):
-- **No managed warehouse** (MotherDuck / Snowflake / BigQuery). The served dataset is single-digit MB and the whole corpus is ~1–2 GB; DuckDB over R2 Parquet covers both build and serve. A managed warehouse would add a service, a credential, and a usage cap without solving a problem at this scale.
+- **No heavyweight managed warehouse (Snowflake / BigQuery).** The whole corpus is ~1–2 GB and the served marts are single-digit MB. **MotherDuck** (managed DuckDB) *is* used as the served warehouse — dbt materialises into it (`--target prod`) and the app reads from it — because a Streamlit Community Cloud container cannot reach a laptop's local `dev.duckdb`. A Snowflake/BigQuery-class service would add cost and a credential for no benefit at this scale. See `ARCHITECTURE.md` §5.
 - **No Modal / no GPU.** `all-MiniLM-L6-v2` is small; embeddings run on CPU inside a Dagster asset.
 - **No Qdrant.** Clustering, not similarity search, is the product. UMAP coordinates live in the warehouse; in-warehouse cosine covers any future "related work" need.
 
@@ -65,7 +65,8 @@ One module per data source under `pipelines/nexus/assets/ingest/` (`openalex.py`
 - **PatentsView is ingested via bulk TSV files from data.uspto.gov** (no API key required for bulk; CC-BY-4.0). The PatentSearch API (`search.patentsview.org`) is used only for supplementary targeted lookups and is accessed through one shared client with header auth, cursor pagination, and exponential backoff — never ad-hoc `requests` calls scattered across assets.
 - OpenAlex requests always pass `mailto` (the polite pool). Abstracts are reconstructed from `abstract_inverted_index` in one tested helper.
 - **DuckDB reads R2 via `httpfs` with the R2/S3 secret configured once in a shared helper** (`resources/duckdb.py`); never re-declare credentials per query. dbt-duckdb uses the same configuration.
-- **The Streamlit app reads the gold Parquet in R2 with a read-only R2 token** (least privilege), never the read-write build credentials.
+- **The warehouse connection (local `dev.duckdb` vs MotherDuck) is resolved once in a shared helper** — `resources/warehouse.py` for the pipeline, `apps/ui/data.py` for the app; assets never re-derive the dev/prod switch. Both select MotherDuck when `MOTHERDUCK_TOKEN` is set, else the local `dev.duckdb`.
+- **The Streamlit app prefers a read-only (read-scaling) MotherDuck token** (least privilege) over the read-write build token. MotherDuck's free tier cannot issue read-scaling tokens, so on the free tier the app is accepted to run on the same read-write token as the build pipeline — bounded risk, since the whole warehouse is derived and rebuilt from R2 by `dbt build --target prod` in about a minute, so a leaked token means downtime, not data loss. Switch to a read-only token the moment the account tier supports one.
 
 ## Two-tier readability pattern
 

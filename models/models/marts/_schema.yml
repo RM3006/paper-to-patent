@@ -1,0 +1,599 @@
+version: 2
+
+models:
+  - name: dim_organization
+    description: >
+      One row per organisation, spanning both the paper-side and patent-side
+      populations. Multiple raw records for the same real-world organisation
+      (different names, different IDs in each population) collapse to one
+      row here, keeping the most trustworthy name available for that
+      organisation. 14,209 distinct organisations.
+    columns:
+      - name: org_id
+        description: "{{ doc('org_id') }} Primary key of this model."
+        tests:
+          - unique
+          - not_null
+      - name: canonical_name
+        description: "Human-readable organisation name, chosen as the most trustworthy name available across every record resolved to this organisation."
+        tests:
+          - not_null
+      - name: primary_match_method
+        description: "{{ doc('match_method') }} Reflects the method behind the name shown in canonical_name, not necessarily every record resolved to this organisation."
+        tests:
+          - not_null
+      - name: primary_confidence
+        description: "{{ doc('confidence') }} Paired with primary_match_method."
+        tests:
+          - not_null
+
+  - name: dim_cpc
+    description: "One row per patent classification code appearing in the patents covered by this atlas, with its parent groupings for roll-up analysis."
+    columns:
+      - name: cpc_group
+        description: "Full classification code (e.g. `G03F7/2004`) identifying a specific patented technique. Primary key of this model."
+        tests:
+          - unique
+          - not_null
+      - name: cpc_subclass
+        description: "Broader classification grouping (e.g. `G03F`) that cpc_group belongs to."
+      - name: cpc_class
+        description: "Broader classification grouping still (e.g. `G03`) that cpc_subclass belongs to."
+      - name: cpc_section
+        description: "The top-level classification grouping (e.g. `G`) that everything below it belongs to."
+
+  - name: dim_technology_cluster
+    description: >
+      One row per technology cluster — a group of papers and patents whose
+      text is closely related. Includes a "noise" cluster (c_noise, labelled
+      "Frontier / Unclustered") for documents too dissimilar from everything
+      else to group meaningfully. Empty until clustering has been computed
+      for the current corpus.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Primary key of this model."
+        tests:
+          - unique
+          - not_null
+      - name: tagline
+        description: "A short, plain-English name for this cluster (2–6 words), automatically generated from the cluster's most representative terms and documents. Fixed to 'Frontier / Unclustered' for c_noise."
+        tests:
+          - not_null
+      - name: summary_friendly
+        description: "A 2–3 sentence plain-English description of what this cluster is about, automatically generated from the cluster's most representative terms and documents."
+        tests:
+          - not_null
+      - name: top_terms
+        description: "The terms that most distinguish this cluster from the rest of the corpus — the grounding input behind tagline/summary_friendly, not intended as reader-facing on its own."
+
+  - name: fact_document_cluster
+    description: >
+      One row per document (paper or patent) that has been assigned to a
+      technology cluster, along with its 2D map coordinates. A document only
+      appears here once it is both in scope and has been through clustering
+      — a document dropped from scope after clustering was last computed is
+      excluded here rather than showing up as a stray point on the map.
+    columns:
+      - name: doc_id
+        description: "{{ doc('work_id') }} for doc_type='paper'; {{ doc('patent_id') }} for doc_type='patent'. Primary key of this model."
+        tests:
+          - not_null
+          - unique
+      - name: doc_type
+        description: "'paper' | 'patent' — which kind of document doc_id identifies."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["paper", "patent"]
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: umap_x
+        description: "Horizontal position for this document on the technology map — documents placed near each other cover similar subject matter."
+        tests: [not_null]
+      - name: umap_y
+        description: "Vertical position for this document on the technology map — documents placed near each other cover similar subject matter."
+        tests: [not_null]
+      - name: model_version
+        description: "Which version of the underlying similarity model produced this document's map position — lets positions from different model versions be told apart if the model is ever updated."
+        tests: [not_null]
+
+  - name: dim_paper
+    description: >
+      One row per paper in scope (162,787 rows). Non-research entries
+      misclassified as papers by the upstream source (e.g. dataset files,
+      software release notes) are excluded. cluster_id is filled in once
+      clustering has been computed for the current corpus, and is NULL
+      before then.
+    columns:
+      - name: work_id
+        description: "{{ doc('work_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: work_url
+        description: "A web link to this paper's record in the source literature database."
+      - name: doi
+        description: "This paper's DOI (Digital Object Identifier) — the standard identifier used to recognise this exact paper when it's cited elsewhere, including by a citing patent. NULL when no DOI has been assigned to the paper."
+      - name: doi_bare
+        description: "The DOI without its web-link prefix, for faster exact-match comparisons. NULL when doi is NULL."
+      - name: title
+        description: "Paper title."
+        tests: [not_null]
+      - name: publication_date
+        description: "{{ doc('publication_date') }}"
+        tests: [not_null]
+      - name: publication_year
+        description: "Year component of publication_date, kept alongside the full date for convenient annual grouping."
+      - name: abstract
+        description: "Paper abstract. NULL where the source has none available."
+      - name: primary_topic_id
+        description: "The subject-area topic this paper is primarily about, drawn from a fixed set of topics in scope for this atlas (EUV lithography, silicon photonics, lasers, or advanced memory and neural computing). Drives this paper's own technology family in fact_publication."
+      - name: primary_topic_name
+        description: "Human-readable name for primary_topic_id."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+
+  - name: dim_patent
+    description: >
+      One row per patent in scope (33,578 rows — matching the relevant
+      classification codes, filed between 2014 and 2025). cluster_id is
+      filled in once clustering has been computed for the current corpus,
+      and is NULL before then.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: title
+        description: "Patent title, as granted."
+        tests: [not_null]
+      - name: filing_date
+        description: "{{ doc('filing_date') }}"
+        tests: [not_null]
+      - name: grant_date
+        description: "The date this patent was formally granted. Shown for reference only — never used to measure timing, since it reflects patent-office processing time rather than anything about the invention itself."
+      - name: patent_type
+        description: "utility | design | plant | reissue | defensive_publication."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+
+  - name: fact_publication
+    description: >
+      One row per (paper, institution) combination — a paper with several
+      co-authoring institutions appears once per institution. Each
+      institution is resolved to an organisation identity where possible;
+      NULL is allowed for the rare institution that couldn't be resolved.
+      cluster_id is carried along here for convenient analysis without an
+      extra join.
+    columns:
+      - name: work_id
+        description: "{{ doc('work_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_paper')
+                field: work_id
+      - name: publication_date
+        description: "{{ doc('publication_date') }}"
+        tests: [not_null]
+      - name: publication_year
+        description: "Year component of publication_date."
+      - name: primary_topic_id
+        description: "This paper's subject-area topic — see dim_paper.primary_topic_id."
+      - name: primary_topic_name
+        description: "Human-readable name for primary_topic_id."
+      - name: title
+        description: "Paper title, carried through to help determine family_id."
+      - name: abstract
+        description: "Paper abstract, carried through to help determine family_id for papers whose topic spans more than one technology family. NULL where the source has none available."
+      - name: institution_id
+        description: "Identifier for one co-authoring institution on this paper — the column that defines this table's grain."
+        tests: [not_null]
+      - name: org_id
+        description: "{{ doc('org_id') }} NULL when this institution couldn't be resolved to an organisation identity."
+      - name: org_match_method
+        description: "{{ doc('match_method') }} NULL when org_id is NULL."
+      - name: org_confidence
+        description: "{{ doc('confidence') }} NULL when org_id is NULL."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
+      - name: family_id
+        description: >
+          This paper's own technology family (euv | si_photonics | lasers |
+          neuromorphic | in_memory), based on its own subject-area topic —
+          independent of which cluster it algorithmically landed in. One
+          topic spans both neuromorphic and in-memory computing and can't be
+          split by topic alone, so those papers are additionally classified
+          by the wording of their own title and abstract (not by which
+          cluster's majority family they happen to share, which would just
+          reproduce the cluster's dominant family rather than reflect this
+          paper's own subject matter). This is the authoritative column for
+          counting documents by family; a cluster's overall family label is
+          a display convenience for the cluster as a whole, not a
+          per-document fact. NULL when neither signal resolves.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
+
+  - name: fact_patent_filing
+    description: >
+      One row per (patent, assignee) combination. Each assignee is resolved
+      to an organisation identity where possible; NULL is allowed for
+      individual-inventor assignees or ones that couldn't be resolved.
+      cluster_id is carried along here for convenient analysis without an
+      extra join. Time comparisons on this table are always anchored on
+      filing_date, never grant_date.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_patent')
+                field: patent_id
+      - name: filing_date
+        description: "{{ doc('filing_date') }}"
+        tests: [not_null]
+      - name: grant_date
+        description: "The date this patent was formally granted. Shown for reference only — never used to measure timing."
+      - name: patent_type
+        description: "utility | design | plant | reissue | defensive_publication."
+      - name: primary_cpc
+        description: "This patent's primary classification code — the code used both to derive family_id and to determine whether the patent is in scope for this atlas at all. NULL on the rare patent with no classification code recorded."
+      - name: family_id
+        description: >
+          This patent's own technology family (euv | si_photonics | lasers |
+          neuromorphic | in_memory), based on its own primary classification
+          code — independent of which cluster it algorithmically landed in.
+          This is the authoritative column for counting documents by family
+          (patent share, concentration, leaderboards): a cluster's overall
+          family label is a display convenience for the cluster as a whole
+          and should never be used to attribute an individual document's
+          family, since a substantial share of clusters genuinely mix
+          Lasers with Silicon Photonics content, or Neuromorphic with
+          In-Memory content. NULL when the classification code doesn't map
+          to any of the 5 families.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["euv", "si_photonics", "lasers", "neuromorphic", "in_memory"]
+      - name: assignee_id
+        description: "Identifier for the assignee (the party the patent is granted to) as recorded on the patent, joined to determine org_id."
+      - name: assignee_name
+        description: "Organisation name for assignee_id, as recorded on the patent. NULL for individual-inventor assignees."
+      - name: assignee_sequence
+        description: "Order of this assignee among the patent's assignees (0 = primary/first-listed) — used to pick one primary assignee per patent when a patent has several."
+      - name: org_id
+        description: "{{ doc('org_id') }} NULL when the assignee is an individual, or couldn't be resolved to an organisation identity."
+      - name: org_match_method
+        description: "{{ doc('match_method') }} NULL when org_id is NULL."
+      - name: org_confidence
+        description: "{{ doc('confidence') }} NULL when org_id is NULL."
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
+
+  - name: fact_patent_citation
+    description: "Patent-to-patent citation edges, where the citing patent is one of the patents in scope for this atlas."
+    columns:
+      - name: citing_patent_id
+        description: "{{ doc('patent_id') }} The in-scope patent doing the citing."
+        tests: [not_null]
+      - name: cited_patent_id
+        description: "{{ doc('patent_id') }} The patent being cited — may or may not itself be in scope for this atlas."
+        tests: [not_null]
+
+  - name: mart_competitive
+    description: >
+      Who's active where: one row per (technology cluster, side,
+      organisation), where side is 'patent' (patents assigned to that
+      organisation) or 'paper' (papers attributed to that organisation). A
+      paper with several co-authoring organisations counts once per
+      organisation, so paper-side shares can add up to more than 100% within
+      a cluster — that reflects shared authorship, not an error. This is a
+      descriptive count of who shows up on each side of a cluster, not
+      evidence of a direct link between an organisation's own papers and its
+      own patents. Organisations that couldn't be resolved are still
+      included, labelled 'Unresolved', rather than silently dropped.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: tagline
+        description: "This cluster's short plain-English name, included here for convenient display."
+        tests: [not_null]
+      - name: side
+        description: "'patent' (assignee side) | 'paper' (institution side)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["patent", "paper"]
+      - name: org_id_key
+        description: "The organisation identifier, or 'unresolved' when the organisation couldn't be resolved — never NULL, so it's always safe to group or join on."
+        tests: [not_null]
+      - name: canonical_name
+        description: "{{ doc('org_id') }} display name, or 'Unresolved' when the organisation couldn't be resolved."
+        tests: [not_null]
+      - name: match_method
+        description: "{{ doc('match_method') }} 'none' for unresolved organisations."
+        tests: [not_null]
+      - name: confidence
+        description: "{{ doc('confidence') }} 'low' for unresolved organisations."
+        tests: [not_null]
+      - name: doc_count
+        description: "How many distinct patents (side='patent') or papers (side='paper') this organisation is attributed to in this cluster."
+        tests: [not_null]
+      - name: share
+        description: "This organisation's doc_count as a fraction of cluster_total. Always in [0, 1] per organisation; paper-side shares across all organisations in a cluster can add up past 100% (see model description)."
+        tests: [not_null]
+      - name: cluster_total
+        description: "Total distinct documents on this side of this cluster — the denominator of share."
+        tests: [not_null]
+      - name: rank_in_cluster
+        description: "This organisation's rank by doc_count within its (cluster, side). 1 = the most active organisation on that side of that cluster."
+        tests: [not_null]
+
+  - name: mart_gap
+    description: >
+      A per-cluster scorecard: citation lag, patenting concentration, and
+      research breadth. One row per technology cluster (the "noise" cluster
+      is included but flagged is_noise). Concentration is measured only over
+      patents that were successfully resolved to an organisation, so
+      unresolved patents don't distort the measured concentration —
+      pct_unresolved_patents documents how many were excluded.
+      npl_median_lag_years is the hard, citation-linked lag measure;
+      cohort_lag_years is a softer, unlinked estimate (see each column).
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: tagline
+        description: "This cluster's short plain-English name, included here for convenient display."
+      - name: is_noise
+        description: "TRUE only for the 'noise' cluster. Exclude this row from headline findings — it groups miscellaneous documents that didn't fit anywhere else, not a coherent technology family."
+        tests: [not_null]
+      - name: n_patents
+        description: "Total patents in this cluster, resolved and unresolved together."
+        tests: [not_null]
+      - name: n_assignees
+        description: "How many distinct organisations were resolved among this cluster's patents. Comparable to n_research_orgs on the paper side."
+      - name: pct_unresolved_patents
+        description: "Percent of this cluster's patents whose assignee couldn't be resolved to an organisation — excluded from the concentration measure."
+      - name: hhi
+        description: >
+          A concentration measure ranging from near 0 (many organisations
+          share patenting activity roughly equally) to 1 (one organisation
+          holds nearly all of it). NULL when there are too few resolved
+          patents in the cluster to measure concentration meaningfully.
+          Describes concentration within US patents only — not a claim
+          about global patenting activity.
+      - name: hhi_reportable
+        description: "TRUE when this cluster has enough resolved patents for hhi to be meaningful and shown."
+        tests: [not_null]
+      - name: n_oa_institutions
+        description: "How many distinct co-authoring institutions appear among this cluster's papers, counted at the finest-grained level available (e.g. two campuses of the same university count separately)."
+        tests: [not_null]
+      - name: n_research_orgs
+        description: "How many distinct organisations appear among this cluster's papers, counted at the organisation level — directly comparable to n_assignees."
+        tests: [not_null]
+      - name: n_papers
+        description: "Total papers in this cluster."
+        tests: [not_null]
+      - name: npl_n_links
+        description: "How many citation-linked paper↔patent pairs back npl_median_lag_years for this cluster."
+        tests: [not_null]
+      - name: npl_reportable
+        description: "TRUE when there are enough citation-linked pairs for npl_median_lag_years to be meaningful and shown."
+        tests: [not_null]
+      - name: npl_median_lag_years
+        description: >
+          The typical citation lag for this cluster, in years — the middle
+          value across every citation-linked paper↔patent pair. NULL when
+          there aren't enough linked pairs to be meaningful. Never described
+          as a lead time: it measures the interval to a citation, not to
+          any kind of commercialisation.
+      - name: cohort_med_pub_year
+        description: "The middle publication year across this cluster's papers. Feeds into cohort_lag_years."
+      - name: cohort_med_filing_year
+        description: "The middle filing year across this cluster's patents. Feeds into cohort_lag_years."
+      - name: cohort_lag_years
+        description: >
+          A SOFT ESTIMATE: the gap between the cluster's typical patent
+          filing year and its typical paper publication year. Unlike
+          npl_median_lag_years, this does not require any specific paper and
+          patent to actually cite one another — it can be negative (patents
+          predating the papers in the same cluster). Shown alongside the
+          hard, citation-linked measure so the two are never confused with
+          each other.
+
+  - name: mart_velocity
+    description: >
+      A pure annual time series of paper and patent activity: one row per
+      (technology cluster, year). Citation lag and concentration are
+      per-cluster summaries and live in mart_gap instead, not here. The
+      "noise" cluster is included; filter it out (is_noise = false) for
+      headline trend findings.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: year
+        description: "Calendar year — publication year for the paper count, filing year for the patent count. Present for any (cluster, year) combination where either series has activity."
+        tests: [not_null]
+      - name: tagline
+        description: "This cluster's short plain-English name, included here for convenient display."
+        tests: [not_null]
+      - name: is_noise
+        description: "TRUE only for the 'noise' cluster. Exclude from headline trend findings."
+        tests: [not_null]
+      - name: paper_count
+        description: "Distinct papers published in this cluster in this year. 0 (not NULL) when the cluster had patent activity but no papers that year."
+        tests: [not_null]
+      - name: patent_count
+        description: "Distinct patents filed in this cluster in this year. 0 (not NULL) when the cluster had paper activity but no patents that year."
+        tests: [not_null]
+
+  - name: seed_cluster_family
+    description: >
+      A display-level mapping from each technology cluster to one of the
+      three broad technology families this atlas was originally scoped
+      around (EUV lithography; silicon photonics, including lasers;
+      neuromorphic and in-memory computing, combined) plus a catch-all
+      "adjacent" family. Recomputed from each member document's own
+      classification signal. The combined groupings here reflect a
+      deliberate choice: a finer 5-way split was tried and abandoned once
+      analysis showed that a large share of clusters genuinely mix content
+      across the finer boundaries — lasers with silicon photonics, and
+      neuromorphic with in-memory computing are, in practice, frequently the
+      same underlying work, so forcing them apart at the cluster level would
+      misattribute a meaningful share of documents. Finer distinctions (e.g.
+      a specific laser type vs. a specific photonic component) are still
+      visible on the individual cluster's own name and description — see
+      dim_technology_cluster.
+      This table is a display label for each cluster as a whole (used for map
+      colour and cluster cards). It is deliberately NOT used to count
+      documents by family — fact_patent_filing.family_id and
+      fact_publication.family_id carry each document's own family (at the
+      finer 5-way granularity) and are the authoritative source for any
+      patent-share, concentration, or leaderboard number.
+    columns:
+      - name: cluster_id
+        description: "{{ doc('cluster_id') }} Excludes the 'noise' cluster, which is never assigned a display family."
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_technology_cluster')
+                field: cluster_id
+      - name: family_id
+        description: "'euv' | 'silicon_photonics' | 'neuromorphic_in_memory' | 'adjacent' (used when no member document has a resolvable family signal). Assigned by majority vote across the cluster's member documents."
+        tests: [not_null]
+      - name: family_name
+        description: "Human-readable display name for family_id (e.g. 'EUV Lithography')."
+        tests: [not_null]
+      - name: family_sort_order
+        description: "Fixed display order for the 4 families (1=EUV, 2=Silicon Photonics, 3=Neuromorphic & In-Memory, 4=Adjacent)."
+        tests: [not_null]
+
+  - name: mart_family
+    description: >
+      The headline scorecard: one row per technology family, rolling up
+      every cluster in that family. The 5 families are EUV Lithography,
+      Silicon Photonics & Optical I/O, Lasers & Light Sources, Neuromorphic
+      / Brain-inspired computing, and In-Memory & Emerging Memory; an
+      "adjacent" row is also included but excluded from headline charts.
+      patent_share is the key signal for how IP-intensive a family is
+      relative to its research volume. median_lag_years_weighted weights
+      each contributing cluster by how much citation-linked evidence it has.
+      Top assignee/researcher are approximate — the organisation that leads
+      the most clusters in the family, not a precise family-wide count. This
+      is a US-patenting scorecard throughout — every patent-side number
+      describes US activity only.
+    columns:
+      - name: family_id
+        description: "Primary key of this model — see seed_cluster_family.family_id for the possible values."
+        tests: [not_null, unique]
+      - name: family_name
+        description: "Human-readable display name for family_id."
+        tests: [not_null]
+      - name: family_sort_order
+        description: "Fixed display order for the families."
+        tests: [not_null]
+      - name: n_papers
+        description: "Total papers across this family's clusters."
+        tests: [not_null]
+      - name: n_patents
+        description: "Total patents across this family's clusters."
+        tests: [not_null]
+      - name: n_clusters
+        description: "How many clusters roll up into this family."
+        tests: [not_null]
+      - name: patent_share
+        description: "n_patents / (n_patents + n_papers). Higher means more IP-intensive relative to research volume for this family. Describes US patenting activity only — not a claim about global patenting."
+      - name: n_research_orgs_sum
+        description: "Sum of distinct-organisation counts across this family's clusters. Approximate — an organisation active in several clusters of the same family is counted once per cluster, not deduplicated across the whole family."
+      - name: n_assignees_sum
+        description: "Sum of distinct-assignee counts across this family's clusters. Same cross-cluster approximation as n_research_orgs_sum."
+      - name: median_lag_years_weighted
+        description: "A weighted average of each contributing cluster's typical citation lag, weighted by how much citation-linked evidence each cluster has. Never a lead-time or commercialisation-speed measure."
+      - name: total_npl_links
+        description: "Total citation-linked pairs across this family's clusters — the weight-of-evidence behind median_lag_years_weighted."
+      - name: top_assignee_name
+        description: "The organisation that ranks #1 by patent activity in the most clusters within this family — an approximate 'who leads this family' signal, not a family-wide patent-count leaderboard."
+      - name: top_researcher_name
+        description: "The organisation that ranks #1 by paper activity in the most clusters within this family. Same approximation caveat as top_assignee_name."
+
+  - name: fact_npl_link
+    description: >
+      Resolved paper↔patent links: rows where a patent explicitly cites a
+      specific paper as prior art. The citation-lag interval is computed
+      here, from each pair's publication and filing dates. Only pairs where
+      the paper was published before the patent was filed are kept — a
+      citation to a paper published after the patent's own filing date would
+      be a data error, not a genuine lag. Every row states how the link was
+      established and how confident that match is.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_patent')
+                field: patent_id
+      - name: work_id
+        description: "{{ doc('work_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_paper')
+                field: work_id
+      - name: match_method
+        description: "{{ doc('match_method') }} Always a resolved citation for this table — either the paper's own identifier was found directly in the patent's citation text, or the citation was matched by title similarity (see doi_extracted)."
+        tests: [not_null]
+      - name: confidence
+        description: "{{ doc('confidence') }} High when the paper's own identifier was found directly; medium when matched by title similarity instead."
+        tests: [not_null]
+      - name: doi_extracted
+        description: "The paper identifier found directly in the patent's citation text, when there was one. NULL when the link was instead established by title similarity."
+      - name: publication_date
+        description: "{{ doc('publication_date') }} Carried through here as the starting point for citation_lag_days/citation_lag_years."
+        tests: [not_null]
+      - name: filing_date
+        description: "{{ doc('filing_date') }} Carried through here as the endpoint for citation_lag_days/citation_lag_years."
+        tests: [not_null]
+      - name: citation_lag_days
+        description: "{{ doc('citation_lag') }} Expressed in days."
+        tests: [not_null]
+      - name: citation_lag_years
+        description: "{{ doc('citation_lag') }} Expressed in years."
+        tests: [not_null]

@@ -23,6 +23,11 @@ dependencies = [
     "hdbscan>=0.8.33",
     "scikit-learn>=1.5.0",
     "anthropic>=0.40.0",
+    "langdetect>=1.0.9",
+    # Part 7 — UI
+    "streamlit>=1.35.0",
+    "plotly>=5.20.0",
+    "streamlit-searchbox>=0.1.24",
 ]
 
 [project.optional-dependencies]
@@ -42,10 +47,21 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+# Without this, ruff's isort classifies apps/ui/{data,render,tour}.py by scanning
+# the filesystem for a same-named source at the project root -- a top-level data/
+# directory (raw PatentsView TSV downloads, gitignored) makes `data` resolve as
+# first-party on a machine that has downloaded it, but not on a clean checkout
+# (CI), producing environment-dependent import-sort results. Pin explicitly.
+[tool.ruff.lint.isort]
+known-first-party = ["data", "render", "tour"]
+
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "none"
+# extraPaths lets pyright resolve the apps/ui/pages/*.py -> data.py/render.py
+# sys.path.insert import pattern used at runtime by the Streamlit pages.
+extraPaths = ["apps/ui"]
 
 [tool.pytest.ini_options]
 testpaths = ["pipelines/nexus/tests"]

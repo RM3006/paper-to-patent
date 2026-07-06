@@ -9,7 +9,13 @@
   - Casts and cleans the raw Parquet fields.
   - Extracts the short work ID (W123…) from the URL for joins.
   - Keeps institution list columns for the org attachment step.
-  Depends on: sources.openalex_raw.works
+  - Excludes doc_ids in ml_intermediate.excluded_documents (papers the Part 5
+    embedding quality gate excluded entirely -- version-style title, or
+    title+abstract both non-English). This is a real dependency on Part 5
+    having run: on a fresh build before it ever has, that source is an empty
+    relation and this filter is a no-op, not an error -- see
+    create_external_sources() and MEMORY.md.
+  Depends on: sources.openalex_raw.works, sources.ml_intermediate.excluded_documents
   Output: dev.duckdb staging.stg_openalex_works
 */
 
@@ -28,6 +34,7 @@ select
 
     -- content
     title,
+    type,
     publication_date::date                             as publication_date,
     publication_year::integer                          as publication_year,
     language,
@@ -46,3 +53,33 @@ from {{ source('openalex_raw', 'works') }}
 where openalex_id is not null
   and title is not null
   and publication_date is not null
+  -- Exclude Harvard Dataverse dataset entries (10.7910 = Harvard DVN; these are
+  -- image/data files, not papers — OpenAlex incorrectly tags them as works).
+  -- NULL doi is kept (preprints without a DOI are legitimate).
+  and (doi is null or doi not like '%10.7910/%')
+  -- Exclude file-like titles from any dataset repository (filename = not a paper)
+  and not (
+      title ilike '%.jpg'  or title ilike '%.jpeg' or title ilike '%.png'
+      or title ilike '%.tif' or title ilike '%.tiff' or title ilike '%.csv'
+      or title ilike '%.xlsx' or title ilike '%.nc'  or title ilike '%.mat'
+      or title ilike '%.zip'
+  )
+  -- Exclude software-release-note entries (e.g. "seL4: seL4 3.0.1", "IDBac
+  -- v0.0.15") that OpenAlex mistypes as type:article -- the `type` filter at
+  -- ingest cannot catch these since OpenAlex's own field says "article".
+  -- Verified against the live corpus: matches only genuine software release
+  -- records (seL4, IDBac, libBigWig, InChI, mygit, meowallet, clipper), no
+  -- false positives on real paper titles.
+  and not regexp_matches(
+      title,
+      '^[A-Za-z][A-Za-z0-9_-]*\s*:\s*[A-Za-z][A-Za-z0-9_-]*\s+v?[0-9]+\.[0-9]+(\.[0-9]+)?(\s*\(.*\))?$'
+      || '|^[A-Za-z][A-Za-z0-9_-]*\s+v?[0-9]+\.[0-9]+(\.[0-9]+)?(\s*\(.*\))?$'
+  )
+  -- Exclude documents the Part 5 embedding quality gate excluded entirely
+  -- (version-style title, or title+abstract both detected non-English) --
+  -- the authoritative source, computed by the same code that decides what
+  -- gets embedded, not a separately-maintained SQL approximation of it.
+  and regexp_extract(openalex_id, 'W([0-9]+)', 0) not in (
+      select doc_id from {{ source('ml_intermediate', 'excluded_documents') }}
+      where doc_type = 'paper'
+  )

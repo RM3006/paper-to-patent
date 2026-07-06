@@ -13,6 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect models/ changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            models:
+              - 'models/**'
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -30,11 +38,29 @@ jobs:
           CLOUDFLARE_R2_ACCESS_KEY_ID: dummy
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: dummy
 
+      - name: dbt build (data-quality gate, real R2 data, ephemeral warehouse)
+        # Only runs when this push/PR actually touches models/ -- skips the
+        # ~85s real-data build for changes to pipelines/ or apps/ui/ that
+        # have nothing to do with dbt. When it does run: uses the `dev`
+        # target against real R2 data, but the resulting dev.duckdb lives
+        # only inside this ephemeral runner -- it's never MotherDuck, never
+        # committed, and gone when the job ends. This is what actually
+        # exercises the 147 dbt data tests (not_null/unique/relationships/
+        # accepted_values + the custom assert_*.sql checks) before a change
+        # can reach main and trigger the prod rebuild in dbt-docs.yml --
+        # catching a data-quality regression here instead of in production.
+        if: steps.filter.outputs.models == 'true'
+        run: uv run dbt build --project-dir models --profiles-dir models --target dev
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+
       - name: Lint (ruff)
-        run: uv run ruff check pipelines/nexus/
+        run: uv run ruff check pipelines/nexus/ apps/ui/
 
       - name: Type check (pyright)
-        run: uv run pyright pipelines/nexus/
+        run: uv run pyright pipelines/nexus/ apps/ui/
 
       - name: Test (pytest)
         run: uv run pytest

@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: int_org_crosswalk
+    description: >
+      The organisation-matching results, made available for the rest of the
+      data model to build on. One row per (population, native identifier);
+      dim_organization collapses this to one row per organisation.
+    columns:
+      - name: org_id
+        description: "{{ doc('org_id') }} Not unique in this model — multiple records can resolve to the same organisation."
+        tests: [not_null]
+      - name: source
+        description: "'patentsview' or 'openalex' — which population source_id belongs to."
+        tests: [not_null]
+      - name: source_id
+        description: "The native identifier for this record in its own population (an assignee identifier for patents, an institution identifier for papers)."
+        tests: [not_null]
+      - name: canonical_name
+        description: "Human-readable organisation name for this record. May differ across records resolving to the same organisation; dim_organization picks the most trustworthy one to show."
+      - name: match_method
+        description: "{{ doc('match_method') }}"
+        tests: [not_null]
+      - name: confidence
+        description: "{{ doc('confidence') }}"
+        tests: [not_null]

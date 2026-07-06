@@ -9,6 +9,15 @@
   Time metric anchor: filing_date (never grant_date).
   org_id attached via crosswalk on assignee_id.
   NULL org_id is allowed when an assignee is individual or not in the crosswalk.
+
+  family_id is this patent's OWN direct technology family, derived from its own
+  primary_cpc prefix -- independent of which cluster it algorithmically landed in.
+  This is the authoritative column for family-level counting (patent-share, HHI,
+  leaderboards): a cluster's majority family (seed_cluster_family, joined via
+  cluster_id) is a display label for the cluster as a whole and should never be
+  used to attribute an individual document's family, since ~44% of clusters mix
+  Lasers/Silicon-Photonics or Neuromorphic/In-Memory content (measured 2026-07-04).
+
   Depends on: stg_patents_scoped, stg_assignees, int_org_crosswalk
   Output: dev.duckdb marts.fact_patent_filing
 */
@@ -19,6 +28,15 @@ select
     p.grant_date,              -- metadata only; never used in time metrics
     p.patent_type,
     cpc_primary.primary_cpc,
+
+    case
+        when cpc_primary.primary_cpc like 'G03F%' then 'euv'
+        when cpc_primary.primary_cpc like 'H01S%' then 'lasers'
+        when cpc_primary.primary_cpc like 'G02B%' then 'si_photonics'
+        when cpc_primary.primary_cpc like 'G06N%' then 'neuromorphic'
+        when cpc_primary.primary_cpc like 'G11C%' then 'in_memory'
+        when cpc_primary.primary_cpc like 'H10N%' then 'in_memory'
+    end                         as family_id,
 
     a.assignee_id,
     a.org_name                 as assignee_name,

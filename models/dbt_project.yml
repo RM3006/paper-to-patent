@@ -12,6 +12,12 @@ snapshot-paths: ["snapshots"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
+vars:
+  # Bucket/local root every source path in create_external_sources() is built
+  # from. CI's dbt-docs workflow overrides this to "models/fixtures" (local
+  # zero-row stubs) so the docs build never touches R2.
+  source_root: "r2://p2p-lake"
+
 on-run-start:
   - "{{ create_external_sources() }}"
 

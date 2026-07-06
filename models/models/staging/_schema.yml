@@ -1,0 +1,169 @@
+version: 2
+
+models:
+  - name: stg_openalex_works
+    description: >
+      Papers in scope for this atlas, cleaned and standardised. Excludes
+      non-research entries that the source misclassifies as papers (dataset
+      files, software release notes) and any paper that was screened out
+      entirely during quality checks (e.g. its title looked like a version
+      number, or its content couldn't be identified as English).
+    columns:
+      - name: work_url
+        description: "A web link to this paper's record in the source literature database. work_id is the short identifier extracted from this."
+        tests: [not_null]
+      - name: work_id
+        description: "{{ doc('work_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: doi
+        description: "This paper's DOI (Digital Object Identifier), if it has one. NULL is expected and kept — a paper legitimately having no DOI (e.g. certain preprints) is not treated as an error."
+      - name: doi_bare
+        description: "The DOI without its web-link prefix, for faster exact-match comparisons. NULL when doi is NULL."
+      - name: title
+        description: "Paper title."
+        tests: [not_null]
+      - name: type
+        description: >
+          The kind of publication this is — article, preprint, or review.
+          Scope for this atlas is limited to these three. Note that the
+          source occasionally mislabels a non-research record (e.g. a
+          software release announcement) as an article, so this label alone
+          doesn't guarantee the entry is genuine research — this atlas
+          applies additional checks to catch the ones it can.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["article", "preprint", "review"]
+      - name: publication_date
+        description: "{{ doc('publication_date') }}"
+        tests: [not_null]
+      - name: publication_year
+        description: "Year component of publication_date."
+      - name: language
+        description: "The reported language of this paper. Scope for this atlas is limited to English-language papers."
+      - name: abstract
+        description: "Paper abstract. NULL where the source has none available."
+      - name: primary_topic_id
+        description: "The subject-area topic this paper is primarily about, drawn from a fixed set of topics in scope for this atlas (EUV lithography, silicon photonics, lasers, or advanced memory and neural computing)."
+      - name: primary_topic_name
+        description: "Human-readable name for primary_topic_id."
+      - name: institution_ids
+        description: "Every co-authoring institution's identifier for this paper, as a list. Expanded to one row per (paper, institution) further downstream, in fact_publication."
+      - name: institution_rors
+        description: "The standardised registry identifier for each co-authoring institution, in the same order as institution_ids. Not currently used downstream — a candidate signal for improving future organisation matching."
+      - name: institution_display_names
+        description: "Display name for each co-authoring institution, in the same order as institution_ids. For reference/debugging; not used as a matching key."
+
+  - name: stg_patents_scoped
+    description: >
+      Patents in scope for this atlas (matching the relevant classification
+      codes, filed between 2014 and 2025), cleaned and standardised.
+      Excludes any patent that was screened out entirely during quality
+      checks (e.g. its title looked like a version number).
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }} Primary key of this model."
+        tests: [not_null, unique]
+      - name: title
+        description: "Patent title, as granted."
+      - name: filing_date
+        description: "{{ doc('filing_date') }}"
+        tests: [not_null]
+      - name: grant_date
+        description: "The date this patent was formally granted. Shown for reference only — never used to measure timing."
+      - name: patent_type
+        description: "utility | design | plant | reissue | defensive_publication."
+
+  - name: stg_assignees
+    description: >
+      Assignees of patents in scope for this atlas — the parties each patent
+      is granted to. Limited to organisation-type assignees; individual
+      inventors are excluded entirely rather than carried through with a
+      blank organisation name.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: assignee_id
+        description: "Identifier for this assignee, used to resolve it to an organisation identity."
+        tests: [not_null]
+      - name: org_name
+        description: "Organisation name for this assignee, as recorded on the patent. Never NULL in this model, since it's limited to organisation-type assignees."
+        tests: [not_null]
+      - name: assignee_type
+        description: "Whether this assignee is a US company, foreign company, or another organisation type. Individual inventors are excluded from this model entirely."
+      - name: assignee_sequence
+        description: "Order of this assignee among the patent's assignees (0 = primary/first-listed) — used to pick one primary assignee per patent when a patent has several."
+
+  - name: stg_cpc
+    description: >
+      Classification codes for patents in scope for this atlas. Keeps every
+      code assigned to each patent, not just the primary one — a
+      cpc_sequence of 0 identifies the primary code further downstream.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: cpc_group
+        description: "Full classification code (e.g. `G03F7/2004`) identifying a specific patented technique."
+        tests: [not_null]
+      - name: cpc_subclass
+        description: "Broader classification grouping (e.g. `G03F`) that cpc_group belongs to."
+      - name: cpc_class
+        description: "Broader classification grouping still (e.g. `G03`) that cpc_subclass belongs to."
+      - name: cpc_section
+        description: "The top-level classification grouping (e.g. `G`) that everything below it belongs to."
+      - name: cpc_type
+        description: "Whether this is the patent's primary invention classification or an additional one."
+      - name: cpc_sequence
+        description: "Order of this code among the patent's classification codes. 0 identifies the primary code, used further downstream to determine each patent's technology family."
+
+  - name: stg_npl
+    description: >
+      Citation text for patents in scope for this atlas, specifically the
+      references to non-patent literature (research papers, as opposed to
+      other patents). No matching to a specific paper happens at this
+      layer — the raw citation text is preserved as-is for the
+      citation-matching process, with only a best-effort identifier
+      extraction done here as a convenience input to that process.
+    columns:
+      - name: patent_id
+        description: "{{ doc('patent_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: ref_sequence
+        description: "Order of this citation among the patent's non-patent-literature references."
+      - name: ref_text
+        description: "The raw citation text as it appears on the patent — the input the citation-matching process parses to try to resolve a specific paper reference."
+        tests: [not_null]
+      - name: doi_extracted
+        description: "A paper identifier (DOI) found directly in the citation text, if any. NULL when no such identifier could be found in the text — the citation may still be resolvable by other means further downstream."
+
+  - name: stg_patent_citations
+    description: "Patent-to-patent citation edges, where the citing patent is one of the patents in scope for this atlas."
+    columns:
+      - name: citing_patent_id
+        description: "{{ doc('patent_id') }} The in-scope patent doing the citing."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_patents_scoped')
+                field: patent_id
+      - name: cited_patent_id
+        description: "{{ doc('patent_id') }} The patent being cited — may or may not itself be in scope for this atlas."
+        tests: [not_null]

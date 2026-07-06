@@ -17,7 +17,6 @@ import os
 import pathlib
 import tempfile
 
-import duckdb as _duckdb_lib
 import numpy as np
 import polars as pl
 from dagster import OpExecutionContext, asset
@@ -28,10 +27,15 @@ from nexus.assets.ml.embeddings import load_corpus
 from nexus.logging import logger
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
+from nexus.resources.warehouse import connect_warehouse
 
 _UMAP_N_NEIGHBORS = 15
 _UMAP_MIN_DIST = 0.1
 _HDBSCAN_MIN_CLUSTER_SIZE = 50
+# Explicit, not left to HDBSCAN's default-equals-min_cluster_size behavior: measured
+# 2026-07-06 (see ARCHITECTURE.md §8) that no min_samples value cleanly reduces noise
+# without wrecking silhouette/legibility, so we pin the value we already validated.
+_HDBSCAN_MIN_SAMPLES = 50
 _CTFIDF_N_TERMS = 15
 _MODEL_VERSION = "all-MiniLM-L6-v2"
 
@@ -263,9 +267,13 @@ def document_clusters(
     # HDBSCAN — lazy import (numba)
     import hdbscan as _hdbscan  # noqa: PLC0415
 
-    context.log.info("Running HDBSCAN (min_cluster_size=%s)…", _HDBSCAN_MIN_CLUSTER_SIZE)
+    context.log.info(
+        "Running HDBSCAN (min_cluster_size=%s, min_samples=%s)…",
+        _HDBSCAN_MIN_CLUSTER_SIZE, _HDBSCAN_MIN_SAMPLES,
+    )
     clusterer = _hdbscan.HDBSCAN(  # type: ignore[reportUnknownMemberType]
         min_cluster_size=_HDBSCAN_MIN_CLUSTER_SIZE,
+        min_samples=_HDBSCAN_MIN_SAMPLES,
         metric="euclidean",
     )
     labels_arr = np.asarray(
@@ -282,14 +290,9 @@ def document_clusters(
     )
 
     # Load original texts for c-TF-IDF
-    dev_db_path = pathlib.Path(os.environ.get("DBT_DUCKDB_PATH", "dev.duckdb"))
-    if not dev_db_path.exists():
-        raise FileNotFoundError(
-            f"dev.duckdb not found at {dev_db_path}. Run 'dbt build' first."
-        )
-    dev_con = _duckdb_lib.connect(str(dev_db_path), read_only=True)
+    dev_con = connect_warehouse()
     try:
-        corpus = load_corpus(dev_con)
+        corpus, _excluded = load_corpus(dev_con)
     finally:
         dev_con.close()
     id_to_text = {d["doc_id"]: d["text"] for d in corpus}
@@ -351,6 +354,7 @@ def document_clusters(
             "n_noise": n_noise,
             "pct_noise": round(100.0 * n_noise / max(len(labels), 1), 2),
             "min_cluster_size": _HDBSCAN_MIN_CLUSTER_SIZE,
+            "min_samples": _HDBSCAN_MIN_SAMPLES,
             "umap_n_neighbors": _UMAP_N_NEIGHBORS,
             "clusters_path": clusters_path,
             "terms_path": terms_path,

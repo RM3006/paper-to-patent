@@ -23,7 +23,6 @@ import time
 from collections import defaultdict
 
 import anthropic as _anthropic
-import duckdb as _duckdb_lib
 import polars as pl
 from dagster import OpExecutionContext, asset
 
@@ -31,6 +30,7 @@ from nexus.assets.ingest.openalex import delete_r2_object
 from nexus.logging import logger
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
+from nexus.resources.warehouse import connect_warehouse
 
 _MODEL = "claude-haiku-4-5"
 _MAX_TOKENS = 256
@@ -268,13 +268,8 @@ def cluster_labels(
         if len(cluster_doc_map[cid]) < _N_REPRESENTATIVE:
             cluster_doc_map[cid].append(did)
 
-    # Load doc titles from dev.duckdb for representative display in prompts
-    dev_db_path = pathlib.Path(os.environ.get("DBT_DUCKDB_PATH", "dev.duckdb"))
-    if not dev_db_path.exists():
-        raise FileNotFoundError(
-            f"dev.duckdb not found at {dev_db_path}. Run 'dbt build' first."
-        )
-    dev_con = _duckdb_lib.connect(str(dev_db_path), read_only=True)
+    # Load doc titles from the warehouse for representative display in prompts
+    dev_con = connect_warehouse()
     try:
         paper_rows = dev_con.execute(
             "SELECT work_id, title FROM main_marts.dim_paper WHERE title IS NOT NULL"

@@ -57,6 +57,7 @@ FIXTURE_WORK: dict[str, Any] = {
     "id": "https://openalex.org/W1234567",
     "doi": "https://doi.org/10.1234/test.paper",
     "title": "Advances in EUV Lithography",
+    "type": "article",
     "publication_date": "2021-06-15",
     "publication_year": 2021,
     "language": "en",
@@ -129,6 +130,17 @@ def test_parse_work_missing_abstract() -> None:
     work: dict[str, Any] = {**FIXTURE_WORK, "abstract_inverted_index": None}
     record = parse_work(work)
     assert record["abstract"] is None
+
+
+def test_parse_work_type_field() -> None:
+    record = parse_work(FIXTURE_WORK)
+    assert record["type"] == "article"
+
+
+def test_parse_work_missing_type() -> None:
+    work: dict[str, Any] = {k: v for k, v in FIXTURE_WORK.items() if k != "type"}
+    record = parse_work(work)
+    assert record["type"] is None
 
 
 def test_parse_work_no_institutions() -> None:
