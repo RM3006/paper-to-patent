@@ -43,6 +43,21 @@ Sub-families and CPC codes:
 | Silicon Photonics | G02B 6/12, G02B 6/122, H01S 5/0224, H01S 5/10 | `T10299` "Photonic and Optical Devices", `T11429` "Semiconductor Lasers and Optical Devices" |
 | Neuromorphic & In-Memory Compute | G06N 3/049, G11C 11/54, G11C 13/00, H10N 70/00 | `T10502` "Advanced Memory and Neural Computing" |
 
+**Patent CPC matching rule (revised 2026-07-08):** a patent is in scope only if one of
+the CPC codes above appears among its **top-5 classifications** (`cpc_sequence` 0–4). The
+original rule matched a scope code at *any* position among the ~12 codes a patent carries;
+that admitted "buried mention" patents whose headline invention is off-domain (e.g. a
+logistics or animation patent that tags a neural-net code deep in its list) and produced a
+large generic-ML noise cluster. Requiring the technology to be *prominent* rather than
+merely *present* dropped the patent corpus from ~33.6k to 23.4k (−30%) and removed that
+noise. Papers are already filtered on OpenAlex's **primary** topic only, so no analogous
+change is needed on the paper side. See `docs/data_source_manifest.md` (patent scope) and
+`MEMORY.md` for the analysis behind the threshold.
+
+**Patent CPC matching** is a prefix match: a scope code like `G03F 7/20` matches any deeper
+subgroup (`G03F7/2004`, `G03F7/2023`, …). The list mixes CPC subgroups (`G06N3/049`) and
+main groups (`G11C13/00`, `H10N70/00`).
+
 Year window:
 - Papers (OpenAlex `publication_date`): **2012–2025** — starts at the deep-learning inflection; captures the full AI hardware research wave.
 - Patents (PatentsView `filing_date`): **2014–2025** — two-year lag from paper window; patents citing 2012+ papers appear from ~2014.

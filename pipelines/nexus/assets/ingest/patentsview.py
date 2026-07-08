@@ -443,7 +443,11 @@ def patentsview_inventors_raw(
 # Scope filter constants — mirror of ROADMAP Part 0 scope contract
 # ---------------------------------------------------------------------------
 
-# CPC group prefix match: any cpc_group starting with one of these codes is in scope.
+# CPC group prefix match: a patent is in scope if one of these codes appears among its
+# top-5 CPC classifications (cpc_sequence 0-4). Requiring prominence — rather than mere
+# presence anywhere among the ~12 codes a patent carries — drops "buried mention" patents
+# whose headline invention is off-domain (e.g. a logistics or animation patent that tags a
+# neural-net code deep in its list). See ROADMAP Part 0 scope contract.
 SCOPE_CPC_PREFIXES: list[str] = [
     # EUV Lithography
     "G03F7/20",
@@ -459,6 +463,9 @@ SCOPE_CPC_PREFIXES: list[str] = [
     "G11C13/00",
     "H10N70/00",
 ]
+
+# A scope CPC code must appear at cpc_sequence <= this to count (top-5 prominence rule).
+SCOPE_CPC_MAX_SEQUENCE = 4
 
 SCOPE_FILING_START = "2014-01-01"
 SCOPE_FILING_END = "2025-12-31"
@@ -476,6 +483,8 @@ def filter_patents_to_scope(
 ) -> pl.DataFrame:
     """Return patents matching scope CPC codes and filing-date window.
 
+    A patent is in scope when a scope CPC code appears among its top-5 classifications
+    (cpc_sequence <= SCOPE_CPC_MAX_SEQUENCE) and its filing_date is within the window.
     Works with any DuckDB-readable path (local Parquet for tests, r2:// for prod).
     Returns columns: patent_id, patent_title, patent_date, patent_type, filing_date.
     """
@@ -486,7 +495,8 @@ def filter_patents_to_scope(
         WITH scoped_ids AS (
             SELECT DISTINCT patent_id
             FROM read_parquet('{cpc_path}') cpc
-            WHERE {cpc_conditions}
+            WHERE ({cpc_conditions})
+              AND TRY_CAST(cpc.cpc_sequence AS INTEGER) <= {SCOPE_CPC_MAX_SEQUENCE}
         )
         SELECT
             p.patent_id,
@@ -515,7 +525,8 @@ def filter_patents_to_scope(
     deps=["patentsview_patents_raw", "patentsview_applications_raw", "patentsview_cpc_raw"],
     description=(
         "Joins g_patent + g_application + g_cpc_current to produce the scope corpus: "
-        "patents matching the technology-family CPC codes and filing_date 2014-2025. "
+        "patents with a technology-family CPC code in their top-5 classifications "
+        "(cpc_sequence 0-4) and filing_date 2014-2025. "
         "All downstream assets join against this filtered set. "
         "Output: r2://p2p-lake/raw/patentsview/patents_scoped/v{snapshot_date}/patents_scoped.parquet"
     ),
@@ -550,7 +561,8 @@ def patents_scoped(
         WITH scoped_ids AS (
             SELECT DISTINCT patent_id
             FROM read_parquet('{cpc_glob}') cpc
-            WHERE {cpc_conditions}
+            WHERE ({cpc_conditions})
+              AND TRY_CAST(cpc.cpc_sequence AS INTEGER) <= {SCOPE_CPC_MAX_SEQUENCE}
         )
         SELECT
             p.patent_id,

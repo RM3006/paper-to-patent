@@ -2,11 +2,11 @@
 
 Spot-check of Claude Haiku-generated technology cluster labels against their member documents.
 
-**Current run date:** 2026-07-04 (post embedding-quality-gate re-cluster)
-**Current corpus:** 186,930 docs (153,352 papers + 33,578 patents) — 3 fewer than the prior count in this doc; a staging-layer fix (Issue 3, see `MEMORY.md`) removed software-release-note titles (e.g. "seL4: seL4 3.0.1") that OpenAlex mistypes as `type:article`, and `fact_document_cluster` now drops any doc no longer present in the scoped staging models instead of surfacing it as an orphan.
-**Current clusters produced:** 237 named clusters + `c_noise`
-**Current noise rate:** 35.4% (66,163 docs unclustered by HDBSCAN), down from 42.1% pre-gate
-**Model version:** 2026-07-04
+**Current run date:** 2026-07-08 (patent-scope tightening: the patent filter now requires a scope CPC code among a patent's **top-5** classifications rather than at any position — patent corpus 33,578 → 23,397, −30.3% — followed by a from-scratch Part 5 re-cluster. Papers unchanged. See `ROADMAP.md` Part 0, `docs/data_source_manifest.md`, and `MEMORY.md`.)
+**Current corpus:** 176,759 docs (153,362 papers + 23,397 patents). `dim_paper`/`dim_patent` null-`cluster_id` count = 0 for both, confirmed on dev and MotherDuck prod. The `excluded_documents` snapshots were cleared before the pre-embedding build this time, so the orphan bug from 2026-07-06 did not recur and only one ML cycle was needed.
+**Current clusters produced:** 227 named clusters + `c_noise`
+**Current noise rate:** 41.1% overall (72,573/176,759) — within the already-characterized UMAP/HDBSCAN run-to-run noise band (see MEMORY.md's "UMAP non-determinism confirmed" entry), not a regression.
+**Model version:** 2026-07-08
 
 **Exit criterion (ROADMAP Part 5):** ≥ 13 / 15 spot-checked labels rated accurate — i.e. a human reviewer agrees the tagline fits the dominant technology of the cluster.
 
@@ -46,50 +46,53 @@ ORDER BY cl.cluster_id, fdc.doc_type, fdc.doc_id;
 
 ---
 
-## Spot-check results (current, 2026-07-04)
+## Spot-check results (current, 2026-07-08)
 
-> **Status:** Complete — production run 2026-07-04. **Score: 13 / 15 (86.7%) ✅ — passes, but narrower than the prior run's 14/15.**
+> **Status:** Complete — patent-scope tightening + full re-cluster, 2026-07-08. **Score: 14 / 15 (93.3%) ✅.**
 
-Clusters selected: largest 13 non-noise clusters by `doc_count`, plus `c_5` (the current single worst-purity cluster from the family-purity measurement, 44.6%) and `c_48` (mid-size, ~800 docs).
+Clusters selected: largest 13 non-noise clusters by `doc_count`, plus 2 mid-size picks (`c_1`, `c_100`, 300–900 docs) for size diversity. The residual generic-ML noise cluster (`c_77`) is the 11th-largest cluster this cycle, so it fell naturally into the largest-13 sample — not a cherry-picked failure.
 
 | # | cluster_id | tagline | doc_count | Rating | Notes |
 |---|---|---|---|---|---|
-| 1 | c_42 | Spiking Neural Networks and Neuromorphic Computing | 10,276 | ✅ | Artificial-neuron/spiking-neuromorphic patents throughout; top terms (spiking, snn, neuromorphic) and titles agree cleanly |
-| 2 | c_15 | Neural Networks and Machine Learning Systems | 9,485 | ❌ | **New finding.** Patent sample looks plausible (DRAM+ANN, generic ML method claims), but the paper-side sample includes clearly unrelated content: *"ELECTRICAL KITCHEN RANGE CONTROLLED BY PLC"* and *"UNL V Percussion Ensemble Moving Light Lab"* — a kitchen appliance and a music-performance piece, not neural-network research. This reads as a generic/boilerplate catch-all rather than a coherent technology family. |
-| 3 | c_91 | Resistive Random Access Memory Technology | 7,487 | ✅ | Tight RRAM/ReRAM cluster; filament formation, read-state verification, low-leakage configuration cells all on-topic |
-| 4 | c_133 | EUV Lithography Mask and Process Control | 3,863 | ✅ | EUV mask/OPC/critical-dimension patents; specific and accurate |
-| 5 | c_231 | Photonic Crystal Biosensing Systems | 2,969 | ✅ | Photonic-crystal/refractive-index biosensor patents throughout |
-| 6 | c_122 | In-Memory Computing for Neural Networks | 2,772 | ✅ | DNN accelerator/quantization patents (ResNet, MobileNet hardware implementations); top terms include "cim" (compute-in-memory), consistent with tagline |
-| 7 | c_174 | Whispering Gallery Mode Microresonators | 2,638 | ⚠️ | Top terms strongly WGM-specific, but sample includes 2 clearly adjacent/off-topic patents (ultrasonic biomedical microbubbles, superhydrophobic surface synthesis) alongside 2 on-topic WGM microlaser/resonator patents |
-| 8 | c_145 | Vertical Cavity Surface Emitting Lasers | 2,621 | ✅ | Pure VCSEL cluster — matches the same finding from the prior (2026-06-26) review |
-| 9 | c_104 | Silicon Germanium Photodetectors | 2,585 | ✅ | GeSn/SiGe photodetector and epitaxial-growth patents; specific and consistent |
-| 10 | c_222 | Nonlinear Optical Waveguide Technologies | 2,299 | ✅ | Second-harmonic-generation / nonlinear waveguide patents; 2 of 5 samples are adjacent materials-science patents but the core signal is clear |
-| 11 | c_226 | Polymer Optical Waveguides | 2,281 | ✅ | Patent-only sample looked weak/generic; paper-side sample is clean and specific (Er-doped fiber lasing, polymer waveguide amplifiers, photoisomerization couplers, direct-written polymer waveguides) |
-| 12 | c_7 | GeSn Strained Alloys for Infrared Optoelectronics | 2,244 | ✅ | Epitaxial GeSn/SiGeSnAs materials and infrared-emitting optoelectronic device patents; specific and consistent |
-| 13 | c_198 | Silicon Photonic Optical Modulators | 2,022 | ✅ | Mach-Zehnder/ring modulator patents; matches the prior review's finding for the equivalent cluster |
-| 14 | c_5 | Positive Resist Composition and Patterning | 56 (worst-purity cluster, 44.6%) | ✅ | Patent sample is tight and consistent (positive resist composition/patterning process, x5). Low family-purity here is about *family* classification (EUV vs. other), not label accuracy — the tagline correctly names what the cluster actually is. Top terms do show minor publishing-metadata contamination (journal, publisher, articles, page) at low volume — the same pattern behind the 2026-06-26 run's `c_65` artifact, now much smaller and not enough to misdirect the label |
-| 15 | c_48 | Memristor-Based Chaotic Dynamical Systems | 796 | ✅ | 4 of 5 papers are specifically about memristor-based chaotic circuits/hyperchaos; 1 stray (an unrelated semantic-web-services paper) |
+| 1 | c_102 | Spiking Neural Networks & Neuromorphic Computing | 8,344 | ✅ | Terms (spiking, snns, neurons, spike, neuromorphic, synaptic, brain, plasticity) tight; titles all genuine SNN/neuromorphic |
+| 2 | c_175 | Resistive Random Access Memory Devices | 3,630 | ✅ | RRAM/resistive-switching/filament/oxygen-vacancy terms and titles consistent |
+| 3 | c_96 | EUV Lithography Masks and Patterning | 3,070 | ✅ | EUV mask/OPC/ILT/absorber/defect terms; specific and accurate |
+| 4 | c_128 | In-Memory Computing for Neural Networks | 3,020 | ✅ | CIM/PIM/ReRAM/MAC accelerator terms; titles (processing-in-sensor, ReRAM ML training) match cleanly |
+| 5 | c_222 | Photonic Waveguide Biosensors | 2,859 | ✅ | RIU/SPR/refractive-index biosensor terms and titles throughout |
+| 6 | c_107 | Vertical Cavity Surface Emitting Lasers | 2,567 | ✅ | Pure VCSEL cluster; terms and titles all VCSEL |
+| 7 | c_83 | Strained GeSn Alloy Engineering | 2,101 | ✅ | GeSn/Ge/Sn/strain/tensile terms; titles all Ge–Sn alloy epitaxy/strain engineering |
+| 8 | c_192 | Microring Resonator Photonic Devices | 2,069 | ✅ | Microring/ring-resonator/FSR terms; titles all silicon-photonic micro-ring devices |
+| 9 | c_130 | Distributed Feedback Laser Systems | 2,021 | ✅ | DFB/DBR/external-cavity/linewidth terms; titles all tunable/DFB semiconductor lasers |
+| 10 | c_34 | Event-Based Neuromorphic Vision Systems | 1,970 | ✅ | Event-camera/DVS terms; titles all event-based vision/sensing |
+| 11 | c_77 | Machine Learning Signal Processing Methods | 1,654 | ❌ | **The residual generic-ML noise cluster** — 94.5% patents (1,564), 68% with an off-family primary CPC. Sample titles: *"Comparison of biometric identifiers in memory"*, *"Third-party analytics service with virtual assistant interface"*, *"Mini-lysimeter Hardware"*, generic *"Method for data processing and related products"*. Terms are pure boilerplate (learning, machine learning, systems methods, apparatus, storage medium). This is the reduced-but-persistent successor to the old `c_15`/`c_70` catch-all; see "Known issues" below. |
+| 12 | c_219 | Whispering Gallery Mode Microresonators | 1,601 | ✅ | WGM/microsphere/gallery-mode terms; titles all WGM microresonators/microbottle sensors |
+| 13 | c_98 | EUV Chemically Amplified Resist Materials | 1,570 | ✅ | EUV resist/PAG/LER/LWR terms; titles all EUV photoresist chemistry |
+| 14 | c_1 | Silicon Photonic Integrated Circuits | 546 | ✅ | Titles genuinely silicon photonics (CMOS modulators, silicon photonics for exascale, microring lasers). **But** top terms are contaminated with publishing-webpage boilerplate (`citation`, `mendeley add`, `save article`, `share linkedin`, `bibtex endnote`) — tagline accurate, c-TF-IDF vocabulary polluted. See "Known issues". |
+| 15 | c_100 | High-Speed Optical Receiver Amplifiers | 344 | ✅ | TIA/transimpedance/receiver/PAM-4 terms; titles all high-speed optical-receiver front-ends |
 
-**Score: 13 / 15 (86.7%) ✅ — passes the ≥ 13/15 exit criterion, but with one genuine new failure (`c_15`) and one partial (`c_174`) worth tracking.**
+**Score: 14 / 15 (93.3%) ✅ — passes the ≥ 13/15 exit criterion. The single failure (`c_77`) is the residual, expected noise cluster; `c_1` passes on tagline but is flagged for term contamination.**
 
-### What's different from the 2026-06-26 run
+### What's different from the 2026-07-06 run
 
-- The previously known artifact cluster (`c_5`, then "Hybrid Volatile-Nonvolatile Memory Systems" — OCHRE library-catalog URL strings) is **confirmed gone**; no cluster in this run shows that failure mode. The embedding quality gate (placeholder-abstract / too-short / non-English / version-style-title checks) addressed it directly.
-- A **new, different failure mode appeared**: `c_15` is a large (9,485-doc), generically-titled cluster containing clearly unrelated content (a kitchen-appliance patent, a music-performance paper) alongside plausible ML patents. This looks like leftover scope-contamination from an over-broad topic match, not the same placeholder-text mechanism the quality gate targets — the quality gate operates on abstract *quality*, not on-topic-ness, so it was never going to catch this. Worth a closer look before Part 8: check what these documents' `primary_topic_id`/`primary_cpc` actually are, since a coherent, well-labelled cluster with several genuinely off-domain members suggests either a topic-filter gap or a generically-worded set of patent claims that embed close together regardless of subject.
+- **The generic-ML noise cluster is much reduced but not eliminated.** The 2026-07-06 catch-all `c_70` "Neural Network Learning Systems" (6,895 docs) has shrunk ~76% to `c_77` "Machine Learning Signal Processing Methods" (1,654 docs) after the patent-scope tightening. The worst offenders — buried-mention patents (music, gaming, VFX papers alongside off-domain patents) — were dropped from the corpus entirely by the top-5 CPC rule. What remains in `c_77` is off-domain *patents* (biometrics, finance, analytics, recommendation systems) that carry a prominent neural-net CPC code in their top-5, so the top-5 rule keeps them. This is the known, disclosed limit of the top-5 (vs primary-only) rule — see "Known issues carried forward".
+- **New term-contamination instance (`c_1`):** publishing-webpage boilerplate (`citation`, `mendeley add`, `share linkedin`) leaked into the c-TF-IDF vocabulary for a silicon-photonics cluster. Same class as the prior run's XML-boilerplate contamination in `c_180`. Tagline unaffected; term list polluted.
+- No cluster this cycle showed the placeholder-abstract/OCHRE-URL artifact pattern — the embedding quality gate continues to hold.
 
 ---
 
-## Priority sanity checks (current)
+## Priority sanity checks (current, 2026-07-06)
 
-| Technology family | Clusters found (of the largest 13 sampled) | Result |
+| Technology family | Clusters found (of the 15 sampled) | Result |
 |---|---|---|
-| EUV Lithography | c_133 (EUV Lithography Mask and Process Control) | ✅ Present and correctly named among the largest clusters |
-| Silicon Photonics | c_231 (Photonic Crystal Biosensing), c_174 (Whispering Gallery Mode Microresonators), c_104 (Silicon Germanium Photodetectors), c_222 (Nonlinear Optical Waveguide Technologies), c_226 (Polymer Optical Waveguides), c_7 (GeSn Strained Alloys), c_198 (Silicon Photonic Optical Modulators) | ✅ Broad, specific coverage across device sub-types, consistent with the prior run's finding |
-| Neuromorphic / In-Memory | c_42 (Spiking Neural Networks and Neuromorphic Computing, the largest cluster overall at 10,276 docs), c_91 (RRAM), c_122 (In-Memory Computing for Neural Networks), c_48 (Memristor-Based Chaotic Dynamical Systems) | ✅ Strong coverage; largest single cluster is neuromorphic, matching the prior run |
+| EUV Lithography | c_125 (EUV Lithography Mask Optimization), c_119 (EUV Chemically Amplified Resist Materials) | ✅ Present and correctly named among the largest clusters |
+| Silicon Photonics | c_123 (Germanium Silicon Photodiode Technology), c_147 (Tunable Semiconductor Lasers), c_234 (Photonic Waveguide Biosensors), c_59 (VCSEL), c_78 (Terahertz Generation and Waveguide Technology), c_218 (Silicon Photonic Optical Modulators) | ✅ Broad, specific coverage across device sub-types, consistent with prior runs |
+| Neuromorphic / In-Memory | c_131 (Spiking Neuromorphic Neural Networks, the largest cluster overall at 8,176 docs), c_181 (Resistive Switching Memory Devices), c_154 (In-Memory Computing for Neural Networks), c_112 (Event-Based Vision), c_180 (RRAM), c_188 (Memristor-Based Neural Networks) | ✅ Strong coverage; largest single cluster is neuromorphic, matching prior runs |
 
 ---
 
-## Cluster purity distribution by family (2026-07-04, current 237 clusters)
+## Cluster purity distribution by family (2026-07-04 methodology snapshot — not re-run 2026-07-06)
+
+**Not regenerated this cycle.** The numbers below are frozen from the 2026-07-04 analysis against that run's 237 clusters; cluster IDs referenced here (`c_5`, `c_8`, `c_9`, etc.) do **not** correspond to the current (2026-07-06) cluster set — re-clustering reassigns IDs every run (see the caveat at the top of this doc). The `seed_cluster_family.sql` voting logic these numbers validate is unchanged since 2026-07-04, so the *methodology* conclusions (distinct-patent voting, the two genuine EUV↔SiPhotonics and Neuro↔InMemory family blends) likely still hold directionally, but the specific purity percentages and lowest-purity cluster list below should not be cited against the current cluster set. Re-run the vote/purity SQL (see the reproducible-query note at the end of this section) against the fresh `fact_document_cluster` before citing fresh numbers.
 
 Measures how cleanly each cluster's member documents agree with the 3-way family the cluster is tagged with in `seed_cluster_family`. For every non-noise cluster, each member document's own family signal (`primary_cpc` prefix for patents, `primary_topic_id` for papers — the same signal `seed_cluster_family`'s vote uses, not the 5-way `family_id` column, see methodology note below) is compared against the cluster's assigned tag. Purity = share of a cluster's resolvable documents that agree with the tag.
 
@@ -148,7 +151,7 @@ Weighted by document count rather than averaged per cluster, overall purity is m
 
 `c_noise` receives the fixed label "Frontier / Unclustered" — not reviewed against members.
 
-**Noise rate: 35.4% (66,163 / 186,930 docs)**, down from 42.1% in the 2026-06-26 run. The drop is attributed to the embedding-quality gate: placeholder/non-English/version-title text had been diffusing the whole embedding space generically, not just forming its own artifact clusters, so removing it tightened the overall point cloud. Still above the 30% warning threshold in the original template; the same causes likely remain in reduced form (genuinely diffuse boundary documents between the three broad technology families; `min_cluster_size=50` is conservative for this corpus size).
+**Noise rate: 39.7% papers (60,902/153,362), 40.3% patents (13,548/33,578)** — up from 35.4% in the 2026-07-04 run. Per the confirmed UMAP non-determinism finding (`MEMORY.md`, 2026-07-05: noise swung 51,482–82,175 across repeated fits of *identical* embeddings), this is run-to-run variance in the UMAP/HDBSCAN fit, not a data-quality regression — doc-weighted cluster purity has stayed stable (0.97–0.98) across every arm of that prior investigation regardless of noise-rate swings. Still above the 30% warning threshold in the original template; the same causes likely remain (genuinely diffuse boundary documents between the three broad technology families; `min_cluster_size=50` is conservative for this corpus size).
 
 **Recommendation, unchanged:** re-tuning (`min_cluster_size=30`/`min_samples` or UMAP init) remains a Part 7+ option if map density becomes a UX problem, not a blocker today.
 
@@ -156,7 +159,9 @@ Weighted by document count rather than averaged per cluster, overall purity is m
 
 ## Known issues carried forward
 
-**`c_15` "Neural Networks and Machine Learning Systems"** (see spot-check row 2 above) — a large, generically-named cluster with confirmed off-domain content. Not yet root-caused. Suggested next step: pull `primary_topic_id`/`primary_cpc` for a larger sample of this cluster's members to determine whether this is topic-filter scope creep (documents that shouldn't be in the corpus at all) or a genuine embedding-space collision between generic ML/software patent boilerplate and our target hardware domains.
+**`c_77` "Machine Learning Signal Processing Methods" — residual generic-ML noise (root cause now identified; partially mitigated 2026-07-08)** (see spot-check row 11). This is the reduced successor to the `c_15`→`c_70` catch-all. **Root cause, now understood:** the old any-position patent-scope filter admitted ~38% of the patent corpus on a *buried* scope CPC code while the patent's headline invention was off-domain (a patent spans ~2.7 CPC subclasses on average; a logistics/biometric/animation patent that tags a neural-net code deep in its list still passed). Those off-domain patents share generic-ML vocabulary ("learning", "apparatus", "systems methods") and collapse into one embedding-space cluster. **Mitigation applied 2026-07-08:** the patent-scope filter now requires a scope code in the **top-5** CPC positions (see `ROADMAP.md` Part 0), which dropped the corpus 33,578 → 23,397 and shrank this cluster ~76% (6,895 → 1,654 docs). **Residual:** ~1,564 patents remain because their scope code *is* prominent (top-5) even though their primary class is off-domain (68% off-family). Fully removing them would require the stricter primary-CPC-only rule (−38% of patents), which was rejected because it would also drop ~21% of genuine in-domain patents whose scope code is prominent-but-not-primary. So `c_77` is an accepted, disclosed residual, not an open bug. `fact_document_cluster` still inner-joins the scoped staging models, so nothing here becomes a map orphan.
+
+**`c_1` "Silicon Photonic Integrated Circuits" — publishing-webpage term contamination** (new, 2026-07-08) — top c-TF-IDF terms include `citation`, `mendeley add`, `save article`, `share linkedin`, `bibtex endnote` alongside genuine silicon-photonics vocabulary. The tagline and member documents are accurate (sampled titles are all real silicon photonics), so labelling correctness is unaffected, but journal-webpage scaffolding text is leaking into some abstracts fed to c-TF-IDF. Same class as the prior run's XML-boilerplate contamination (then `c_180`). Not investigated further — a candidate for an abstract-cleaning step in a future Part 5 pass if it recurs or grows.
 
 **`c_5` / `c_8` family-purity blends** (see purity distribution section above) — `c_5` "Positive Resist Composition and Patterning" (44.6% purity, EUV-tagged) and `c_8` "EUV Immersion Lithography Manufacturing" (50.0% purity, tagged silicon_photonics despite the EUV-sounding name) are both genuine 3-way family blends, not measurement artifacts — verified by direct vote-count inspection. The taglines are accurate descriptions of the clusters' dominant content; the 3-way family *tag* is a coarser summary that loses that specificity by design (see `seed_cluster_family.sql` docstring). Not a bug, just a known limitation of collapsing 237 clusters into 3 headline families — no action planned unless it becomes a UX complaint.
 

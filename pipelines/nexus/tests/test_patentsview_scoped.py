@@ -19,32 +19,52 @@ from nexus.assets.ingest.patentsview import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
-# Three patents:
-#   P1 — in scope (EUV CPC, valid filing date)
+# Five patents exercising the top-5 prominence rule:
+#   P1 — in scope (EUV CPC at cpc_sequence 0, valid filing date)
 #   P2 — out of scope by CPC (wrong technology family)
 #   P3 — out of scope by filing date (too early)
+#   P4 — scope CPC present but BURIED at cpc_sequence 5 (outside top-5) → excluded
+#   P5 — scope CPC at cpc_sequence 4 (top-5 boundary, inclusive) → kept
 
 _PATENTS = pl.DataFrame(
     {
-        "patent_id": ["P1", "P2", "P3"],
-        "patent_title": ["EUV Scanner", "Ski Boot Binding", "Old Lithography"],
-        "patent_date": ["2022-01-04", "2022-01-04", "2016-05-10"],
-        "patent_type": ["utility", "utility", "utility"],
+        "patent_id": ["P1", "P2", "P3", "P4", "P5"],
+        "patent_title": [
+            "EUV Scanner",
+            "Ski Boot Binding",
+            "Old Lithography",
+            "Buried Mention",
+            "Prominent Mention",
+        ],
+        "patent_date": ["2022-01-04", "2022-01-04", "2016-05-10", "2022-01-04", "2022-01-04"],
+        "patent_type": ["utility", "utility", "utility", "utility", "utility"],
     }
 )
 
 _APPLICATIONS = pl.DataFrame(
     {
-        "patent_id": ["P1", "P2", "P3"],
-        "filing_date": ["2020-03-15", "2020-03-15", "2012-11-01"],
+        "patent_id": ["P1", "P2", "P3", "P4", "P5"],
+        "filing_date": ["2020-03-15", "2020-03-15", "2012-11-01", "2020-06-01", "2020-06-01"],
     }
 )
 
 _CPC = pl.DataFrame(
     {
-        "patent_id": ["P1", "P1", "P2", "P3"],
-        # P1 has two CPC codes, one in scope (G03F7/2004 → prefix G03F7/20)
-        "cpc_group": ["G03F7/2004", "G03F7/2023", "A63C9/001", "G03F7/20"],
+        "patent_id": ["P1", "P1", "P2", "P3", "P4", "P4", "P5", "P5"],
+        # P1 has two scope CPC codes, both in the top-5 (G03F7/2004 → prefix G03F7/20).
+        # P4's only scope code (G11C13/00) sits at sequence 5 — outside the top-5.
+        # P5's scope code (G11C13/00) sits at sequence 4 — the inclusive boundary.
+        "cpc_group": [
+            "G03F7/2004",
+            "G03F7/2023",
+            "A63C9/001",
+            "G03F7/20",
+            "H04L9/00",
+            "G11C13/00",
+            "H04L9/00",
+            "G11C13/00",
+        ],
+        "cpc_sequence": [0, 1, 0, 0, 0, 5, 0, 4],
     }
 )
 
@@ -90,12 +110,28 @@ def test_scope_filing_date_excludes_too_early(fixture_parquets: tuple[str, str, 
     assert "P3" not in df["patent_id"].to_list()
 
 
-def test_scope_output_row_count(fixture_parquets: tuple[str, str, str]) -> None:
-    """Exactly one patent survives the filter in this fixture."""
+def test_scope_excludes_buried_scope_code(fixture_parquets: tuple[str, str, str]) -> None:
+    """P4 (scope CPC only at cpc_sequence 5, outside top-5) must be excluded."""
     patents_path, apps_path, cpc_path = fixture_parquets
     con = duckdb.connect()
     df = filter_patents_to_scope(patents_path, apps_path, cpc_path, con)
-    assert df.shape[0] == 1
+    assert "P4" not in df["patent_id"].to_list()
+
+
+def test_scope_keeps_top5_boundary_scope_code(fixture_parquets: tuple[str, str, str]) -> None:
+    """P5 (scope CPC at cpc_sequence 4, the inclusive top-5 boundary) must be kept."""
+    patents_path, apps_path, cpc_path = fixture_parquets
+    con = duckdb.connect()
+    df = filter_patents_to_scope(patents_path, apps_path, cpc_path, con)
+    assert "P5" in df["patent_id"].to_list()
+
+
+def test_scope_output_row_count(fixture_parquets: tuple[str, str, str]) -> None:
+    """Exactly two patents survive the filter in this fixture (P1 and P5)."""
+    patents_path, apps_path, cpc_path = fixture_parquets
+    con = duckdb.connect()
+    df = filter_patents_to_scope(patents_path, apps_path, cpc_path, con)
+    assert df.shape[0] == 2
 
 
 def test_scope_output_schema(fixture_parquets: tuple[str, str, str]) -> None:
