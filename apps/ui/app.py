@@ -24,7 +24,7 @@ st.set_page_config(
 
 _FONT = '"Space Grotesk", -apple-system, system-ui, sans-serif'
 
-# Family IDs in display order (excludes adjacent / noise).
+# Family IDs in display order (excludes mixed / noise).
 _FAMILY_IDS = ["euv", "silicon_photonics", "neuromorphic_in_memory"]
 
 _FAMILY_DESC: dict[str, str] = {
@@ -247,7 +247,7 @@ def main() -> None:
 
     scorecard = load_family_scorecard()
     rows = (
-        scorecard.filter(scorecard["family_id"] != "adjacent")
+        scorecard.filter(scorecard["family_id"] != "mixed")
         .sort("patent_share", descending=True, nulls_last=True)
         .to_dicts()
     )

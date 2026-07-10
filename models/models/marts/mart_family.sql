@@ -8,7 +8,7 @@
   Gold mart: family-level scorecard — one row per technology family.
   The 5 headline families are a PRESENTATION rollup over ~303 clusters;
   cluster → family mapping is the curated seed_cluster_family.
-  "adjacent" rows are included but excluded from headline charts by the UI.
+  "mixed" rows are included but excluded from headline charts by the UI.
 
   Claim: "5 families" front-door scorecard (papers, patents, assignees, researchers,
   median citation lag, patent-to-paper ratio). All US-patent-only; stated in UI.

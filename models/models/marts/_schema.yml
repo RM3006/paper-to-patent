@@ -465,9 +465,9 @@ models:
       A display-level mapping from each technology cluster to one of the
       three broad technology families this atlas was originally scoped
       around (EUV lithography; silicon photonics, including lasers;
-      neuromorphic and in-memory computing, combined) plus a catch-all
-      "adjacent" family. Recomputed from each member document's own
-      classification signal. The combined groupings here reflect a
+      neuromorphic and in-memory computing, combined) plus a "mixed" bucket
+      for clusters no single family clearly dominates. Recomputed from each
+      member document's own classification signal. The combined groupings reflect a
       deliberate choice: a finer 5-way split was tried and abandoned once
       analysis showed that a large share of clusters genuinely mix content
       across the finer boundaries — lasers with silicon photonics, and
@@ -494,22 +494,26 @@ models:
                 to: ref('dim_technology_cluster')
                 field: cluster_id
       - name: family_id
-        description: "'euv' | 'silicon_photonics' | 'neuromorphic_in_memory' | 'adjacent' (used when no member document has a resolvable family signal). Assigned by majority vote across the cluster's member documents."
-        tests: [not_null]
+        description: "'euv' | 'silicon_photonics' | 'neuromorphic_in_memory' | 'mixed'. A real family is assigned only when it is >= 80% of ALL the cluster's documents (off-scope/NULL documents count in the denominator); otherwise 'mixed'."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed"]
       - name: family_name
-        description: "Human-readable display name for family_id (e.g. 'EUV Lithography')."
+        description: "Human-readable display name for family_id (e.g. 'EUV Lithography', 'Mixed')."
         tests: [not_null]
       - name: family_sort_order
-        description: "Fixed display order for the 4 families (1=EUV, 2=Silicon Photonics, 3=Neuromorphic & In-Memory, 4=Adjacent)."
+        description: "Fixed display order for the 4 families (1=EUV, 2=Silicon Photonics, 3=Neuromorphic & In-Memory, 4=Mixed)."
         tests: [not_null]
 
   - name: mart_family
     description: >
       The headline scorecard: one row per technology family, rolling up
-      every cluster in that family. The 5 families are EUV Lithography,
-      Silicon Photonics & Optical I/O, Lasers & Light Sources, Neuromorphic
-      / Brain-inspired computing, and In-Memory & Emerging Memory; an
-      "adjacent" row is also included but excluded from headline charts.
+      every cluster in that family. The three headline families are EUV
+      Lithography, Silicon Photonics (incl. lasers), and Neuromorphic &
+      In-Memory Compute; a "mixed" row (clusters no single family dominates)
+      is also included but excluded from headline charts.
       patent_share is the key signal for how IP-intensive a family is
       relative to its research volume. median_lag_years_weighted weights
       each contributing cluster by how much citation-linked evidence it has.

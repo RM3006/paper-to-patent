@@ -133,23 +133,28 @@ the scope, so the on-domain memristor cluster is used here as the headline.
 
 ---
 
-## Family-level headline numbers (`mart_family`, 3 families — see ARCHITECTURE.md §Data model)
+## Family-level headline numbers (`mart_family`, 3 headline families + Mixed — see ARCHITECTURE.md §Data model)
 
-| Family | Papers | Patents | Patent share | Weighted median lag | Top assignee |
-|---|---|---|---|---|---|
-| EUV Lithography | 5,207 | 4,145 | 44.3% | 3.07 yr | TSMC |
-| Silicon Photonics | 46,494 | 2,518 | 5.1% | 3.69 yr | IBM |
-| Neuromorphic & In-Memory Compute | 26,275 | 6,492 | 19.8% | 2.76 yr | Micron Technology |
+| Family | Clusters | Papers | Patents | Patent share | Weighted median lag | Top assignee |
+|---|---|---|---|---|---|---|
+| EUV Lithography | 25 | 5,159 | 3,558 | 40.8% | 3.07 yr | TSMC |
+| Silicon Photonics | 125 | 45,798 | 2,267 | 4.7% | 3.69 yr | IBM |
+| Neuromorphic & In-Memory Compute | 58 | 26,092 | 4,289 | 14.1% | 2.71 yr | Micron Technology |
+| Mixed *(excluded from headline charts)* | 19 | 927 | 3,041 | 76.6% | 3.41 yr | ASML |
 
-*(2026-07-08 snapshot, post patent-scope tightening. Patent share = family n_patents /
-(family n_papers + family n_patents).)*
+*(2026-07-08 snapshot. Patent share = family n_patents / (family n_papers + family n_patents).
+Clustering realization unchanged from the earlier 2026-07-08 build — Findings 1–4 above are
+unaffected; only the cluster→family roll-up changed.)*
 
-Note: `mart_family` attributes a patent to a family via its **primary** CPC subclass, so the
-three family patent counts (13,155 total) sum to less than `dim_patent` (23,397). The
-difference (~10.2k) is patents that entered via the top-5 rule on a *prominent-but-secondary*
-scope code while their primary classification sits outside the six scope subclasses — they
-are counted in the corpus but not attributed to a headline family. See the residual-noise
-note in `docs/cluster_label_review.md`.
+Note: each cluster is assigned to a family by `seed_cluster_family` only when a single family
+is **>= 80% of the cluster's family-resolvable documents AND those resolvable documents are
+>= 50% of the cluster** (a confidence floor, added 2026-07-08). Clusters that genuinely span
+two families or are mostly off-scope go to **Mixed** — it holds the 19 such clusters, which is
+why its patent count (3,041) is high relative to its papers (mostly patent-heavy off-primary-CPC
+clusters like semiconductor-fabrication and IC-testing). The four rows sum to 13,155 patents
+(the non-noise clustered patents); the remaining ~10.2k of `dim_patent` (23,397) sit in
+`c_noise` (unclustered). The three headline families hold 10,114; Mixed separates out 3,041 that
+were previously force-attributed to a headline family. See `docs/cluster_label_review.md`.
 
 Note: these 3 families are the original Part 0 scope families (Silicon Photonics includes
 lasers; Neuromorphic & In-Memory Compute is merged) — not the 5-way split used in an

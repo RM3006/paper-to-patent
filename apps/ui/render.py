@@ -13,7 +13,7 @@ FAMILY_COLORS: dict[str, str] = {
     "euv":                    "#3a4a6b",  # deep navy — editorial "cool technical" palette
     "silicon_photonics":      "#5a8fa8",  # steel blue (was si_photonics; now includes lasers)
     "neuromorphic_in_memory": "#7a6c91",  # slate purple (was neuromorphic; now includes in_memory)
-    "adjacent":               "#94a3b8",  # slate — muted, not headline
+    "mixed":                  "#94a3b8",  # slate — muted, cross-family / no clear majority
     "noise":                  "#d1d5db",  # light grey — frontier / unclustered
 }
 
@@ -21,7 +21,7 @@ FAMILY_LABELS: dict[str, str] = {
     "euv":                    "EUV Lithography",
     "silicon_photonics":      "Silicon Photonics & Lasers",
     "neuromorphic_in_memory": "Neuromorphic & In-Memory Compute",
-    "adjacent":               "Adjacent / Cross-family",
+    "mixed":                  "Mixed",
     "noise":                  "Frontier / Unclustered",
 }
 
