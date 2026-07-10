@@ -385,7 +385,12 @@ fixtures. Docs are updated **in the same commit** as the change that triggers th
    marts, and the app's availability is now coupled to MotherDuck's free-tier caps.
 6. **The app has no automated test suite.** `apps/ui/` is ruff+pyright-only; pages are
    exercised manually, and pyright runs at `basic` there. The most demo-visible layer is the
-   least-tested one — a `data.py` query regression wouldn't be caught by CI.
+   least-tested one — a `data.py` query regression wouldn't be caught by CI. **Partially
+   mitigated**: `apps/ui/tests/test_data.py` now covers `data.py`'s main query-function shapes
+   (plain select+order, aggregation with an exclusion invariant, join+coalesce+filter, window
+   ranking, ilike search) against a fixture DuckDB warehouse, plus the shared `_query()` error
+   path. It is deliberately thin, not exhaustive over all query functions, and pages themselves
+   are still exercised manually — no `AppTest`-style page-level coverage.
 7. **NPL linkage is a high-precision *sample*, not a census.** Unmatchable references are
    dropped, so absolute link counts understate reality and vary with matcher recall. The
    precision claim is solid; anyone reading a raw count of links should know it's a floor.
