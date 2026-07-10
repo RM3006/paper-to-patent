@@ -114,7 +114,7 @@ This is a static/semi-static page backed by `fact_npl_link`, `dim_paper`, `dim_p
 ## Data-quality honesty rails (embedded in UI)
 
 - **US patents only**: "PatentsView covers US patents issued by USPTO. EPO/WIPO/CN filings are not represented."
-- **NPL links**: "Citation links are extracted from USPTO non-patent-literature reference strings. High-confidence links used a DOI match; medium-confidence used fuzzy title matching. Precision vs Marx & Fuegi gold set: 0.831."
+- **NPL links**: "Citation links come from two sources, per patent — the Marx & Fuegi 'Reliance on Science' dataset (gold-standard published citations) wherever it covers the patent, and our own DOI + fuzzy-title matcher over USPTO non-patent-literature reference strings for recent grants beyond that dataset's vintage. DOI / front-page citation = high confidence; fuzzy title / body-only = medium. Link counts are a lower bound; the matcher's measured precision/recall against the Marx & Fuegi gold pairs is disclosed in the methodology footer (see `docs/data_source_manifest.md`)."
 - **Patent filing-year truncation**: "Filing counts after 2019 appear lower because recently filed patents take 2–4 years to be granted and enter PatentsView. The drop does not reflect real decline in activity."
 - **Confidence badges on all org matches**: shown in Surface 3 org card.
 

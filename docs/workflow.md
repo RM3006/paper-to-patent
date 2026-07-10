@@ -234,33 +234,50 @@ labels regenerate and `cluster_label_review.md` must be refreshed.
 
 ---
 
-## Stage 8 — NPL linkage: `npl_links_raw` (group `transform`, npl_matcher) → R2 `intermediate/npl/`
+## Stage 8 — NPL linkage: hybrid Marx & Fuegi + custom matcher (group `transform`) → R2 `intermediate/mf_npl/` + `intermediate/npl/`
 
-**What.** Resolves paper↔patent edges from the free-text `g_other_reference` strings. **DOI
-route** (regex → exact join, `confidence=high`); **fuzzy route** (inverted-index + rapidfuzz
-title match, `confidence=medium`). Reads `stg_npl` + `stg_openalex_works` from the
-warehouse; writes `npl_links.parquet`.
+**What.** Resolves paper↔patent edges from **two sources, partitioned per patent** (hybrid
+since 2026-07-10):
+
+- **`mf_npl_links`** (`mf_matcher.py`) — the **Marx & Fuegi "Reliance on Science"** dataset
+  (CC-BY-4.0), gold-standard *published* citations. Filtered to scope patents ∩ OpenAlex
+  corpus, deduped per (patent, paper), `wherefound` mapped to confidence (front/both → high,
+  body-only → medium). This is the **primary** source for any patent it covers. Writes
+  `mf_npl_links.parquet`.
+- **`npl_links_raw`** (`npl_matcher.py`) — our own matcher over the free-text
+  `g_other_reference` strings: **DOI route** (regex → exact join, `confidence=high`) and
+  **fuzzy route** (inverted-index + rapidfuzz title match ≥ 90, `confidence=medium`). Reads
+  `stg_npl` + `stg_openalex_works`; writes `npl_links.parquet`.
+
+`fact_npl_link` (Stage 9) draws each patent's edges from **exactly one** source — never both
+(`assert_fact_npl_link_single_source.sql`) — recording which in `link_source`
+(`marx_fuegi` \| `doi` \| `fuzzy_title`). The matcher fills **only** patents beyond Marx &
+Fuegi's vintage ceiling (grants after ~early 2023), a share that grows every year.
 
 **Why.** An NPL citation is a **real directed link** from a patent to the literature it
 cites — the analytical core. The interval from paper `publication_date` → citing patent
-`filing_date` is the **citation lag**.
+`filing_date` is the **citation lag**. The hybrid uses the best available source on each side
+of Marx & Fuegi's vintage seam: gold published citations where they reach, a measured-recall
+matcher for the recent grants they structurally cannot see.
 
 **Watch-outs.**
 
 - **It is "citation lag", never "lead time" / "time to market" / "R&D-to-commercialisation".**
   Those imply causation the data doesn't support. Hard rule.
 - **Anchored on filing date, never grant.** Grant carries years of administrative lag.
-- Quality is measured against the **Marx & Fuegi gold eval set** (precision/recall recorded
-  in `docs/data_source_manifest.md`). Unmatchable references are dropped → the linkage is a
-  high-precision **sample**, not exhaustive.
+- The matcher's precision/recall is measured against the **Marx & Fuegi pairs as a gold eval
+  set** (recorded in `docs/data_source_manifest.md`). Where Marx & Fuegi covers a patent its
+  edges are used directly, so counts on those patents are no longer matcher-recall-limited; on
+  the recent-grant slice the matcher's measured recall still makes counts a **lower bound**.
 
 ---
 
 ## Stage 9 — dbt transform, **pass 2**: cluster/NPL-dependent facts + marts
 
 **What.** With Stages 5–8 done, `dbt build` finalizes: `fact_document_cluster` (reads
-`clusters.parquet`), `dim_technology_cluster` (reads labels), `fact_npl_link` (reads
-`npl_links.parquet`), `seed_cluster_family` (cluster→family roll-up), and the gold marts
+`clusters.parquet`), `dim_technology_cluster` (reads labels), `fact_npl_link` (unions the
+`mf_npl_links` and `npl_links` outputs, one source per patent), `seed_cluster_family`
+(cluster→family roll-up), and the gold marts
 **`mart_velocity`, `mart_competitive`, `mart_gap`, `mart_family`**. Staging now also
 actually excludes `excluded_documents` (no longer an empty relation).
 
@@ -392,5 +409,14 @@ fixtures. Docs are updated **in the same commit** as the change that triggers th
    path. It is deliberately thin, not exhaustive over all query functions, and pages themselves
    are still exercised manually — no `AppTest`-style page-level coverage.
 7. **NPL linkage is a high-precision *sample*, not a census.** Unmatchable references are
-   dropped, so absolute link counts understate reality and vary with matcher recall. The
-   precision claim is solid; anyone reading a raw count of links should know it's a floor.
+   dropped, so absolute link counts understate reality. The precision claim was always solid;
+   the open question was recall. **Substantially closed (2026-07-10) by the hybrid source:**
+   for any patent the Marx & Fuegi "Reliance on Science" dataset covers, its gold-standard
+   *published* citations are used directly (the large majority of edges) — those counts are no
+   longer matcher-recall-limited. Our own matcher now runs only on the recent-grant slice Marx
+   & Fuegi's vintage ceiling cannot reach, and its recall there is *measured* against the Marx
+   & Fuegi pairs (precision/recall recorded in `docs/data_source_manifest.md`) rather than
+   unquantified. **Residual:** on that newest slice the matcher's recall still makes counts a
+   lower bound, and even gold citations are not a literal census of all scientific reliance —
+   so a raw link count remains a floor, just a much higher, now-quantified one. Surfacing this
+   recall basis in the UI methodology footer is Part 7 polish.
