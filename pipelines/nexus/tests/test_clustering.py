@@ -1,6 +1,10 @@
 """Tests for the document_clusters pure helpers."""
 
-from nexus.assets.ml.clustering import compute_ctfidf_terms, make_cluster_id
+from nexus.assets.ml.clustering import (
+    compute_ctfidf_terms,
+    corpus_signature,
+    make_cluster_id,
+)
 
 # ---------------------------------------------------------------------------
 # make_cluster_id
@@ -17,6 +21,43 @@ def test_make_cluster_id_zero() -> None:
 
 def test_make_cluster_id_positive() -> None:
     assert make_cluster_id(42) == "c_42"
+
+
+# ---------------------------------------------------------------------------
+# corpus_signature — the freeze fingerprint
+# ---------------------------------------------------------------------------
+
+
+def test_corpus_signature_is_deterministic() -> None:
+    ids = ["W3", "W1", "P2", "W1"]
+    assert corpus_signature(ids) == corpus_signature(ids)
+
+
+def test_corpus_signature_order_independent() -> None:
+    # read order must not change the fingerprint (freeze must survive re-sorts)
+    assert corpus_signature(["W1", "W2", "P3"]) == corpus_signature(["P3", "W2", "W1"])
+
+
+def test_corpus_signature_duplicate_independent() -> None:
+    # a duplicated id is the same corpus content
+    assert corpus_signature(["W1", "W2"]) == corpus_signature(["W1", "W2", "W2"])
+
+
+def test_corpus_signature_changes_when_a_document_is_added() -> None:
+    # onboarding a new document MUST change the signature (triggers a re-cut)
+    before = corpus_signature(["W1", "W2"])
+    after = corpus_signature(["W1", "W2", "W3"])
+    assert before != after
+
+
+def test_corpus_signature_changes_when_a_document_is_removed() -> None:
+    assert corpus_signature(["W1", "W2", "W3"]) != corpus_signature(["W1", "W2"])
+
+
+def test_corpus_signature_is_16_char_hex() -> None:
+    sig = corpus_signature(["W1", "W2", "W3"])
+    assert len(sig) == 16
+    assert all(c in "0123456789abcdef" for c in sig)
 
 
 # ---------------------------------------------------------------------------
