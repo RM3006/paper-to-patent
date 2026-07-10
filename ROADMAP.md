@@ -260,6 +260,19 @@ The two sources share no key. You will resolve organisations with a layered stra
 - Fuzzy matcher runs 357k NPL strings × 30 candidates; ~8 minutes CPU-time. Inverted-index blocking on 5-char alphabetic tokens, max 5,000 postings per token.
 - Conditional precision (gold-patent subset) is the meaningful metric — overall gold precision would be far lower because gold covers only ~10% of scope patents (MAG ~2021 cutoff), penalising true links the gold cannot confirm.
 
+**Hybrid NPL source update (2026-07-10)**: `fact_npl_link` no longer uses the matcher as the sole
+source. A measured comparison (`docs/data_source_manifest.md`) showed Marx & Fuegi dominates our
+matcher on both coverage and link quality for the ~71% of scope patents its vintage covers
+(granted ~early 2023 or earlier) — more links, gold-standard precision, richer provenance
+(self-citation flag, front-page vs in-text). `fact_npl_link.sql` now implements a seam: any
+patent M&F covers at all draws ALL its edges from M&F (`link_source = 'marx_fuegi'`); the
+matcher (`npl_links_raw`) fills only patents M&F has zero coverage of (`link_source = 'doi'` /
+`'fuzzy_title'`) — the ~29% of scope patents granted after M&F's vintage ceiling, which grows
+every year. `ref_npl_gold_eval` and the precision/recall measurement above remain, now scoped
+purely to grading the matcher on its own (M&F-overlap-era) territory. See
+`pipelines/nexus/assets/transform/mf_matcher.py`, `ARCHITECTURE.md` §7, and
+`assert_fact_npl_link_single_source.sql` for the seam's regression guard.
+
 **Risks**
 - Re-scanning raw Parquet from R2 on every iteration is slow. Materialise staging into the local DuckDB file during development.
 - DOI extraction from free-text NPL strings is noisy. A clean regex DOI match is `high`; everything else is `medium` or dropped. Precision over coverage.

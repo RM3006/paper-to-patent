@@ -88,7 +88,7 @@ The build machine uses the **read-write** R2 key and a read-write MotherDuck tok
 | PatentsView bulk TSV (data.uspto.gov) | Primary US patent data (filings, assignees, CPC, citations, NPL "other references") | bulk download, no key | CC-BY-4.0 |
 | PatentSearch API (`search.patentsview.org`) | Supplementary targeted lookups only | `X-Api-Key` header (optional) | CC-BY-4.0 |
 | OpenAlex (`api.openalex.org`) | Global research output (abstracts, institutions/ROR, topics) | polite pool via `mailto` | CC0 |
-| Marx & Fuegi "Reliance on Science" `_pcs_oa.csv` (Zenodo 8278104) | NPL gold eval set (quality benchmark only, never pipeline output) | free download | CC-BY-4.0 |
+| Marx & Fuegi "Reliance on Science" `_pcs_oa.csv` (Zenodo 8278104) | Hybrid NPL link source (2026-07-10): primary source of `fact_npl_link` edges for any patent it covers (vintage caps ~early-2023 grants), and the gold eval set for measuring our own matcher's quality on the remaining patents | free download | CC-BY-4.0 |
 
 **Files used in the Part 0 spike** (gitignored under `data/`): `g_patent.tsv`, `g_cpc_current.tsv`, `g_other_reference.tsv`, `data/reference/marx_fuegi_pcs.csv`. `g_application.tsv` (filing dates) and `g_assignee_disambiguated.tsv` are already downloaded for Part 2.
 
@@ -363,9 +363,41 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 
 ---
 
-### NPL matcher (Part 4 — complete)
+### NPL linkage (Part 4 — complete; hybrid source since 2026-07-10)
 
-**Approach**: two-route matcher in `pipelines/nexus/assets/transform/npl_matcher.py`.
+**Approach**: `fact_npl_link` is a hybrid, partitioned per patent. For any patent the Marx &
+Fuegi "Reliance on Science" dataset covers at all, ALL of that patent's edges come from Marx &
+Fuegi (`link_source = 'marx_fuegi'`) — gold-standard, published citation data. For patents
+outside that coverage (its vintage caps out around patents granted ~early 2023), edges come
+from our own DOI + fuzzy-title matcher instead (`link_source = 'doi'` / `'fuzzy_title'`). No
+patent draws edges from both sources (`models/tests/assert_fact_npl_link_single_source.sql`).
+
+**Why hybrid, not matcher-only.** An offline, unconfounded comparison — joining the raw Marx &
+Fuegi CSV against our own scope patents and OpenAlex corpus, independent of any matcher
+threshold — measured, within the patents both sources can see: **7,125 Marx & Fuegi edges vs
+4,619 matcher edges**, with only 2,292 in agreement. That gap means a large share of the
+matcher's edges in that overlap were either misses Marx & Fuegi caught or matcher false
+positives, and Marx & Fuegi's own published precision exceeds the matcher's self-graded ~0.85.
+The matcher's genuine advantage is coverage of **recent grants** Marx & Fuegi structurally
+cannot see: 29% of scope patents (6,813 of 23,397, as of 2026-07-10) were granted after Marx &
+Fuegi's vintage ceiling (~patent 11,617,290, ~April 2023), and that share grows every year as
+new patents grant. This is what the hybrid design captures — the best available source on each
+side of the seam, rather than one matcher trying to do both jobs at a lower bar than either.
+
+**Marx & Fuegi source** (`mf_npl_links` asset,
+`pipelines/nexus/assets/transform/mf_matcher.py`): filters the CSV to scope patents ∩ OpenAlex
+corpus, dedups multiple citation-location rows per (patent, paper) pair (preferring
+`both` > `front` > `body`, then higher `confscore`), and maps `wherefound` to this project's
+confidence tier (front/both → high, body-only → medium — front-page citations are the ones an
+examiner/applicant explicitly listed; body-only came from Marx & Fuegi's separate, lower-
+precision in-text extraction method). `confscore` (1–10) and the self-citation flag (`self`)
+are carried through as-is, exposed but not used to gate inclusion.
+
+**Verified 2026-07-10**: 7,125 Marx & Fuegi links in scope ∩ corpus (before the
+publication-date-before-filing-date filter in `fact_npl_link.sql`).
+
+**Custom matcher (two-route)**, `pipelines/nexus/assets/transform/npl_matcher.py` — now scoped
+to patents Marx & Fuegi doesn't cover.
 
 | Route | Mechanism | Confidence | Links |
 |---|---|---|---|
@@ -389,15 +421,21 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 
 > **Re-run 2026-07-06 (against the fresh OpenAlex + org_crosswalk snapshots):** gold eval set now 8,558 pairs / 3,284 distinct patents (was 8,640/3,301 — minor drift from the OpenAlex re-ingest). DOI route: 1,092 high-confidence matches. Fuzzy route re-evaluated at all three candidate thresholds: 90 → cond. precision 0.847, recall 0.327, 6,139 total links; 95 → 0.864/0.114; 100 → 0.844/0.060. **Chosen threshold unchanged at 90** (still the lowest clearing the ≥0.80 floor). Final: **6,139 links (1,092 high/DOI + 5,047 medium/fuzzy after dedup)**. Conditional precision improved slightly (0.831 → 0.847) — within run-to-run noise given the corpus and eval-set sizes both shifted a little, not attributable to any matcher logic change.
 
+> **Hybrid pivot 2026-07-10**: the matcher itself (`npl_links_raw`) is unchanged — it still runs against the full unmatched-NPL-string pool, and the precision/recall table above still accurately describes its own standalone quality. What changed is downstream: `fact_npl_link.sql` now keeps a matcher edge **only** for patents Marx & Fuegi has zero coverage of. Of the matcher's 6,139 raw links, only **1,993 (480 DOI + 1,513 fuzzy)** survive into `fact_npl_link` — the rest were on patents Marx & Fuegi already covers, where Marx & Fuegi's edges are used instead (see "Why hybrid, not matcher-only" above).
+
 **`fact_npl_link`** — resolved paper↔patent edges (MotherDuck: `main_marts.fact_npl_link`)
 
 | Column | Type | Meaning |
 |---|---|---|
 | `patent_id` | String | Citing patent (in scope) |
 | `work_id` | String | Matched OpenAlex work ID (e.g. `W2741809807`) |
-| `match_method` | String | `npl_citation` (DOI or fuzzy-title route) |
-| `confidence` | String | `high` (DOI route) or `medium` (fuzzy-title route) |
-| `doi_extracted` | String | Bare DOI if DOI route; NULL for fuzzy matches |
+| `match_method` | String | Always `npl_citation` |
+| `confidence` | String | `high` (Marx & Fuegi front/both, or matcher DOI route) or `medium` (Marx & Fuegi body-only, or matcher fuzzy-title route) |
+| `link_source` | String | `marx_fuegi`, `doi`, or `fuzzy_title` — which source this edge came from (see hybrid seam above) |
+| `doi_extracted` | String | Bare DOI, when `link_source = 'doi'`. NULL otherwise |
+| `mf_confscore` | Integer | Marx & Fuegi's own match-confidence score (1–10), when `link_source = 'marx_fuegi'`. NULL otherwise |
+| `mf_wherefound` | String | Marx & Fuegi's citation-location flag (`front`\|`body`\|`both`), when `link_source = 'marx_fuegi'`. NULL otherwise |
+| `mf_self` | String | Marx & Fuegi's self-citation flag (`isself`\|`notself`\|`unkself`), when `link_source = 'marx_fuegi'`. NULL otherwise |
 | `publication_date` | Date | Paper publication date — citation-lag anchor |
 | `filing_date` | Date | Patent filing date — citation-lag anchor |
 | `citation_lag_days` | Integer | Days from publication to filing |
@@ -408,6 +446,8 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 > **Verified 2026-07-04**: 5,749 rows (1,075 high/DOI + 4,674 medium/fuzzy), 2,896 distinct patents, 2,433 distinct works, median lag 3.13 years. Note: this reflects the *original* DOI/fuzzy-title matcher run intersected with the current (type-filtered, smaller) OpenAlex corpus via the inner joins in `fact_npl_link.sql` — the matcher itself (`npl_links_raw`) has not been re-run against the current corpus, so the precision/recall table above is not a fresh measurement. A re-run would be needed to confirm the 0.831 conditional precision still holds.
 >
 > **Verified 2026-07-06 (matcher actually re-run this time, closing the gap noted above):** `npl_links_raw` re-executed against the fresh OpenAlex + org_crosswalk snapshots (see NPL matcher section above for the fresh precision/recall table). `fact_npl_link`: 1,076 rows high/DOI + 4,719 rows medium/fuzzy after the `publication_date < filing_date` dbt filter (6,139 raw matcher output → this many survive the date-ordering check).
+>
+> **Verified 2026-07-10 (hybrid Marx & Fuegi + matcher source, post `mf_npl_links` asset run):** **9,025 rows** total — 7,032 `marx_fuegi` + 480 `doi` + 1,513 `fuzzy_title` (after the `publication_date < filing_date` dbt filter). 3,528 distinct patents, 3,879 distinct works. Median citation lag 3.06 years. Confidence split: 7,376 high, 1,649 medium. Rose from the prior matcher-only 6,139 total / 2,973 distinct patents.
 
 ---
 

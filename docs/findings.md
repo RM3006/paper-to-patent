@@ -12,6 +12,15 @@ Corpus is now **176,759 docs** (153,362 papers + 23,397 patents), **227 named cl
 finding below cites the cluster's current tagline alongside its ID; if this doc is refreshed
 after a future re-cluster, cite fresh IDs rather than assuming these persist.
 
+**NPL linkage refresh (2026-07-10)**: `fact_npl_link` moved to a hybrid source — the Marx &
+Fuegi "Reliance on Science" dataset (CC-BY-4.0) now supplies edges for any patent it covers at
+all (vintage caps ~early-2023 grants), with our own DOI + fuzzy-title matcher filling only the
+patents M&F has zero coverage of (`link_source` column; see `ARCHITECTURE.md` §7 and
+`docs/data_source_manifest.md`). Total links rose from ~6,139 to **9,025** and distinct linked
+patents from ~2,973 to **3,528**. Clustering itself is unchanged — only NPL-lag numbers below
+(Findings 1–2, and the family table's weighted median lag) moved; Findings 3–4 (HHI-based) are
+unaffected.
+
 **Caveats applying to all findings:**
 - Patent data is US-only (PatentsView). Findings describe US patenting, not global IP capture.
 - Paper data is English-language OpenAlex works (topics T11338, T10299, T11429, T10502, 2012–2025).
@@ -23,20 +32,22 @@ after a future re-cluster, cite fresh IDs rather than assuming these persist.
 
 ---
 
-## Finding 1 — Fastest NPL citation lag: Neural Networks and Reinforcement Learning
+## Finding 1 — Fastest NPL citation lag: In-Memory Computing with Resistive Memory
 
-**Cluster:** `c_71` — Neural Networks and Reinforcement Learning
+**Cluster:** `c_147` — In-Memory Computing with Resistive Memory
 **Metric:** Median NPL-linked citation lag
-**Value:** **2.05 years** (median publication-to-filing interval across 129 confirmed NPL-linked paper→patent pairs)
+**Value:** **1.47 years** (median publication-to-filing interval across 49 confirmed NPL-linked paper→patent pairs)
 
-> Research linked to neural-network / reinforcement-learning patents appears cited in a US
-> patent filing a median of 2.05 years after publication — the fastest confirmed lag among
-> the clusters with enough NPL-linked pairs to report (N ≥ 20) this cycle. Anchored on the
-> citing patent's filing date, not its grant date. **Caveat:** `c_71` is a *broad*
-> neural-net cluster (772 patents, only 36 co-located papers, ~22% of its patents have an
-> off-family primary CPC) — read it as "fast-moving general ML-hardware patenting" rather
-> than a tight device family. The fastest *technology-specific* cluster is `c_68`
-> "Neuromorphic Synapses and Neural Devices" at 2.19 years (N = 37).
+> Research linked to resistive-memory in-memory-computing patents appears cited in a US
+> patent filing a median of 1.47 years after publication — the fastest confirmed lag among
+> the clusters with enough NPL-linked pairs to report (N ≥ 20), after the 2026-07-10 hybrid
+> NPL-linkage refresh (see snapshot note above). Anchored on the citing patent's filing date,
+> not its grant date. The cluster has 311 co-located research institutions against 45
+> patents and 23 assignees — a broad research base feeding a comparatively narrow patent
+> footprint. Under the prior (matcher-only) NPL source this cluster did not clear the N ≥ 20
+> reportability floor at all; `c_71` "Neural Networks and Reinforcement Learning" held this
+> spot before (now 2.04 years, N = 213 — still fast, but no longer fastest) and `c_68`
+> "Neuromorphic Synapses and Neural Devices" (now 2.12 years, N = 67) is close behind.
 
 **Reproducible query** (from `main_marts.mart_gap`):
 ```sql
@@ -46,7 +57,7 @@ FROM main_marts.mart_gap
 WHERE npl_n_links >= 20
 ORDER BY npl_median_lag_years ASC
 LIMIT 3;
--- Top row: c_71 | Neural Networks and Reinforcement Learning | 2.05 | 129 | 67 | 248 | 772 | 36
+-- Top row: c_147 | In-Memory Computing with Resistive Memory | 1.47 | 49 | 311 | 23 | 45 | 356
 ```
 
 ---
@@ -55,15 +66,18 @@ LIMIT 3;
 
 **Cluster:** `c_117` — Memristor-Based True Random Number Generation
 **Metric:** Median NPL-linked citation lag
-**Value:** **6.23 years** (N = 24 NPL-linked pairs)
+**Value:** **5.41 years** (N = 31 NPL-linked pairs)
 
-> Memristor-based random-number-generation research takes a median of 6.23 years from
-> publication to appear cited in a US patent filing — roughly 3x the lag of the fastest
-> cluster this cycle. Notably, this same finding (same tagline, same 6.23-year median)
-> recurred from the prior 2026-07-06 snapshot under a different cluster ID — a reassuring
-> sign that the slowest-moving sub-domain is stable across re-clusters. The NPL citation
-> mechanism (an examiner or applicant citing a paper) is not proof of causation. N = 24 is
-> close to the minimum reportable threshold; read as indicative.
+> Memristor-based random-number-generation research takes a median of 5.41 years from
+> publication to appear cited in a US patent filing — still the slowest reportable cluster
+> after the 2026-07-10 hybrid NPL-linkage refresh (down from 6.23 years / N = 24 under the
+> prior matcher-only source — more confirmed links pulled the median in, but this cluster
+> remains the clear outlier: roughly 3.7x the lag of the fastest cluster). This same
+> cluster (same tagline) has now topped the "slowest" finding across three consecutive
+> snapshots under different cluster IDs and NPL sources — a reassuring sign that the
+> slowest-moving sub-domain is stable, not an artifact of any one clustering or matching
+> run. The NPL citation mechanism (an examiner or applicant citing a paper) is not proof of
+> causation.
 
 **Reproducible query:**
 ```sql
@@ -72,7 +86,7 @@ FROM main_marts.mart_gap
 WHERE npl_n_links >= 20
 ORDER BY npl_median_lag_years DESC
 LIMIT 1;
--- Returns: c_117 | Memristor-Based True Random Number Generation | 6.23 | 24
+-- Returns: c_117 | Memristor-Based True Random Number Generation | 5.41 | 31
 ```
 
 ---
@@ -137,14 +151,15 @@ the scope, so the on-domain memristor cluster is used here as the headline.
 
 | Family | Clusters | Papers | Patents | Patent share | Weighted median lag | Top assignee |
 |---|---|---|---|---|---|---|
-| EUV Lithography | 25 | 5,159 | 3,558 | 40.8% | 3.07 yr | TSMC |
-| Silicon Photonics | 125 | 45,798 | 2,267 | 4.7% | 3.69 yr | IBM |
-| Neuromorphic & In-Memory Compute | 58 | 26,092 | 4,289 | 14.1% | 2.71 yr | Micron Technology |
-| Mixed *(excluded from headline charts)* | 19 | 927 | 3,041 | 76.6% | 3.41 yr | ASML |
+| EUV Lithography | 25 | 5,159 | 3,558 | 40.8% | 2.70 yr | TSMC |
+| Silicon Photonics | 125 | 45,798 | 2,267 | 4.7% | 3.49 yr | IBM |
+| Neuromorphic & In-Memory Compute | 58 | 26,092 | 4,289 | 14.1% | 2.61 yr | Micron Technology |
+| Mixed *(excluded from headline charts)* | 19 | 927 | 3,041 | 76.6% | 3.12 yr | ASML |
 
-*(2026-07-08 snapshot. Patent share = family n_patents / (family n_papers + family n_patents).
-Clustering realization unchanged from the earlier 2026-07-08 build — Findings 1–4 above are
-unaffected; only the cluster→family roll-up changed.)*
+*(2026-07-10 snapshot. Patent share = family n_patents / (family n_papers + family n_patents).
+Clustering realization unchanged from the 2026-07-08 build (paper/patent counts and shares are
+identical) — only the weighted median lag moved, following the hybrid NPL-linkage refresh
+described in the snapshot note above.)*
 
 Note: each cluster is assigned to a family by `seed_cluster_family` only when a single family
 is **>= 80% of the cluster's family-resolvable documents AND those resolvable documents are
@@ -166,7 +181,7 @@ earlier version of this project's UI design. See `MEMORY.md` for why.
 
 | Finding | Cluster | Metric | Value | N |
 |---|---|---|---|---|
-| Fastest NPL lag | c_71 Neural Networks and Reinforcement Learning | citation lag | **2.05 yr** | 129 |
-| Slowest NPL lag | c_117 Memristor-Based True Random Number Generation | citation lag | **6.23 yr** | 24 |
+| Fastest NPL lag | c_147 In-Memory Computing with Resistive Memory | citation lag | **1.47 yr** | 49 |
+| Slowest NPL lag | c_117 Memristor-Based True Random Number Generation | citation lag | **5.41 yr** | 31 |
 | Extreme concentration | c_2 Lithographic Apparatus and Device Manufacturing | HHI | **1.0** (1 assignee) | 161 patents |
 | Broad research, narrow patent | c_155 Memristor-Based Logic and Computing | gap | **478 institutions / 5 assignees / HHI=0.32** | 10 patents |
