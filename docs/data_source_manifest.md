@@ -420,9 +420,10 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 | `doc_id` | String | OpenAlex `work_id` for papers; USPTO `patent_id` for patents |
 | `doc_type` | String | `paper` or `patent` |
 | `cluster_id` | String | Cluster identifier — `c_{label}` for named clusters, `c_noise` for HDBSCAN noise points |
-| `umap_x` | Float32 | 2D UMAP x-coordinate for the technology map |
-| `umap_y` | Float32 | 2D UMAP y-coordinate for the technology map |
+| `umap_x` | Float32 | 2D UMAP x-coordinate (not currently rendered — the live "map" is a per-cluster patents×papers bubble chart, not a UMAP scatter) |
+| `umap_y` | Float32 | 2D UMAP y-coordinate (see `umap_x`) |
 | `model_version` | String | Embedding model used: `all-MiniLM-L6-v2` |
+| `corpus_signature` | String | 16-char sha256 of the sorted-deduped doc-id set this realization was cut from. The clustering **freeze** key (added 2026-07-08): `document_clusters` reuses the frozen snapshot when the current corpus signature matches this, and re-cuts only when it differs (documents onboarded). Same value on every row. See ARCHITECTURE.md §8. |
 
 > Embedding model: `all-MiniLM-L6-v2` (384-dim, CPU, `normalize_embeddings=True`, max 256 tokens). Text source: paper `abstract` (from `dim_paper`) and patent `title` (from `dim_patent` — `g_patent.tsv` does not include abstract text). UMAP: `n_neighbors=15`, `min_dist=0.1`, `metric='cosine'`, `random_state=42`. HDBSCAN: `min_cluster_size=50`, `metric='euclidean'` (on 2D UMAP coords).
 >
@@ -478,7 +479,7 @@ One row per (source, source_id). Every org in both sources gets exactly one row.
 |---|---|---|
 | `dim_technology_cluster` | `main_marts` | One row per cluster; `cluster_id` PK, `tagline`, `summary_friendly`, `top_terms` |
 | `fact_document_cluster` | `main_marts` | One row per document; `doc_id`, `doc_type`, `cluster_id`, `umap_x`, `umap_y`, `model_version` |
-| `seed_cluster_family` | `main_marts` | One row per cluster; `family_id` (3-way: `euv` / `silicon_photonics` / `neuromorphic_in_memory`), `family_name`, `family_sort_order`. Computed fresh each run via CPC/topic majority vote — **display label only**, not used for counting (see ARCHITECTURE.md §Data model). |
+| `seed_cluster_family` | `main_marts` | One row per cluster; `family_id` (`euv` / `silicon_photonics` / `neuromorphic_in_memory` / `mixed`), `family_name`, `family_sort_order`. A real family is assigned only when it is **≥ 80% of the cluster's family-resolvable documents AND those resolvable docs are ≥ 50% of the cluster** (confidence floor, added 2026-07-08); clusters that genuinely span families or are mostly off-scope get `mixed`. Computed fresh each run from CPC/topic votes — **display label only**, not used for counting (see ARCHITECTURE.md §Data model). `mixed` is excluded from UI headline charts. |
 
 `cluster_id` is denormalised onto `dim_paper`, `dim_patent`, `fact_publication`, and `fact_patent_filing` (left join from `fact_document_cluster`) to support cluster-filtered analytical queries without an extra join.
 

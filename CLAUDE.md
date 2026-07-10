@@ -16,6 +16,7 @@
 10. **Tests for every asset.** One fixture-based correctness test, next to the code. Tests check values, not just "runs without error." Entity resolution and lead-time logic get tests on hand-labelled fixtures, not just schema checks.
 11. **`ruff`, `pyright`, `pytest` all pass before merge.** No `print` in production paths; use `from nexus.logging import logger`.
 12. **Dynamic documentation.** Update the affected `docs/` files in the same commit as the change that triggers it (see the maintenance table).
+13. **Documentation metrics** Never hard code metrics number, in comments/docs files, that are prone to change on every run (like number of clusters or number of dbt tests).
 
 ## Provenance & confidence pattern (the integrity backbone)
 

@@ -8,6 +8,10 @@ Spot-check of Claude Haiku-generated technology cluster labels against their mem
 **Current noise rate:** 41.1% overall (72,573/176,759) — within the already-characterized UMAP/HDBSCAN run-to-run noise band (see MEMORY.md's "UMAP non-determinism confirmed" entry), not a regression.
 **Model version:** 2026-07-08
 
+**Family confidence floor + clustering freeze (added 2026-07-08, session 2).** Two changes on top of this same clustering realization (the clusters themselves are unchanged — only the family label and the recompute policy changed):
+- **'Mixed' family floor** — `seed_cluster_family` now labels a cluster with a real family only when a single family is ≥ 80% of its family-resolvable documents AND those resolvable docs are ≥ 50% of the cluster; otherwise `family_id='mixed'`. **19 of 227 clusters** resolve to Mixed: genuinely two-family (e.g. `c_32` "EUV Free Electron Laser Systems", `c_26`/`c_29` RRAM split silicon/memory) or mostly off-scope (`c_45` "Transformer Models for Vision and Language", `c_77` "Machine Learning Signal Processing Methods", `c_30` "Academic Publishing and Conference Research", `c_47` "Power System Load and Distribution Control"). This replaces the old force-assignment where a 37%-plurality cluster still got a confident family colour. Clean single-technology clusters that are merely patent-heavy (e.g. `c_41` "Cross-Point Memory Arrays", 99% in-memory among its resolvable docs) correctly keep their family. `mixed` is excluded from UI headline charts.
+- **Clustering freeze** — this realization is now stamped with a `corpus_signature` (`93e1ad8ccf8265e6`); re-running `document_clusters` on the same corpus reuses it rather than reshuffling every `cluster_id` (which is what previously invalidated this review on each rerun). See ARCHITECTURE.md §8.
+
 **Exit criterion (ROADMAP Part 5):** ≥ 13 / 15 spot-checked labels rated accurate — i.e. a human reviewer agrees the tagline fits the dominant technology of the cluster.
 
 **Rating scale:**
