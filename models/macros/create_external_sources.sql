@@ -89,6 +89,12 @@
       {% do run_query("CREATE OR REPLACE VIEW er_intermediate.npl_links AS SELECT * FROM read_parquet('" ~ root ~ "/intermediate/npl/v" ~ npl_date ~ "/npl_links.parquet')") %}
     {% endif %}
 
+    -- mf_npl_links view only registered if the source path exists (mf_npl_links asset writes it)
+    {% set mf_npl_date = latest_snapshot_date('intermediate/mf_npl', 'mf_npl_links.parquet') %}
+    {% if mf_npl_date %}
+      {% do run_query("CREATE OR REPLACE VIEW er_intermediate.mf_npl_links AS SELECT * FROM read_parquet('" ~ root ~ "/intermediate/mf_npl/v" ~ mf_npl_date ~ "/mf_npl_links.parquet')") %}
+    {% endif %}
+
     -- ml_intermediate views — only registered once Part 5 ML assets have run
     {% set clusters_date = latest_snapshot_date('intermediate/clusters', 'clusters.parquet') %}
     {% if clusters_date %}

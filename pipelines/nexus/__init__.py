@@ -23,6 +23,7 @@ from nexus.assets.ml.cluster_labels import cluster_labels
 from nexus.assets.ml.clustering import document_clusters
 from nexus.assets.ml.embeddings import document_embeddings
 from nexus.assets.transform.dbt_assets import dbt_resource, paper_to_patent_dbt_assets
+from nexus.assets.transform.mf_matcher import mf_npl_links
 from nexus.assets.transform.npl_matcher import npl_links_raw
 from nexus.resources.duckdb import DuckDBR2Resource
 from nexus.resources.r2 import R2Resource
@@ -59,6 +60,7 @@ defs = Definitions(
         org_crosswalk,
         paper_to_patent_dbt_assets,
         npl_links_raw,
+        mf_npl_links,
         document_embeddings,
         document_clusters,
         cluster_labels,
