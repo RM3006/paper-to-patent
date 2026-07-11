@@ -483,16 +483,18 @@ to patents Marx & Fuegi doesn't cover.
 >
 > **Patent-scope tightening + full re-cluster, 2026-07-08 (top-5 CPC rule):** the patent filter was changed from any-position to top-5 (see the `patents_scoped` scope-rule note above), dropping the patent corpus 33,578 → **23,397**. Papers unchanged. The re-cluster applied the **operational lesson above the right way**: the old `excluded_documents` snapshots (v07-05, v07-06) were **deleted before** the pre-embedding dbt build so `dim_paper` was fully complete (153,480) when the gate ran — so the orphan bug did **not** recur, and only **one** ML cycle was needed. Embeddings: **176,759 docs (153,362 papers + 23,397 patents), 118 excluded** (same non-English set as before, papers unchanged). Clustering: **227 named clusters**, 41.1% noise (72,573 docs). `dim_paper`/`dim_patent` null-cluster = **0 / 0** confirmed on both dev and MotherDuck prod. **Residual noise (expected, disclosed):** the top-5 rule reduced but did not eliminate the generic-ML noise cluster — it reformed as **`c_77` "Machine Learning Signal Processing Methods"** (1,564 patents, 68% off-family primary CPC: biometrics, finance, audio-recommendation, form-extraction patents that carry a prominent neural-net code). This is the known limit of the top-5 (vs primary-only) rule; see `docs/cluster_label_review.md`. Also note ~10.2k of the 23,397 patents (44%) have a `NULL` `family_id` (primary CPC outside the six scope subclasses) — up from 38% pre-tightening, because top-5 also drops some genuine patents whose scope code was buried while keeping off-family patents whose scope code is prominent.
 
-**`excluded_documents`** — documents the embedding quality gate excluded entirely (R2: `intermediate/excluded_documents/v{date}/excluded_documents.parquet`)
+> **Acyclic refactor — the two-pass operational lessons above are now OBSOLETE (2026-07-11).** The staging↔ML cycle that forced "run the ML cycle twice / clear the `excluded_documents` snapshot before the pre-embedding build" is gone: exclusions are computed upstream by `document_exclusions` (which reads the raw corpus, not `dim_paper`), and the dims no longer carry `cluster_id`. A single `materialize all` now runs in topological order — no second ML pass, no snapshot-clearing dance, no null-cluster orphan risk from a stale exclusion snapshot. The 2026-07-05/06/08 notes above are kept as the historical record of the problem that motivated the fix. See ARCHITECTURE.md §5 and `docs/workflow.md` Stages 4a/4/9.
+
+**`excluded_documents`** — documents the pre-staging quality gate screened out entirely (R2: `intermediate/excluded_documents/v{date}/excluded_documents.parquet`)
 
 | Column | Type | Meaning |
 |---|---|---|
 | `doc_id` | String | OpenAlex `work_id` for papers; USPTO `patent_id` for patents |
 | `doc_type` | String | `paper` or `patent` |
-| `exclusion_reason` | String | `version_style_title` or `non_english_content` |
-| `model_version` | String | Embedding model used: `all-MiniLM-L6-v2` |
+| `exclusion_reason` | String | `version_style_title`, `non_english_content`, or `no_usable_text` |
+| `model_version` | String | Gate version tag: `quality-gate-v1` (langdetect + title heuristics; not an ML model) |
 
-> Written by `document_embeddings` (a `multi_asset`, alongside the `embeddings` output) in the same pass that decides the corpus — see the note above. Consumed by `stg_openalex_works`/`stg_patents_scoped` to exclude the same documents from the served corpus. `ml_intermediate.excluded_documents` always exists as a dbt source (unlike `clusters`/`cluster_labels`, which are only registered once Part 5 has run) — it resolves to an empty relation before Part 5's first run, so the staging exclusion is a no-op rather than a build error.
+> Written by the **`document_exclusions`** asset (since 2026-07-11), which reads the raw scope corpus (openalex works + patents_scoped) and runs the quality gate **upstream** of staging; `stg_openalex_works`/`stg_patents_scoped` then apply the list via a `NOT IN` filter. This is what makes the pipeline acyclic: the gate needs only title/abstract text, not embeddings, so it runs before staging rather than inside the embedding step (previously `document_embeddings` was a `multi_asset` that produced this alongside embeddings, which created the staging↔ML cycle — see ARCHITECTURE.md §5). `ml_intermediate.excluded_documents` always exists as a dbt source (unlike `clusters`/`cluster_labels`) — `create_external_sources()` resolves it to an empty relation before `document_exclusions` has ever produced a snapshot, a defensive no-op for a standalone `dbt build`.
 
 **`cluster_terms`** — c-TF-IDF top terms per cluster (R2: `intermediate/cluster_terms/v{date}/cluster_terms.parquet`)
 
@@ -521,7 +523,7 @@ to patents Marx & Fuegi doesn't cover.
 | `fact_document_cluster` | `main_marts` | One row per document; `doc_id`, `doc_type`, `cluster_id`, `umap_x`, `umap_y`, `model_version` |
 | `seed_cluster_family` | `main_marts` | One row per cluster; `family_id` (`euv` / `silicon_photonics` / `neuromorphic_in_memory` / `mixed`), `family_name`, `family_sort_order`. A real family is assigned only when it is **≥ 80% of the cluster's family-resolvable documents AND those resolvable docs are ≥ 50% of the cluster** (confidence floor, added 2026-07-08); clusters that genuinely span families or are mostly off-scope get `mixed`. Computed fresh each run from CPC/topic votes — **display label only**, not used for counting (see ARCHITECTURE.md §Data model). `mixed` is excluded from UI headline charts. |
 
-`cluster_id` is denormalised onto `dim_paper`, `dim_patent`, `fact_publication`, and `fact_patent_filing` (left join from `fact_document_cluster`) to support cluster-filtered analytical queries without an extra join.
+`cluster_id` is denormalised onto `fact_publication` and `fact_patent_filing` (left join from `fact_document_cluster`) to support cluster-filtered analytical queries without an extra join. `dim_paper`/`dim_patent` deliberately do **not** carry it — the bridge `fact_document_cluster` is the sole doc→cluster source, keeping the dims independent of the ML step that reads them (the old cycle; see ARCHITECTURE.md §5). Consumers that need a paper's/patent's cluster join the bridge on `doc_id` (e.g. `seed_cluster_family`, `mart_gap`, `apps/ui/data.py`).
 
 ---
 

@@ -14,12 +14,20 @@ on Cloudflare R2**; the engine is **DuckDB** (local `dev.duckdb` for iteration,
 genuinely hard work is concentrated in two places — **entity resolution** and
 **paper↔patent NPL linkage**; everything else is plumbing around them.
 
-> **A subtlety to hold from the start.** This is **not a clean single-pass DAG**. The dbt
-> SQL layer and the ML layer are mutually entangled (ML reads dbt's staging corpus; dbt's
-> marts read ML's clusters), so a full build resolves as **two dbt passes around the ML
-> block**, bootstrapped by an "empty relation until ML has run once" default. Stage 4 and
-> Stage 9 are the two dbt passes; Stage 5's `excluded_documents` output is what closes the
-> loop.
+> **A subtlety to hold from the start.** The dbt SQL layer and the ML layer interleave — ML
+> reads dbt's dims; dbt's marts read ML's clusters — but as of the **2026-07-11 refactor the
+> graph is acyclic and runs in one pass** (it used to be two dbt passes around the ML block,
+> bootstrapped by an "empty relation until ML runs once" default). Two feedback edges were
+> cut: (1) the corpus-exclusion gate runs **upstream** of staging as its own asset
+> (`document_exclusions`, Stage 4a), not inside the embedding step; (2) `dim_paper`/`dim_patent`
+> no longer back-fill `cluster_id` — the bridge `fact_document_cluster` is the sole
+> doc→cluster source. So the single `dbt build` is split into two Dagster `@dbt_assets` —
+> `paper_to_patent_dbt_pre` (staging + dims + non-cluster facts, Stage 4) and
+> `paper_to_patent_dbt_post` (cluster fact + NPL fact + marts, Stage 9) — with the Python
+> matcher/ML assets wired **between** them by honest deps. A single `materialize all` runs
+> ingest → exclusions → dbt_pre → matchers/ML → dbt_post in topological order.
+> `create_external_sources()`'s empty-relation default is now only a defensive net for a
+> standalone `dbt build`, not a load-bearing bootstrap.
 
 ---
 
@@ -125,61 +133,83 @@ Business Machines"); fuzzy at 100 sweeps the same-name long tail.
 
 ---
 
-## Stage 4 — dbt transform, **pass 1**: staging + intermediate + base dims/facts (group `transform`, node `paper_to_patent_dbt_assets`)
+## Stage 4a — Exclusion gate: `document_exclusions` (group `ml`) → R2 `excluded_documents`
 
-**What.** `dbt build --target {dev|prod}` reads R2 raw Parquet in place via `httpfs`
-external sources and builds: **staging** (`stg_patents_scoped`, `stg_openalex_works`,
-`stg_assignees`, `stg_cpc`, `stg_npl`, `stg_patent_citations`), **intermediate**
-(`int_org_crosswalk` from the ER output), and the **base dims/facts** that don't need
-clusters or NPL yet (`dim_patent`, `dim_paper`, `dim_organization`, `dim_cpc`,
-`fact_patent_filing`, `fact_publication`, `fact_patent_citation`).
+**What.** Reads the **raw** scope corpus from R2 (openalex works + patents_scoped) and runs
+the quality gate (`resolve_paper_text` / `is_version_style_title` / `langdetect`) to decide
+which documents to screen out entirely — a version-style title, a paper whose title+abstract
+are both non-English, or a patent with no usable title. Writes `excluded_documents`
+(`doc_id`, `doc_type`, `exclusion_reason`).
 
-**Why.** This produces the **document corpus that embeddings consume**. It also assigns each
-document its **own** 5-way `family_id` directly from its CPC prefix / topic — this
-per-document column, not the cluster it lands in, is authoritative for every count.
+**Why.** The gate needs only title/abstract text, not embeddings. Running it here — over raw,
+**before** staging — is what breaks the old cycle: staging consumes this list (Stage 4), so
+the exclusion producer must be upstream of staging, not the embedding step (which reads
+staging's dims). The `work_id` is extracted with the same regexp staging uses, so the
+exclusion set is byte-for-byte identical to the old in-embedding gate.
 
 **Watch-outs.**
 
-- **Bootstrap dependency (the entanglement).** `stg_patents_scoped` and `stg_openalex_works`
-  exclude doc_ids listed in `ml_intermediate.excluded_documents` — which the ML embedding
-  gate (Stage 5) produces. On a **cold pipeline that table doesn't exist yet**, so
-  `create_external_sources()` defaults it to an **empty relation** and the exclusion is a
-  harmless no-op. This is why staging "depends on ML having run once" without being a hard
-  build error the first time.
-- **Guarded against the silent-leak variant of that same gap.** A cold start is a harmless
-  no-op, but a build where ML has already run and `excluded_documents` *still* comes back
-  empty (a partial `document_embeddings` write, a deleted/corrupted R2 object, a
-  `source_root` misconfiguration) would silently ship low-quality documents into the served
-  marts with no error. `models/tests/assert_excluded_documents_not_silently_empty.sql` fails
-  the build loudly in exactly that case (clusters populated, exclusions empty) while staying
-  silent on genuine cold start (both empty) — per the "fail loudly, never silently coerce"
-  rule in `CLAUDE.md`.
+- Deterministic (`langdetect` seed pinned); runs after ingest, idempotent per date snapshot.
+- The authoritative exclusion decision lives here now — `document_embeddings` (Stage 5) no
+  longer decides exclusions, it only embeds the already-clean dims.
+
+---
+
+## Stage 4 — dbt transform, **pass 1**: `paper_to_patent_dbt_pre` (group `transform`)
+
+**What.** `dbt build --target {dev|prod}` (scoped to the PRE model set) reads R2 raw Parquet
+in place via `httpfs` external sources and builds: **staging** (`stg_patents_scoped`,
+`stg_openalex_works`, `stg_assignees`, `stg_cpc`, `stg_npl`, `stg_patent_citations`),
+**intermediate** (`int_org_crosswalk` from the ER output), and the **base dims/facts** that
+don't need clusters or NPL (`dim_patent`, `dim_paper`, `dim_organization`, `dim_cpc`,
+`fact_patent_citation`). Staging applies `document_exclusions` (Stage 4a) via a `NOT IN`
+filter.
+
+**Why.** This produces the **document corpus that embeddings consume**. `dim_paper`/`dim_patent`
+are identity/text only — they carry **no** `cluster_id` (that would depend on clustering,
+which reads these dims); the bridge `fact_document_cluster` (Stage 9) is the sole doc→cluster
+source. Staging also assigns each document its own `family_id` directly from its CPC prefix /
+topic — this per-document column, not the cluster it lands in, is authoritative for every
+count.
+
+**Watch-outs.**
+
+- **`excluded_documents` is a real upstream dependency now, not a bootstrap trick.** Staging's
+  `NOT IN excluded_documents` filter is satisfied by `document_exclusions` (Stage 4a), which
+  the graph runs first. On a standalone `dbt build` before that asset has ever produced a
+  snapshot, `create_external_sources()` defaults the source to an empty relation so the filter
+  is a harmless no-op — a defensive net, not the load-bearing two-pass bootstrap it used to be.
+- **Guarded against the silent-leak variant.** A build where clustering has run but
+  `excluded_documents` *still* comes back empty (a deleted/corrupted R2 object, a `source_root`
+  misconfiguration) would silently ship low-quality documents into the served marts.
+  `models/tests/assert_excluded_documents_not_silently_empty.sql` fails the build loudly in
+  exactly that case (clusters populated, exclusions empty) — per "fail loudly, never silently
+  coerce" in `CLAUDE.md`.
 - dbt enforces `unique`/`not_null`/`relationships` here — a bad ER merge surfaces as a
   failing test, not silent corruption.
 
 ---
 
-## Stage 5 — Embeddings: `document_embeddings` (group `ml`, a `multi_asset`) → R2 embeddings + `excluded_documents`
+## Stage 5 — Embeddings: `document_embeddings` (group `ml`, deps `dim_paper`/`dim_patent`) → R2 embeddings
 
-**What.** Reads the scope corpus from the warehouse, embeds every document with
-**`all-MiniLM-L6-v2` (384-dim) on CPU**, batched. A **quality gate** (`resolve_paper_text`)
-runs four ordered checks per paper: version-style title → exclude; placeholder/<50-char
-abstract → fall back to title; non-English abstract (`langdetect`) → title if the title is
-English else exclude; otherwise use the abstract. It emits **two** outputs in one pass: the
-embeddings **and** `excluded_documents` (the doc_ids Stage 4 staging filters out).
+**What.** Reads the **already exclusion-filtered** dims from the warehouse and embeds every
+document with **`all-MiniLM-L6-v2` (384-dim) on CPU**, batched. `resolve_paper_text` still
+picks each document's **text_source** (abstract, or title fallback for a placeholder/<50-char
+abstract); the exclusion decisions themselves were made upstream in Stage 4a, so this asset
+just embeds. Writes one output: the embeddings.
 
-**Why.** One computation decides both the embedding corpus and the served corpus, so they
-**cannot drift** the way two independently-written SQL filters would. The gate exists
-because purity analysis found artifact clusters built from "Abstract not provided."
-placeholders and mistagged non-English theses — non-content text was diffusing the whole
-embedding space, not just forming its own clusters.
+**Why.** Splitting exclusion out (Stage 4a) is what lets this asset sit cleanly downstream of
+the dims — it reads `dim_paper`/`dim_patent`, which no longer depend on anything ML produces.
+The gate exists because purity analysis found artifact clusters built from "Abstract not
+provided." placeholders and mistagged non-English theses — non-content text was diffusing the
+whole embedding space, not just forming its own clusters.
 
 **Watch-outs.**
 
 - CPU-bound but fine at this scale (minutes). No GPU by design.
 - Patents have no abstracts in the bulk data — they embed on title only. A known asymmetry
   vs papers.
-- This is the asset whose `excluded_documents` output closes the Stage 4 bootstrap loop.
+- **No longer a `multi_asset`** — it produces embeddings only; `excluded_documents` is Stage 4a.
 
 ---
 
@@ -272,14 +302,17 @@ matcher for the recent grants they structurally cannot see.
 
 ---
 
-## Stage 9 — dbt transform, **pass 2**: cluster/NPL-dependent facts + marts
+## Stage 9 — dbt transform, **pass 2**: `paper_to_patent_dbt_post` (cluster/NPL-dependent facts + marts)
 
-**What.** With Stages 5–8 done, `dbt build` finalizes: `fact_document_cluster` (reads
-`clusters.parquet`), `dim_technology_cluster` (reads labels), `fact_npl_link` (unions the
-`mf_npl_links` and `npl_links` outputs, one source per patent), `seed_cluster_family`
-(cluster→family roll-up), and the gold marts
-**`mart_velocity`, `mart_competitive`, `mart_gap`, `mart_family`**. Staging now also
-actually excludes `excluded_documents` (no longer an empty relation).
+**What.** With Stages 5–8 done, the POST `@dbt_assets` builds the models downstream of the
+clusters / cluster_labels / npl_links / mf_npl_links sources: `fact_document_cluster` (reads
+`clusters.parquet` — the doc→cluster bridge), `dim_technology_cluster` (reads labels),
+`fact_publication` / `fact_patent_filing` (join the bridge for `cluster_id`), `fact_npl_link`
+(unions the `mf_npl_links` and `npl_links` outputs, one source per patent),
+`seed_cluster_family` (cluster→family roll-up, votes via the bridge), and the gold marts
+**`mart_velocity`, `mart_competitive`, `mart_gap`, `mart_family`**. This runs after the ML +
+NPL Python assets, wired by the source→asset mapping in `dbt_assets.py` — no manual second
+pass.
 
 **Why.** Marts are the single source of truth the UI reads; each gold mart carries a
 top-of-file comment stating the claim it backs and its basis (NPL-linked vs co-occurrence vs
@@ -372,15 +405,19 @@ fixtures. Docs are updated **in the same commit** as the change that triggers th
 
 ## Weaknesses
 
-1. **The dbt↔ML entanglement is the real fragility.** Staging depends on ML's
-   `excluded_documents`; marts depend on ML's clusters; ML depends on staging's corpus. It's
-   resolved by an "empty relation until ML runs once" bootstrap + effectively two dbt passes
-   — clever, but it means a cold rebuild has an ordering that isn't expressible as one clean
-   DAG, and a newcomer running "materialize all" once may get a subtly incomplete first
-   build. The least obvious, most bite-prone part of the system. **Partially mitigated**: the
-   silent-leak variant (ML has run, but `excluded_documents` still resolves empty) now fails
-   the build loudly via `assert_excluded_documents_not_silently_empty.sql` — the ordering
-   itself is still two passes, but it can no longer fail *quietly*.
+1. **The dbt↔ML entanglement — RESOLVED (2026-07-11).** This used to be the real fragility:
+   staging depended on ML's `excluded_documents` and marts on ML's clusters, while ML depended
+   on staging's dims — a cycle resolved only by an "empty relation until ML runs once"
+   bootstrap + two dbt passes, so a cold rebuild's ordering wasn't expressible as one clean DAG
+   and a newcomer running "materialize all" once could get a subtly incomplete build. Both
+   feedback edges are now cut: the exclusion gate runs upstream of staging as its own asset
+   (`document_exclusions`, Stage 4a), and the dims dropped `cluster_id` in favour of the bridge
+   `fact_document_cluster`. The single `dbt build` is split into two `@dbt_assets`
+   (`paper_to_patent_dbt_pre` / `_post`) with the Python matcher/ML assets wired between them,
+   so the whole pipeline is **one acyclic graph** that a single `materialize all` runs in order
+   (`dagster definitions validate` passes with the honest deps that previously would have formed
+   a cycle). The silent-leak guard (`assert_excluded_documents_not_silently_empty.sql`) is kept
+   as a safety net. See ARCHITECTURE.md §7 and the Stage 4a/4/9 entries above.
 2. **The clustering noise rate is a real product ceiling.** It's been proven intrinsic to
    the embedding geometry (not a tuning miss), which is honest — but a large minority of
    documents sit in "frontier/unclustered" and never join a named family on the map. The

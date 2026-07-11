@@ -4,7 +4,7 @@
 -- create_external_sources() registers excluded_documents as an empty relation
 -- only as a defensive fallback, before the document_exclusions asset has ever
 -- produced a snapshot (e.g. a standalone `dbt build` on a fresh setup) -- see
--- create_external_sources.sql and ARCHITECTURE.md Section 7. In a normal
+-- create_external_sources.sql and ARCHITECTURE.md Section 5. In a normal
 -- orchestrated run, document_exclusions runs upstream of staging and clustering
 -- runs even later, so if clusters has rows the exclusions snapshot must already
 -- exist and be non-empty -- at this corpus size the quality gate always finds

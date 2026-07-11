@@ -12,7 +12,7 @@
   cluster-free is what makes the ML step sit cleanly downstream of the dims in a
   single acyclic graph: the embedding/clustering asset reads this dim, so this
   dim must not in turn read the clusters (that was the old cycle -- see
-  ARCHITECTURE.md §7 / docs/workflow.md).
+  ARCHITECTURE.md §5 / docs/workflow.md).
   Depends on: stg_openalex_works
   Output: dev.duckdb marts.dim_paper
 */
