@@ -23,16 +23,20 @@ with votes as (
     )
     union all
     select
-        cluster_id,
-        case primary_topic_id
+        fdc.cluster_id,
+        case dp.primary_topic_id
             when 'https://openalex.org/T11338' then 'euv'
             when 'https://openalex.org/T11429' then 'silicon_photonics'
             when 'https://openalex.org/T10299' then 'silicon_photonics'
             when 'https://openalex.org/T10502' then 'neuromorphic_in_memory'
             else 'mixed'
         end
-    from {{ ref('dim_paper') }}
-    where cluster_id is not null and cluster_id != 'c_noise'
+    -- cluster_id via the bridge (dim_paper no longer carries it); mirrors the
+    -- paper_votes CTE in seed_cluster_family.sql.
+    from {{ ref('dim_paper') }} dp
+    inner join {{ ref('fact_document_cluster') }} fdc
+        on fdc.doc_id = dp.work_id and fdc.doc_type = 'paper'
+    where fdc.cluster_id is not null and fdc.cluster_id != 'c_noise'
 ),
 
 totals as (

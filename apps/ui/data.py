@@ -681,7 +681,9 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
         FROM main_marts.dim_paper dp
         LEFT JOIN primary_org po ON po.work_id = dp.work_id
         LEFT JOIN main_marts.dim_organization dorg ON dorg.org_id = po.org_id
-        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = dp.cluster_id
+        LEFT JOIN main_marts.fact_document_cluster fdc
+            ON fdc.doc_id = dp.work_id AND fdc.doc_type = 'paper'
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fdc.cluster_id
         WHERE dp.work_id = ?
         """,
         [work_id, work_id],

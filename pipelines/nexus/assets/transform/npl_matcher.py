@@ -26,7 +26,7 @@ from typing import Any
 
 import duckdb as _duckdb_lib
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetKey, OpExecutionContext, asset
 from rapidfuzz import fuzz
 
 from nexus.assets.ingest.openalex import delete_r2_object
@@ -222,6 +222,10 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @asset(
     group_name="transform",
+    deps=[
+        AssetKey(["staging", "stg_npl"]),
+        AssetKey(["staging", "stg_openalex_works"]),
+    ],
     description=(
         "NPL link matcher: resolves paper↔patent edges from g_other_reference strings. "
         "DOI route (high confidence): pre-extracted bare DOI → exact join. "

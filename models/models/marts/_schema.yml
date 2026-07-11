@@ -106,11 +106,12 @@ models:
 
   - name: dim_paper
     description: >
-      One row per paper in scope (162,787 rows). Non-research entries
-      misclassified as papers by the upstream source (e.g. dataset files,
-      software release notes) are excluded. cluster_id is filled in once
-      clustering has been computed for the current corpus, and is NULL
-      before then.
+      One row per paper in scope. Non-research entries misclassified as papers
+      by the upstream source (e.g. dataset files, software release notes) are
+      excluded. The paper's technology cluster is deliberately NOT stored here
+      (that would make the dim depend on the clustering that itself reads it) —
+      join the bridge fact_document_cluster (doc_type='paper') when a cluster is
+      needed.
     columns:
       - name: work_id
         description: "{{ doc('work_id') }} Primary key of this model."
@@ -135,20 +136,13 @@ models:
         description: "The subject-area topic this paper is primarily about, drawn from a fixed set of topics in scope for this atlas (EUV lithography, silicon photonics, lasers, or advanced memory and neural computing). Drives this paper's own technology family in fact_publication."
       - name: primary_topic_name
         description: "Human-readable name for primary_topic_id."
-      - name: cluster_id
-        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
-        tests:
-          - relationships:
-              arguments:
-                to: ref('dim_technology_cluster')
-                field: cluster_id
 
   - name: dim_patent
     description: >
-      One row per patent in scope (33,578 rows — matching the relevant
-      classification codes, filed between 2014 and 2025). cluster_id is
-      filled in once clustering has been computed for the current corpus,
-      and is NULL before then.
+      One row per patent in scope (matching the relevant classification codes,
+      filed between 2014 and 2025). The patent's technology cluster is
+      deliberately NOT stored here (see dim_paper) — join the bridge
+      fact_document_cluster (doc_type='patent') when a cluster is needed.
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }} Primary key of this model."
@@ -163,13 +157,6 @@ models:
         description: "The date this patent was formally granted. Shown for reference only — never used to measure timing, since it reflects patent-office processing time rather than anything about the invention itself."
       - name: patent_type
         description: "utility | design | plant | reissue | defensive_publication."
-      - name: cluster_id
-        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
-        tests:
-          - relationships:
-              arguments:
-                to: ref('dim_technology_cluster')
-                field: cluster_id
 
   - name: fact_publication
     description: >

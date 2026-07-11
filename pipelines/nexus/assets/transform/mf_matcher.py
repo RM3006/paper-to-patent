@@ -27,7 +27,7 @@ import tempfile
 from typing import Any
 
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetKey, OpExecutionContext, asset
 
 from nexus.assets.ingest.openalex import delete_r2_object
 from nexus.logging import logger
@@ -62,6 +62,10 @@ def mf_confidence(wherefound: str) -> str:
 
 @asset(
     group_name="transform",
+    deps=[
+        AssetKey(["staging", "stg_patents_scoped"]),
+        AssetKey(["staging", "stg_openalex_works"]),
+    ],
     description=(
         "Marx & Fuegi 'Reliance on Science' NPL links, filtered to scope patents "
         "and our OpenAlex corpus. Primary NPL source for patents it covers "

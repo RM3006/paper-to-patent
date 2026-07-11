@@ -7,11 +7,12 @@
 /*
   Staging: scope-filtered patents (CPC match + filing_date 2014–2025).
   Casts types and selects only the columns needed downstream.
-  Excludes doc_ids in ml_intermediate.excluded_documents (patents the Part 5
-  embedding quality gate excluded entirely -- version-style title). Real
-  dependency on Part 5 having run: before it ever has, that source is an
-  empty relation and this filter is a no-op, not an error -- see
-  create_external_sources() and MEMORY.md.
+  Excludes doc_ids in ml_intermediate.excluded_documents (patents the quality
+  gate screened out entirely -- version-style title, or no usable title). That
+  list is produced UPSTREAM by the document_exclusions Dagster asset (it reads
+  the raw corpus, not this model), so this is an ordinary upstream dependency,
+  not a cycle. Before document_exclusions has ever run, create_external_sources()
+  resolves the source to an empty relation so the filter is a harmless no-op.
   Depends on: sources.patentsview_raw.patents_scoped, sources.ml_intermediate.excluded_documents
   Output: dev.duckdb staging.stg_patents_scoped
 */

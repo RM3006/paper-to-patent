@@ -25,7 +25,7 @@ import tempfile
 
 import numpy as np
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetKey, OpExecutionContext, asset
 from sklearn.feature_extraction.text import CountVectorizer
 
 from nexus.assets.ingest.openalex import delete_r2_object
@@ -183,7 +183,11 @@ def _write_df_to_r2(
 
 @asset(
     group_name="ml",
-    deps=["document_embeddings"],
+    deps=[
+        "document_embeddings",
+        AssetKey(["marts", "dim_paper"]),
+        AssetKey(["marts", "dim_patent"]),
+    ],
     description=(
         "UMAP (2D, cosine, n_neighbors=15, min_dist=0.1) + HDBSCAN (min_cluster_size=50) "
         "over all scope document embeddings. "
@@ -355,7 +359,7 @@ def document_clusters(
     # Load original texts for c-TF-IDF
     dev_con = connect_warehouse()
     try:
-        corpus, _excluded = load_corpus(dev_con)
+        corpus = load_corpus(dev_con)
     finally:
         dev_con.close()
     id_to_text = {d["doc_id"]: d["text"] for d in corpus}

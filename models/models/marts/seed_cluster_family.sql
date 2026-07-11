@@ -60,7 +60,7 @@
       so a missing row would silently drop that cluster from every family
       total. 'mixed' rows are included but excluded from the UI headline charts.
 
-  Depends on: fact_patent_filing, dim_paper, dim_technology_cluster
+  Depends on: fact_patent_filing, fact_document_cluster, dim_paper, dim_technology_cluster
   Output: dev.duckdb main_marts.seed_cluster_family
 */
 
@@ -97,18 +97,23 @@ patent_votes as (
 
 -- Paper-side votes: one per paper. T10502 -> neuromorphic_in_memory is
 -- unambiguous at the 3-way grain; the else keeps the expression total.
+-- cluster_id comes from the bridge fact_document_cluster (one row per doc), not
+-- from dim_paper -- the dim no longer carries cluster_id (that denormalisation
+-- was the dim->clusters->dim cycle; see dim_paper.sql).
 paper_votes as (
     select
-        cluster_id,
-        case primary_topic_id
+        fdc.cluster_id,
+        case dp.primary_topic_id
             when 'https://openalex.org/T11338' then 'euv'
             when 'https://openalex.org/T11429' then 'silicon_photonics'
             when 'https://openalex.org/T10299' then 'silicon_photonics'
             when 'https://openalex.org/T10502' then 'neuromorphic_in_memory'
             else 'mixed'
         end as family_vote
-    from {{ ref('dim_paper') }}
-    where cluster_id is not null and cluster_id != 'c_noise'
+    from {{ ref('dim_paper') }} dp
+    inner join {{ ref('fact_document_cluster') }} fdc
+        on fdc.doc_id = dp.work_id and fdc.doc_type = 'paper'
+    where fdc.cluster_id is not null and fdc.cluster_id != 'c_noise'
 ),
 
 all_votes as (
