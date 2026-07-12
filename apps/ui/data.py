@@ -156,6 +156,28 @@ def load_unattributed_counts() -> dict[str, int]:
 
 
 @st.cache_data(ttl=3600)
+def load_unclustered_counts() -> dict[str, int]:
+    """Patents/papers whose cluster_id is HDBSCAN's noise bucket (c_noise) --
+    no distinct technology cluster formed around them. Excluded from the
+    Technology Landscape map and every other cluster-level surface rather
+    than force-fit into a cluster; disclosed on the Map page footer with a
+    live count instead of silently dropped.
+    """
+    df = _query("""
+        SELECT
+            (SELECT COUNT(DISTINCT patent_id) FROM main_marts.fact_patent_filing
+             WHERE cluster_id = 'c_noise') AS unclustered_patents,
+            (SELECT COUNT(DISTINCT work_id) FROM main_marts.fact_publication
+             WHERE cluster_id = 'c_noise') AS unclustered_papers
+    """)
+    row = df.row(0, named=True)
+    return {
+        "unclustered_patents": int(row["unclustered_patents"] or 0),
+        "unclustered_papers": int(row["unclustered_papers"] or 0),
+    }
+
+
+@st.cache_data(ttl=3600)
 def load_cluster_bubble() -> pl.DataFrame:
     """All non-noise clusters with paper/patent counts and citation lag, for the bubble chart."""
     return _query("""

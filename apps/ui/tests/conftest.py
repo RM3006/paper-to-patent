@@ -117,7 +117,8 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
             ('p2', 'org_b', 'euv', 'c1'),
             ('p3', 'org_a', NULL, 'c1'),
             ('p4', 'org_b', NULL, 'c2'),
-            ('p5', 'org_a', 'lasers', 'c3')
+            ('p5', 'org_a', 'lasers', 'c3'),
+            ('p6', 'org_a', NULL, 'c_noise')
     """)
 
     con.execute("""
@@ -129,7 +130,8 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         INSERT INTO main_marts.fact_publication VALUES
             ('w1', 'org_a', 'euv', 'c1'),
             ('w2', 'org_a', NULL, 'c1'),
-            ('w3', 'org_b', NULL, 'c2')
+            ('w3', 'org_b', NULL, 'c2'),
+            ('w4', 'org_a', NULL, 'c_noise')
     """)
 
     con.execute("""

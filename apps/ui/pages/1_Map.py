@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
-from data import load_cluster_bubble, load_cluster_card, load_top_orgs
+from data import load_cluster_bubble, load_cluster_card, load_top_orgs, load_unclustered_counts
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
@@ -68,7 +68,10 @@ st.markdown("""
 render_nav("Technology Landscape", filter_sidebar=True)
 render_tour_banner(1)
 
-FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed", "noise"]
+FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed"]
+# 'noise' (c_noise / HDBSCAN's no-cluster bucket) is deliberately not a filter
+# option here -- load_cluster_bubble() excludes c_noise entirely, so a chip for
+# it could never match a bubble. Its scale is disclosed in the footer instead.
 
 # ── Load ─────────────────────────────────────────────────────────────────────────────
 df_all = load_cluster_bubble()
@@ -413,11 +416,16 @@ _scope_label = (
     if _is_filtered
     else f"{len(df)} clusters across 3 technology families."
 )
+_unclustered = load_unclustered_counts()
 st.markdown(
     f"<span style='font-size:11px;color:#888888;'>"
     f"{_scope_label} "
     f"Lag: NPL-linked median where ≥20 citations; ~ prefix = cohort estimate (soft). "
-    f"Granted US patents only (PatentsView). Papers from OpenAlex (2012–2025)."
+    f"Granted US patents only (PatentsView). Papers from OpenAlex (2012–2025). "
+    f"{_unclustered['unclustered_patents']:,} granted US patents and "
+    f"{_unclustered['unclustered_papers']:,} research papers are in scope but don't appear "
+    f"on this map — HDBSCAN found no technology cluster densely-connected enough around "
+    f"them, so we don't force them into one. They remain part of the full corpus."
     f"</span>",
     unsafe_allow_html=True,
 )

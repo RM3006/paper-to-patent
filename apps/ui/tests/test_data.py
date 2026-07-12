@@ -44,8 +44,15 @@ def test_load_family_scorecard_orders_by_sort_order(fixture_db: None) -> None:
 
 
 def test_load_unattributed_counts_counts_distinct_null_family_docs(fixture_db: None) -> None:
+    # p3, p4, p6 have NULL family_id (p6 is also unclustered -- the two gaps
+    # are independent and can co-occur); w2, w3, w4 likewise on the paper side.
     counts = data_module.load_unattributed_counts()
-    assert counts == {"unattributed_patents": 2, "unattributed_papers": 2}
+    assert counts == {"unattributed_patents": 3, "unattributed_papers": 3}
+
+
+def test_load_unclustered_counts_counts_distinct_c_noise_docs(fixture_db: None) -> None:
+    counts = data_module.load_unclustered_counts()
+    assert counts == {"unclustered_patents": 1, "unclustered_papers": 1}  # p6; w4
 
 
 def test_load_dataset_totals_sums_all_families(fixture_db: None) -> None:
@@ -66,7 +73,7 @@ def test_load_dataset_totals_scoped_by_family(fixture_db: None) -> None:
 
 def test_load_dataset_totals_scoped_by_unattributed(fixture_db: None) -> None:
     totals = data_module.load_dataset_totals(family_ids=("unattributed",))
-    assert totals == {"total_papers": 2, "total_patents": 2}  # w2/w3; p3/p4
+    assert totals == {"total_papers": 3, "total_patents": 3}  # w2/w3/w4; p3/p4/p6
 
 
 def test_load_cluster_bubble_excludes_noise_and_coalesces_unmapped_cluster(
