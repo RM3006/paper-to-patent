@@ -18,13 +18,13 @@ class TourStep:
 
 TOUR_STEPS: list[TourStep] = [
     TourStep(
-        title="Three technology families powering AI hardware",
+        title="Five technology families powering AI hardware",
         narration=(
             "Each row is one technology family, from extreme-UV lithography that prints "
             "transistors smaller than a virus, to in-memory computing that eliminates "
             "the speed bottleneck between processor and memory. "
-            "The <strong>patent share</strong> tells you how much of the world's research "
-            "has been converted into US intellectual property. "
+            "The <strong>patent share</strong> tells you what fraction of all US patenting "
+            "activity in scope this family represents. "
             "The <strong>citation lag</strong> is the gap between a paper's publication date "
             "and the filing date of a US patent that references it: a traceable number "
             "extracted from real USPTO non-patent-literature citations, not an estimate."
@@ -48,7 +48,7 @@ TOUR_STEPS: list[TourStep] = [
     TourStep(
         title="Inside a technology family",
         narration=(
-            "Use the pills at the top to switch between the three technology families. "
+            "Use the pills at the top to switch between the five technology families. "
             "The metrics strip shows patent share, paper count, citation lag, and HHI "
             "(a concentration index measuring how few organisations dominate the IP). "
             "The leaderboards rank who files the most patents and publishes the most papers. "

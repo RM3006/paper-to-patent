@@ -635,7 +635,7 @@ Grain: `family_id` — one row per one of the **5 document-level families** (`eu
 | `family_id` | String | PK: `euv` / `lasers` / `si_photonics` / `neuromorphic` / `in_memory` |
 | `family_name`, `family_sort_order` | String, Integer | Display name and fixed ordering |
 | `n_papers`, `n_patents` | Integer | Distinct documents whose own `family_id` is this family |
-| `patent_share` | Float | `n_patents / (n_patents + n_papers)` |
+| `patent_share` | Float | `n_patents / (total n_patents across all 5 families)` (redefined 2026-07-12; was `n_patents / (n_patents + n_papers)`). This family's slice of the US patent pool — a composition ratio over patents alone, not a research-to-patent capture rate. Papers are not part of the formula. |
 | `n_research_orgs_sum`, `n_assignees_sum` | Integer | Exact distinct-org counts (paper side / patent side respectively) for this family. Column names kept for continuity with the prior cluster-rollup version, which was a cross-cluster approximation; this is now exact. |
 | `median_lag_years_weighted` | Float | TRUE median of `citation_lag_years` over every NPL-linked pair whose citing patent's own `family_id` is this family — not a weighted average of cluster medians, despite the legacy column name (kept to avoid a UI-wide rename mid-refactor). NULL when `total_npl_links < 20`. |
 | `total_npl_links` | Integer | Count of NPL-linked pairs backing `median_lag_years_weighted` |

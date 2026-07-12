@@ -24,6 +24,13 @@
   Claim: "5 technology families" front-door scorecard (papers, patents, research
   org / assignee breadth, median citation lag). All US-patent-only; stated in UI.
 
+  patent_share = this family's n_patents / total n_patents across all 5 families
+  (2026-07: redefined from n_patents / (n_patents + n_papers)). It answers "what
+  slice of all US patenting activity does this family represent" -- a composition
+  question over the patent pool alone. It is NOT a research-to-patent conversion
+  or capture rate: papers do not appear in the formula, and a family can have a
+  high patent_share while still having low research capture, or vice versa.
+
   Documents with no resolvable family_id (patents whose PRIMARY CPC is off the
   six scope subclasses -- they entered scope via a secondary code; papers whose
   T10502 neuromorphic/in-memory keyword tiebreak matched neither pattern) are
@@ -49,6 +56,14 @@ patent_counts as (
     from {{ ref('fact_patent_filing') }}
     where family_id is not null
     group by 1
+),
+
+-- Denominator for patent_share: total US patents across all 5 families (the
+-- disclosed "unattributed" bucket is intentionally excluded -- it is never
+-- redistributed into any family-level ratio, see module docstring).
+patent_totals as (
+    select sum(n_patents) as total_patents
+    from patent_counts
 ),
 
 paper_counts as (
@@ -106,10 +121,12 @@ select
     fm.family_sort_order,
     coalesce(pc.n_papers, 0)                          as n_papers,
     coalesce(ptc.n_patents, 0)                         as n_patents,
-    -- patent density: patents per document (higher = more IP-intensive relative to research)
+    -- this family's share of all US patents in scope (across the 5 families) --
+    -- a slice of the patent pool, not a claim about how much research got
+    -- captured as IP. Papers do not appear in this ratio at all.
     round(
         cast(coalesce(ptc.n_patents, 0) as double)
-        / nullif(coalesce(ptc.n_patents, 0) + coalesce(pc.n_papers, 0), 0),
+        / nullif(pt.total_patents, 0),
         3
     )                                                   as patent_share,
     coalesce(pob.n_research_orgs, 0)                   as n_research_orgs_sum,
@@ -125,5 +142,6 @@ left join patent_counts      ptc on ptc.family_id = fm.family_id
 left join paper_org_breadth  pob on pob.family_id = fm.family_id
 left join patent_org_breadth paob on paob.family_id = fm.family_id
 left join npl_lag            nl  on nl.family_id  = fm.family_id
+cross join patent_totals     pt
 
 order by fm.family_sort_order

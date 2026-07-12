@@ -226,6 +226,11 @@ def load_family_metrics(
     mart_family, which has no cluster dimension and so can't answer a cluster-
     filtered query. Always returns exactly one row (a live aggregate, never a
     missing-row case); same true-median-lag / exact-org-count logic as mart_family.
+
+    patent_share = this scope's n_patents / total n_patents across all 5 families
+    (the denominator is always the unscoped, all-family total -- not narrowed by
+    the family/cluster filter -- matching mart_family's own definition exactly).
+    It is a slice of the US patent pool, not a research-to-patent capture rate.
     """
     cluster_filter = ""
     if cluster_ids:
@@ -251,6 +256,13 @@ def load_family_metrics(
                    COUNT(DISTINCT org_id)  AS n_research_orgs
             FROM papers
         ),
+        -- Denominator for patent_share: total US patents across all 5 families,
+        -- unscoped by the family_id/cluster filter above.
+        total_patents AS (
+            SELECT COUNT(DISTINCT patent_id) AS n
+            FROM main_marts.fact_patent_filing
+            WHERE family_id IS NOT NULL
+        ),
         npl_lag AS (
             SELECT
                 COUNT(*)                                AS npl_n_links,
@@ -263,7 +275,7 @@ def load_family_metrics(
             patent_agg.n_patents,
             ROUND(
                 CAST(patent_agg.n_patents AS DOUBLE)
-                / NULLIF(patent_agg.n_patents + paper_agg.n_papers, 0),
+                / NULLIF(total_patents.n, 0),
                 3
             )                                     AS patent_share,
             paper_agg.n_research_orgs             AS n_research_orgs_sum,
@@ -275,6 +287,7 @@ def load_family_metrics(
         FROM patent_agg
         CROSS JOIN paper_agg
         CROSS JOIN npl_lag
+        CROSS JOIN total_patents
         """,
         [family_id, family_id],
     )

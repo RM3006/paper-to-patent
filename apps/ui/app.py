@@ -2,7 +2,7 @@
 """
 The Chips Behind AI — front door (Surface 1).
 
-Three technology family rows (horizontal, full-width) each showing patent share,
+Five technology family rows (horizontal, full-width) each showing patent share,
 paper / patent volumes, top patenters, top researchers, and a family-colored
 Explore button. A guided tour (5 stops) narrates the key contrasts.
 Source marts: mart_family, mart_competitive, seed_cluster_family.
@@ -265,8 +265,8 @@ def main() -> None:
         "These are the 5 technology families powering the next generation of AI hardware — "
         "from the extreme-ultraviolet optics that print the world's smallest transistors to the "
         "brain-inspired chips that process data the way neurons do. "
-        "Each row shows how much of the global research has been captured as US patents, "
-        "who holds that IP, and how fast ideas travel: "
+        "Each row shows what share of all US patenting activity in this space the family "
+        "represents, who holds that IP, and how fast ideas travel: "
         "the <strong>citation lag</strong> is the gap between a paper's publication date "
         "and the filing date of a US patent that cites it."
         "</div>",

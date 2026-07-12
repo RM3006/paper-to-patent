@@ -514,8 +514,11 @@ models:
       map's cluster colouring. Documents with no resolvable family_id are not
       a row here — they're a disclosed "unattributed" bucket the UI computes
       separately at render time, never redistributed into one of the 5.
-      patent_share is the key signal for how IP-intensive a family is
-      relative to its research volume. median_lag_years_weighted is a TRUE
+      patent_share (2026-07: redefined from n_patents / (n_patents + n_papers)
+      to n_patents / total n_patents across all 5 families) is this family's
+      slice of the US patent pool — a composition question over patents alone,
+      not a research-to-patent capture rate; papers do not appear in the
+      formula. median_lag_years_weighted is a TRUE
       median over every NPL-linked citation in the family (not a weighted
       average of cluster medians, despite the legacy column name — kept
       unchanged for now to avoid a UI-wide rename mid-refactor). This is a
@@ -538,7 +541,7 @@ models:
         description: "Distinct patents whose own family_id is this family."
         tests: [not_null]
       - name: patent_share
-        description: "n_patents / (n_patents + n_papers). Higher means more IP-intensive relative to research volume for this family. Describes US patenting activity only — not a claim about global patenting."
+        description: "n_patents / (total n_patents across all 5 families). This family's share of all US patents in scope — not a research-to-patent capture rate; papers are not part of the formula. Describes US patenting activity only — not a claim about global patenting."
       - name: n_research_orgs_sum
         description: "Exact count of distinct organisations with >=1 paper whose own family_id is this family. (Column name kept for continuity with the prior cluster-rollup version, which was an approximation; this is now exact — there is no cluster to cross-dedup across.)"
       - name: n_assignees_sum

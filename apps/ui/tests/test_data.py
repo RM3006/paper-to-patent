@@ -113,15 +113,26 @@ def test_load_family_metrics_matches_manual_counts_and_applies_lag_floor(
     assert m["n_research_orgs_sum"] == 1  # org_a (paper side)
     assert m["total_npl_links"] == 2
     assert m["median_lag_years_weighted"] is None  # 2 links < the 20-link floor
+    # patent_share = family n_patents / total n_patents across all families.
+    # p1, p2 are the only two family-attributed patents in the fixture (p3, p4
+    # are NULL family_id, excluded from the denominator too) -- so euv holds
+    # the entire pool: 2/2 = 1.0.
+    assert m["patent_share"] == 1.0
 
 
 def test_load_family_metrics_scopes_to_cluster_filter(fixture_db: None) -> None:
     m_c1 = data_module.load_family_metrics("euv", cluster_ids=("c1",)).row(0, named=True)
     assert m_c1["n_patents"] == 2  # both euv patents are in c1
+    # Numerator narrows to the cluster filter, but the denominator (total
+    # patents across all families) stays unscoped -- still 2/2 = 1.0.
+    assert m_c1["patent_share"] == 1.0
 
     m_c2 = data_module.load_family_metrics("euv", cluster_ids=("c2",)).row(0, named=True)
     assert m_c2["n_patents"] == 0  # c2 has no euv-family patents
     assert m_c2["n_papers"] == 0
+    # Numerator is 0, but the denominator is still the unscoped total (2) --
+    # 0/2 = 0.0, not NULL.
+    assert m_c2["patent_share"] == 0.0
 
 
 def test_load_family_top_orgs_ranks_top_three_and_excludes_unresolved(fixture_db: None) -> None:
