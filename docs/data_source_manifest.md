@@ -94,6 +94,41 @@ The build machine uses the **read-write** R2 key and a read-write MotherDuck tok
 
 ---
 
+## 4a. External reference — sizing the US-only lens (not ingested)
+
+Not a pipeline source. Cited only to quantify the US-only patent-coverage limitation disclosed in `README.md`, `ARCHITECTURE.md` (Known limitations), `docs/workflow.md` (weakness #4), and the UI methodology footer.
+
+| Metric | Value | Source |
+|---|---|---|
+| Worldwide patent applications, 2024 | 3.7 million | WIPO, *World Intellectual Property Indicators 2025: Highlights*, accessed 2026-07-12 |
+| USPTO applications, 2024 | 603,194 | same |
+| USPTO share of world total | ≈16% (603,194 ÷ 3.7M) | derived — straight division of the two figures above, not a corpus-computed metric |
+| CNIPA (China) share of world total, 2024 | 49.1% | same report |
+
+**The offices this project cannot see at all, ranked by 2024 filing volume** (WIPO top-5, same report):
+
+| Office | Country/region | 2024 applications | Share of world | In our data? |
+|---|---|---|---|---|
+| CNIPA | China | 1.8 million | 49.1% | **No** |
+| USPTO | United States | 603,194 | ≈16% | Yes (our only source) |
+| JPO | Japan | 306,855 | ≈8% | **No** |
+| KIPO | South Korea | 246,245 | ≈7% | **No** |
+| EPO | Europe (regional) | 199,402 | ≈5% | **No** |
+
+These five offices together account for 85.5% of world filings. **Four of the five — including the single largest, CNIPA — are entirely absent from this project.** For semiconductors specifically this is not an abstract gap: ASML (EUV lithography) files primarily at the EPO; TSMC, Samsung, and SK Hynix primarily at KIPO/their home offices; Tokyo Electron, Canon, and Nikon primarily at the JPO. Naming these players is deliberate — it converts "US-only" from an abstract disclaimer into a concrete list of who the map cannot rank fairly.
+
+Source: <https://www.wipo.int/web-publications/world-intellectual-property-indicators-2025-highlights/en/patents-highlights.html>
+
+**Why this is exempt from CLAUDE.md rule 13** ("never hard-code metrics prone to change on every run"): these figures change on WIPO's annual publication cadence, not on our pipeline's runs — they are external, dated, cited constants, not corpus-derived statistics.
+
+**Why ≈16% is a conservative *upper bound* for our specific domain:** semiconductor patenting is more non-US-concentrated than the all-technology average (ASML/EPO, TSMC/Samsung/SK Hynix, the Japanese lithography and tool makers). No free CPC-level worldwide breakdown was found, so the all-technology figure is what's cited — but the true US-only share for our four CPC families is plausibly lower than 16%, not higher.
+
+**Refresh cadence:** WIPI publishes annually (~November). Re-verify these figures against the next edition before the ~2026 numbers go stale in visible copy.
+
+**What closing this gap would take:** see `ROADMAP.md` → *Beyond v1* #2 for the v2 design sketch (source options, classification-coverage caveats per office, and why the citation-lag metric likely would not extend cleanly to non-US patents).
+
+---
+
 ## 5. Part 2 row-count verification queries
 
 Run these after materializing the PatentsView assets to verify counts. The DuckDB R2 secret must be configured (see section 3).
