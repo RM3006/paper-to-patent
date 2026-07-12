@@ -49,11 +49,13 @@ TOUR_STEPS: list[TourStep] = [
         title="Inside a technology family",
         narration=(
             "Use the pills at the top to switch between the five technology families. "
-            "The metrics strip shows patent share, paper count, citation lag, and HHI "
-            "(a concentration index measuring how few organisations dominate the IP). "
+            "The metrics strip shows patent share, citation lag, granted US patents, "
+            "and research papers. "
             "The leaderboards rank who files the most patents and publishes the most papers. "
             "The velocity chart shows how filing activity has shifted year by year. "
-            "At the bottom, the cluster table breaks the family into its sub-topics."
+            "At the bottom, the cluster table breaks the family into its sub-topics, each "
+            "with its own HHI (a concentration index measuring how few organisations "
+            "dominate that cluster's patents)."
         ),
         page_file="pages/2_Family.py",
     ),
