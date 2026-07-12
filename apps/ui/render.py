@@ -10,7 +10,16 @@ from streamlit_searchbox import StyleOverrides, st_searchbox
 _FILTER_SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
 FAMILY_COLORS: dict[str, str] = {
-    "euv":                    "#3a4a6b",  # deep navy — editorial "cool technical" palette
+    # 5-way document-level family (each paper/patent's own direct family --
+    # Overview, Family Deepdive, Organisation Profile).
+    "euv":          "#3a4a6b",  # deep navy — editorial "cool technical" palette
+    "lasers":       "#4a7f96",  # darker steel blue — shade of si_photonics
+    "si_photonics": "#5a8fa8",  # steel blue
+    "neuromorphic": "#7a6c91",  # slate purple
+    "in_memory":    "#5f4f75",  # darker slate purple — shade of neuromorphic
+    # 3-way cluster-label family (Technology Landscape map only -- a cluster's
+    # majority-vote display label; see seed_cluster_family.sql for why clusters
+    # stay 3-way while documents are 5-way).
     "silicon_photonics":      "#5a8fa8",  # steel blue (was si_photonics; now includes lasers)
     "neuromorphic_in_memory": "#7a6c91",  # slate purple (was neuromorphic; now includes in_memory)
     "mixed":                  "#94a3b8",  # slate — muted, cross-family / no clear majority
@@ -18,7 +27,14 @@ FAMILY_COLORS: dict[str, str] = {
 }
 
 FAMILY_LABELS: dict[str, str] = {
-    "euv":                    "EUV Lithography",
+    # 5-way document-level family.
+    "euv":          "EUV Lithography",
+    "lasers":       "Lasers",
+    "si_photonics": "Silicon Photonics",
+    "neuromorphic": "Neuromorphic Computing",
+    "in_memory":    "In-Memory Compute",
+    "unattributed": "Unattributed",
+    # 3-way cluster-label family (Technology Landscape map only).
     "silicon_photonics":      "Silicon Photonics & Lasers",
     "neuromorphic_in_memory": "Neuromorphic & In-Memory Compute",
     "mixed":                  "Mixed",
@@ -243,7 +259,7 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
             f"The Chips Behind AI</div>"
             f"<div style='color:#888888;font-size:0.9rem;'>"
             f"Tracing global semiconductor research papers to US patents "
-            f"across 3 technology families · 2012–2025"
+            f"across 5 technology families · 2012–2025"
             f"</div>",
             unsafe_allow_html=True,
         )

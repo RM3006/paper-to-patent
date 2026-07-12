@@ -579,7 +579,7 @@ Grain: `(cluster_id, year)`. Pure annual time series — paper and patent counts
 
 **`mart_competitive`** (MotherDuck: `main_marts.mart_competitive`)
 
-Grain: `(cluster_id, side, org_id_key)`. *(2026-06-26 figures: 8,216 patent-side rows + 62,963 paper-side rows across 248 / 284 clusters. Current, 2026-07-04: 7,491 patent-side rows + 60,949 paper-side rows.)*
+Grain: `(cluster_id, side, org_id_key, family_id_key)` — widened 2026-07-12 to add the document-level family dimension (previously `(cluster_id, side, org_id_key)`).
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -587,13 +587,15 @@ Grain: `(cluster_id, side, org_id_key)`. *(2026-06-26 figures: 8,216 patent-side
 | `side` | String | `'patent'` or `'paper'` |
 | `org_id_key` | String | `coalesce(org_id, 'unresolved')` — never NULL |
 | `org_id` | String | Nullable canonical org ID |
+| `family_id_key` | String | `coalesce(family_id, 'unattributed')` — never NULL |
+| `family_id` | String | Nullable document-level family (5-way: `euv`/`lasers`/`si_photonics`/`neuromorphic`/`in_memory`) — each document's own direct family, not the cluster's label |
 | `canonical_name` | String | Human-readable org name; `'Unresolved'` for no-crosswalk orgs |
 | `match_method` | String | ER match method from crosswalk; `'none'` for unresolved |
 | `confidence` | String | ER confidence from crosswalk; `'low'` for unresolved |
-| `doc_count` | Integer | Distinct patents (patent side) or distinct papers (paper side) for this org+cluster |
-| `share` | Float | `doc_count / cluster_total`. Paper-side shares sum to >100% per cluster (co-attribution, not partitioned). Each individual org's share is in [0, 1]. |
-| `cluster_total` | Integer | Distinct documents in this cluster for this side |
-| `rank_in_cluster` | Integer | Rank by `doc_count` desc within `(cluster_id, side)` |
+| `doc_count` | Integer | Distinct patents (patent side) or distinct papers (paper side) for this org+cluster+family slice |
+| `share` | Float | `doc_count / cluster_total` — denominator is the WHOLE cluster (all families combined), unaffected by the family split. Paper-side shares sum to >100% per cluster (co-attribution, not partitioned). Each individual row's share is in [0, 1]. |
+| `cluster_total` | Integer | Distinct documents in this cluster for this side (all families combined) |
+| `rank_in_cluster` | Integer | Rank by the org's TOTAL `doc_count` across all its family slices within `(cluster_id, side)` — the same value repeats on every family-sliced row belonging to that org, not a per-family rank |
 
 **`mart_gap`** (MotherDuck: `main_marts.mart_gap`)
 
@@ -626,15 +628,14 @@ HHI methodology: primary assignee = `assignee_sequence = 0` preferred; patents w
 
 **`mart_family`** (MotherDuck: `main_marts.mart_family`)
 
-Grain: `family_id` — one row per one of the **3** headline families (`euv` / `silicon_photonics` / `neuromorphic_in_memory`; see the two-tier family tagging note in ARCHITECTURE.md §Data model). Aggregates `mart_gap` via `seed_cluster_family` for the map/cluster-browsing story — **not** the source of truth for per-document counts (those come from `fact_patent_filing.family_id` / `fact_publication.family_id` directly). Originally a 5-way split (adding `lasers` and splitting `in_memory` from `neuromorphic`); reverted 2026-07-04 after purity measurement showed the two extra seams were not real boundaries — see ARCHITECTURE.md and `MEMORY.md` for the full rationale.
+Grain: `family_id` — one row per one of the **5 document-level families** (`euv` / `lasers` / `si_photonics` / `neuromorphic` / `in_memory`; see the two-tier family tagging note in ARCHITECTURE.md §Data model). Rebuilt 2026-07-12 to aggregate `fact_patent_filing` / `fact_publication` directly by their own `family_id` — the authoritative doc-level column — instead of `mart_gap` via `seed_cluster_family` (the prior cluster-label basis under-counted every family; see ARCHITECTURE.md and `MEMORY.md` for the full rationale). No `mixed` row: documents with no resolvable `family_id` are not a row here — the UI discloses that count separately (`load_unattributed_counts`) rather than folding it into one of the 5.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `family_id` | String | PK: `euv` / `silicon_photonics` / `neuromorphic_in_memory` |
+| `family_id` | String | PK: `euv` / `lasers` / `si_photonics` / `neuromorphic` / `in_memory` |
 | `family_name`, `family_sort_order` | String, Integer | Display name and fixed ordering |
-| `n_papers`, `n_patents` | Integer | Summed from `mart_gap` across the family's clusters |
+| `n_papers`, `n_patents` | Integer | Distinct documents whose own `family_id` is this family |
 | `patent_share` | Float | `n_patents / (n_patents + n_papers)` |
-| `median_lag_years_weighted` | Float | NPL-linked citation lag, weighted by `npl_n_links` per contributing cluster |
-| `top_assignee_name`, `top_researcher_name` | String | Mode of each cluster's #1-ranked org within the family — an approximation; the UI's actual leaderboards use a `SUM(doc_count)` query against `mart_competitive` instead (see `apps/ui/data.py::load_family_top_orgs`), which is more accurate than this column |
-
-> **Verified 2026-07-04**: EUV — 5,830 papers, 5,230 patents, 47.3% patent share, 4.24 yr weighted lag. Silicon Photonics — 47,595 papers, 3,362 patents, 6.6% share, 3.76 yr lag. Neuromorphic & In-Memory — 31,570 papers, 13,112 patents, 29.3% share, 2.76 yr lag.
+| `n_research_orgs_sum`, `n_assignees_sum` | Integer | Exact distinct-org counts (paper side / patent side respectively) for this family. Column names kept for continuity with the prior cluster-rollup version, which was a cross-cluster approximation; this is now exact. |
+| `median_lag_years_weighted` | Float | TRUE median of `citation_lag_years` over every NPL-linked pair whose citing patent's own `family_id` is this family — not a weighted average of cluster medians, despite the legacy column name (kept to avoid a UI-wide rename mid-refactor). NULL when `total_npl_links < 20`. |
+| `total_npl_links` | Integer | Count of NPL-linked pairs backing `median_lag_years_weighted` |

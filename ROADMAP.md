@@ -58,6 +58,19 @@ change is needed on the paper side. See `docs/data_source_manifest.md` (patent s
 subgroup (`G03F7/2004`, `G03F7/2023`, …). The list mixes CPC subgroups (`G06N3/049`) and
 main groups (`G11C13/00`, `H10N70/00`).
 
+**Two family grains coexist (revised 2026-07-12):** the 3-row table above is the **cluster-
+label grain** — a technology cluster's majority-vote display label (`seed_cluster_family`),
+used only by the Technology Landscape map's colouring, plus a "mixed" bucket for clusters
+with no clear majority. Every document additionally carries its own **5-way document-level
+family** (`euv` / `lasers` / `si_photonics` / `neuromorphic` / `in_memory`) derived directly
+from its own primary CPC code (patents) or primary topic ID + a title/abstract keyword
+tiebreak for the neuromorphic/in-memory split (papers) — independent of the cluster it
+algorithmically landed in. This is the authoritative, finer grain for any family-level count
+(patent share, leaderboards, citation lag): see `fact_patent_filing.sql` / `fact_publication.sql`
+/ `mart_family.sql`. It backs the Overview scorecard (5 cards), Family Deepdive, and
+Organisation Profile; the Technology Landscape map alone stays on the 3-way cluster-label
+grain, since a cluster is inherently a group of documents that need not share one family.
+
 Year window:
 - Papers (OpenAlex `publication_date`): **2012–2025** — starts at the deep-learning inflection; captures the full AI hardware research wave.
 - Patents (PatentsView `filing_date`): **2014–2025** — two-year lag from paper window; patents citing 2012+ papers appear from ~2014.

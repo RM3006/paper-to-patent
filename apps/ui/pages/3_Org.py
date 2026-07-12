@@ -7,8 +7,12 @@ The NPL citation bridge sits between them, showing which science feeds into this
 patents and which orgs build on its research.
 
 Entry: single searchable dropdown on this page; defaults to TSMC.
+Document-level (5-way) family grain throughout, multi-select: euv / lasers /
+si_photonics / neuromorphic / in_memory / unattributed (documents with no
+resolvable family are a disclosed, selectable bucket, not hidden) -- not the
+cluster label (that stays 3-way, Technology Landscape only).
 Source: dim_organization, fact_patent_filing, fact_publication, fact_npl_link,
-        mart_competitive, seed_cluster_family.
+        mart_competitive.
 """
 from __future__ import annotations
 
@@ -38,7 +42,13 @@ from data import (
     load_org_top_research_clusters,
     search_orgs_ilike,
 )
-from render import FAMILY_COLORS, render_chip_multiselect, render_nav, render_tour_banner
+from render import (
+    FAMILY_COLORS,
+    FAMILY_LABELS,
+    render_chip_multiselect,
+    render_nav,
+    render_tour_banner,
+)
 
 _SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
@@ -167,12 +177,13 @@ match_meth = profile["primary_match_method"]
 confidence = profile["primary_confidence"]
 
 # ── Sidebar filters — scoped to this org's own activity ───────────────────────
+# family_id here is mart_competitive's own family_id_key (never NULL; 'unattributed'
+# is a real, selectable option -- see load_org_active_scope). Sorted by display
+# label, matching render.FAMILY_LABELS.
 _scope_df = load_org_active_scope(selected_org_id)
-_family_scope = [
-    (r["family_name"], r["family_id"])
-    for r in _scope_df.filter(pl.col("family_id").is_not_null())
-    .select(["family_id", "family_name"]).unique().sort("family_name").to_dicts()
-]
+_family_scope = sorted(
+    {(FAMILY_LABELS.get(fid, fid), fid) for fid in _scope_df["family_id"].to_list()}
+)
 
 
 def _drop_org_clusters_of_family(fid: str) -> None:
@@ -321,7 +332,7 @@ with col_patent:
     else:
         # Patents by family — descending by count
         fam_ids    = output_by_family["family_id"].to_list()
-        fam_names  = output_by_family["family_name"].to_list()
+        fam_names  = [FAMILY_LABELS.get(fid, fid) for fid in fam_ids]
         n_pats     = [int(v) for v in output_by_family["n_patents"].to_list()]
         bar_colors = [FAMILY_COLORS.get(fid, "#888888") for fid in fam_ids]
 
@@ -406,7 +417,7 @@ with col_research:
     else:
         # Papers by family — descending by count
         pf_ids    = paper_by_family["family_id"].to_list()
-        pf_names  = paper_by_family["family_name"].to_list()
+        pf_names  = [FAMILY_LABELS.get(fid, fid) for fid in pf_ids]
         pf_counts = [int(v) for v in paper_by_family["n_papers"].to_list()]
         pf_colors = [FAMILY_COLORS.get(fid, "#888888") for fid in pf_ids]
 
@@ -661,7 +672,7 @@ if has_intake or has_influence:
 # ── Footer ────────────────────────────────────────────────────────────────────
 _pct_scope_note = (
     "the selected filter scope" if is_filtered
-    else "the total across all three technology families"
+    else "the total across all five technology families"
 )
 st.markdown(
     "<span style='font-size:11px;color:#888888;'>"
