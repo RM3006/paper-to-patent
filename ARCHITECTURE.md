@@ -223,7 +223,7 @@ A star schema in the marts layer. Conformed dimensions are shared across the fac
 
 These are disclosed in the UI and README, not hidden:
 
-- **US-only patents.** PatentsView is US filings; for semiconductors especially, much of the world's patenting happens elsewhere. The honest framing is "global research vs *US* commercialisation"; the global fix is a v2 item.
+- **US-only patents.** PatentsView is US filings. The USPTO received roughly 1 in 6 (≈16%) of the world's 3.7M patent applications in 2024, and China's CNIPA alone received nearly half (WIPO, *World Intellectual Property Indicators 2025* — see `docs/data_source_manifest.md` §4a); for semiconductors especially, actual coverage of our domain is plausibly lower still. The honest framing is "global research vs *US* commercialisation"; ingesting and merging non-US patent data is a v2 item.
 - **English-only papers.** The corpus filters to English abstracts, biasing the research side toward anglophone output.
 - **Entity-resolution long tail.** The head of the organisation distribution is well resolved; the tail (subsidiaries, JVs, small entities) is necessarily fuzzier, and the chosen rules are documented rather than presented as solved.
 - **Citation lag ≠ R&D-to-market time.** The paper-publication-to-patent-filing interval is a citation lag, not a commercialisation timeline. Examiner-added citations can reference prior art being distinguished, not built upon. The metric is precisely defined and disclosed; "lead time" language is never used.

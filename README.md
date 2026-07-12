@@ -10,7 +10,7 @@ We ingest global scientific output (OpenAlex) and US patents (PatentsView bulk d
 
 A curious teenager should grasp the map in 90 seconds. An R&D strategist or VC analyst should respect the linkage methodology.
 
-> **Scope**: US patents only (PatentsView). English-language papers only (OpenAlex). Citation lag is publication → filing date — it is not R&D-to-market time and does not imply causation.
+> **Scope**: US patents only (PatentsView) — the USPTO received roughly 1 in 6 (≈16%) of the world's 3.7M patent applications in 2024, and China's CNIPA alone received nearly half (WIPO, *World Intellectual Property Indicators 2025*; see `docs/data_source_manifest.md` §4a); treat "who captures the IP" and concentration claims here as a US-filing view, not a global one. English-language papers only (OpenAlex). Citation lag is publication → filing date — it is not R&D-to-market time and does not imply causation.
 
 ---
 

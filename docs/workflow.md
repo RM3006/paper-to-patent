@@ -429,10 +429,20 @@ fixtures. Docs are updated **in the same commit** as the change that triggers th
    removed 2026-07-10). So the entire UMAP step exists **only** to feed HDBSCAN — a lot of
    non-deterministic machinery for a partition, with the spatial output discarded.
    Defensible, but worth naming.
-4. **US-only + English-only is a structural, not incidental, limitation.** For
-   semiconductors especially, most patenting is non-US. The framing ("global research vs
-   *US* commercialisation") is honest, but it caps how strong any "who captures the IP" claim
-   can be. A v2 data-coverage problem, not a code problem.
+4. **US-only + English-only is a structural, not incidental, limitation — quantified &
+   disclosed (2026-07-12).** For semiconductors especially, most patenting is non-US. The
+   framing ("global research vs *US* commercialisation") is honest, but it caps how strong any
+   "who captures the IP" claim can be. The blind spot is no longer only qualitative: WIPO's
+   *World Intellectual Property Indicators 2025* puts the USPTO at ≈16% of worldwide patent
+   applications in 2024, with China's CNIPA alone at 49.1% — cited in
+   `docs/data_source_manifest.md` §4a and surfaced in the UI methodology footer, `README.md`,
+   and `ARCHITECTURE.md`. **Residual:** this is the all-technology ratio, not a
+   semiconductor-specific one (no free CPC-level worldwide breakdown exists); the true US-only
+   share for our four CPC families is plausibly *lower* than 16%, so the cited figure is a
+   conservative upper bound, not a precise domain measurement. Actually ingesting and merging
+   non-US patent data — assessed feasible via patent families + pre-harmonized assignee sources
+   (Google Patents Public Data or PATSTAT/OECD HAN), but a multi-day v2 project, not a docs
+   change — remains open.
 5. **No versioned history of served snapshots.** Each prod build overwrites MotherDuck
    (`CREATE OR REPLACE`); the immutable R2 gold layer was traded away for a single source of
    truth. Fine for a point-in-time portfolio piece, but there's no time-travel on the served
