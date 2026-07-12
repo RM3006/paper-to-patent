@@ -4,10 +4,16 @@ Family Detail — Surface 2.
 
 Header card, 4 metric cards, scrollable leaderboards, velocity trend,
 and cluster breakdown table. Entered from Surface 1 "Explore family →"
-or via the sidebar family selector.
+or via the family pill switcher.
 
-Source marts: mart_family, mart_competitive, mart_velocity, mart_gap,
-              seed_cluster_family.
+Document-level (5-way) family grain throughout: euv / lasers / si_photonics /
+neuromorphic / in_memory, each document's own direct family -- not the cluster
+label (that stays 3-way, Technology Landscape only; see seed_cluster_family.sql).
+The family pill is a forced single-select; the cluster filter is optional and
+narrows within the selected family (docs in these clusters AND this family).
+
+Source: fact_patent_filing, fact_publication, fact_npl_link, mart_competitive,
+        mart_gap, dim_technology_cluster, dim_organization.
 """
 from __future__ import annotations
 
@@ -21,9 +27,10 @@ import polars as pl
 import streamlit as st
 
 from data import (
+    compute_grant_lag_cutoff_year,
     load_family_clusters,
+    load_family_metrics,
     load_family_org_leaderboard,
-    load_family_scorecard,
     load_family_velocity,
 )
 from render import (
@@ -61,23 +68,46 @@ st.markdown("""
 render_nav("Family Deepdive", filter_sidebar=True)
 render_tour_banner(2)
 
-_HEADLINE_FAMILIES = {k: v for k, v in FAMILY_LABELS.items() if k not in ("mixed", "noise")}
+# Explicit 5-way keys (document-level grain), not derived from FAMILY_LABELS.items() --
+# that dict also carries the 3-way cluster-label keys (Technology Landscape map only).
+# Insertion order in FAMILY_LABELS matches family_sort_order (1=euv .. 5=in_memory),
+# so the pill row below renders left-to-right in that order for free.
+_HEADLINE_FAMILIES = {
+    k: v for k, v in FAMILY_LABELS.items()
+    if k in ("euv", "lasers", "si_photonics", "neuromorphic", "in_memory")
+}
 
+# Same 5-way descriptions as app.py's Overview (duplicated there too -- pre-existing
+# pattern in this file, not deduplicated here to keep this change surgical).
 _FAMILY_DESC: dict[str, str] = {
     "euv": (
         "Extreme-UV optics that print transistors smaller than a virus — "
         "the bottleneck of the entire chip industry."
     ),
-    "silicon_photonics": (
-        "Moving data as light instead of electricity — from the on-chip lasers "
-        "that generate it to the silicon waveguides that route it — cutting "
-        "latency and power inside AI data centres."
+    "lasers": (
+        "On-chip lasers that generate the light signals for high-speed "
+        "optical data transmission."
     ),
-    "neuromorphic_in_memory": (
-        "Chips that compute the way neurons do and store data where they compute "
-        "it, trading raw clock speed for dramatic energy efficiency by skipping "
-        "the slow trip to memory."
+    "si_photonics": (
+        "Silicon waveguides and modulators that route light-encoded data "
+        "across a chip — cutting latency and power inside AI data centres."
     ),
+    "neuromorphic": (
+        "Chips that compute the way neurons do — spiking, event-driven "
+        "circuits trading raw clock speed for energy efficiency."
+    ),
+    "in_memory": (
+        "Memory that computes where data lives — resistive and phase-change "
+        "cells that skip the slow trip to a separate processor."
+    ),
+}
+
+# The Technology Landscape map still links here with its 3-way cluster-label id
+# (that page stays 3-way -- see seed_cluster_family.sql). Map it to a reasonable
+# 5-way landing family instead of falling back to euv for every non-EUV click.
+_LEGACY_FAMILY_MAP = {
+    "silicon_photonics": "si_photonics",
+    "neuromorphic_in_memory": "neuromorphic",
 }
 
 
@@ -92,21 +122,15 @@ family_id: str = (
     st.query_params.get("family")
     or st.session_state.get("selected_family", "euv")
 )
+family_id = _LEGACY_FAMILY_MAP.get(family_id, family_id)
 if family_id not in _HEADLINE_FAMILIES:
     family_id = "euv"
 
-# ── Load data ──────────────────────────────────────────────────────────────────
-scorecard_df = load_family_scorecard()
-family_row_df = scorecard_df.filter(pl.col("family_id") == family_id)
-if len(family_row_df) == 0:
-    st.error(f"No data found for family '{family_id}'.")
-    st.stop()
-
-frow         = family_row_df.row(0, named=True)
 family_color = FAMILY_COLORS.get(family_id, "#888888")
 family_name  = FAMILY_LABELS.get(family_id, family_id)
 family_desc  = _FAMILY_DESC.get(family_id, "")
 
+# ── Load data ──────────────────────────────────────────────────────────────────
 clusters = load_family_clusters(family_id)
 
 # Reset the cluster filter whenever the active family changes (pill switcher / query param).
@@ -129,6 +153,10 @@ with st.sidebar:
     )
 
 cluster_ids_filter = tuple(selected_clusters) if selected_clusters else None
+
+# frow's metrics are cluster-scoped when a cluster filter is active -- mart_family
+# has no cluster dimension, so this is a live-filtered query, not a mart read.
+frow = load_family_metrics(family_id, cluster_ids=cluster_ids_filter).row(0, named=True)
 
 pat_df = load_family_org_leaderboard(family_id, "patent", 50, cluster_ids=cluster_ids_filter)
 res_df = load_family_org_leaderboard(family_id, "paper", 50, cluster_ids=cluster_ids_filter)
@@ -175,17 +203,25 @@ lag       = frow["median_lag_years_weighted"]
 lag_str   = f"{lag:.1f} yr" if lag is not None else "—"
 n_patents = frow["n_patents"] or 0
 n_papers  = frow["n_papers"] or 0
+n_links   = frow["total_npl_links"] or 0
+lag_tooltip = (
+    f"Based on {n_links:,} NPL-linked citations"
+    if lag is not None
+    else "Fewer than 20 NPL-linked citations — not reportable"
+)
 
 m1, m2, m3, m4 = st.columns(4)
-for col, value, label in [
-    (m1, f"{pct:.0f}%",    "patent share"),
-    (m2, lag_str,           "citation lag"),
-    (m3, f"{n_patents:,}", "granted US patents"),
-    (m4, f"{n_papers:,}",  "research papers"),
+for col, value, label, tooltip in [
+    (m1, f"{pct:.0f}%",    "patent share", None),
+    (m2, lag_str,           "citation lag", lag_tooltip),
+    (m3, f"{n_patents:,}", "granted US patents", None),
+    (m4, f"{n_papers:,}",  "research papers", None),
 ]:
     with col:
+        _title_attr = f" title='{tooltip}'" if tooltip else ""
         st.markdown(
-            f"<div class='card card--metric' style='margin-bottom:1rem;--accent:{family_color};'>"
+            f"<div{_title_attr} class='card card--metric' "
+            f"style='margin-bottom:1rem;--accent:{family_color};'>"
             f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
             f"font-weight:800;line-height:1;'>{value}</div>"
             f"<div style='font-size:12px;color:#888888;margin-top:6px;"
@@ -193,6 +229,14 @@ for col, value, label in [
             f"</div>",
             unsafe_allow_html=True,
         )
+
+if selected_clusters:
+    st.markdown(
+        f"<div style='font-size:11px;color:#888888;margin-top:-0.6rem;margin-bottom:1rem;'>"
+        f"Scoped to {len(selected_clusters)} selected cluster"
+        f"{'s' if len(selected_clusters) != 1 else ''}.</div>",
+        unsafe_allow_html=True,
+    )
 
 # ── Bar chart builder ──────────────────────────────────────────────────────────
 def _bar_chart(df: pl.DataFrame, color: str) -> go.Figure:
@@ -270,9 +314,9 @@ if len(vel_df) > 0:
     patents = [int(v) for v in vel_df["patent_count"].to_list()]
     max_year = max(years)
 
-    _raw_lag = frow["median_lag_years_weighted"]
-    _provisional_years = max(1, round(float(_raw_lag))) if _raw_lag is not None else 3
-    cutoff = max_year - _provisional_years
+    _grant_lag = frow["avg_grant_lag_years"]
+    cutoff = compute_grant_lag_cutoff_year(max_year, _grant_lag)
+    _lag_str = f"{float(_grant_lag):.1f} yr" if _grant_lag is not None else "~2 yr"
 
     pat_solid = [p if y <= cutoff else None for y, p in zip(years, patents, strict=True)]
     pat_prov  = [p if y >= cutoff else None for y, p in zip(years, patents, strict=True)]
@@ -289,8 +333,8 @@ if len(vel_df) > 0:
         f"<div style='font-size:12px;color:#888888;margin-bottom:8px;'>"
         f"Annual research papers (by publication year) and granted US patents "
         f"(by filing year) in {family_name}{_vel_scope_note}. "
-        f"The shaded years are still moving "
-        f"through the grant pipeline and undercount real patenting — not a decline."
+        f"The shaded years are within this family's average USPTO grant lag "
+        f"({_lag_str}) and likely undercount real patenting — not a decline."
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -350,9 +394,11 @@ if len(_clusters_filtered) > 0:
     with _hdr_col:
         st.markdown(
             f"<div style='font-family:{_FONT};font-size:14px;font-weight:700;"
-            f"color:#111111;margin-bottom:4px;'>{count_label} in {family_name}</div>"
+            f"color:#111111;margin-bottom:4px;'>{count_label} touched by {family_name}</div>"
             f"<div style='font-size:12px;color:#888888;margin-bottom:10px;'>"
-            f"Sorted by number of patents. Hover over 'Lag (yr)' and 'HHI' columns for definitions."
+            f"Sorted by number of patents. A cluster can span more than one family — its "
+            f"Lag and HHI describe the cluster as a whole, not just this family's share of it. "
+            f"Hover over 'Lag (yr)' and 'HHI' columns for definitions."
             f"</div>",
             unsafe_allow_html=True,
         )

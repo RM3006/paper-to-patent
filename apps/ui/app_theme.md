@@ -47,17 +47,33 @@ These are **not** defined in `app.py`; they are imported from `render.py` and us
 
 ### Technology families
 
-Three headline families plus one muted "adjacent" slot. Used in the UMAP scatter, scorecard tiles, and family-detail leaderboards.
+Two grains coexist in `FAMILY_COLORS`/`FAMILY_LABELS` (revised 2026-07-12). The 5-way
+**document-level family** (each paper/patent's own direct family) is used on the Overview
+scorecard, Family Deepdive, and Organisation Profile. The 3-way **cluster-label family**
+(a cluster's majority-vote display label, `seed_cluster_family`) is used only on the
+Technology Landscape map, plus a muted "mixed" slot for clusters with no clear majority —
+see `seed_cluster_family.sql` for why clusters stay 3-way while documents are 5-way.
+
+**Document-level family (5-way):**
 
 | Family | `FAMILY_COLORS` key | HEX | RGB | Rationale |
 |---|---|---|---|---|
 | EUV Lithography | `"euv"` | `#3a4a6b` | `rgb(58, 74, 107)` | Deep navy — cool, technical, industrial |
-| Silicon Photonics & Lasers | `"silicon_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Steel blue — light through glass and silicon |
-| Neuromorphic & In-Memory Compute | `"neuromorphic_in_memory"` | `#7a6c91` | `rgb(122, 108, 145)` | Slate purple — neural/biological-digital bridge |
-| Adjacent / Out of Headline | `"adjacent"` | `#94a3b8` | `rgb(148, 163, 184)` | Slate — muted, not headline-worthy |
+| Lasers | `"lasers"` | `#4a7f96` | `rgb(74, 127, 150)` | Darker steel blue — shade of Silicon Photonics |
+| Silicon Photonics | `"si_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Steel blue — light through glass and silicon |
+| Neuromorphic Computing | `"neuromorphic"` | `#7a6c91` | `rgb(122, 108, 145)` | Slate purple — neural/biological-digital bridge |
+| In-Memory Compute | `"in_memory"` | `#5f4f75` | `rgb(95, 79, 117)` | Darker slate purple — shade of Neuromorphic |
+
+**Cluster-label family (3-way, Technology Landscape map only):**
+
+| Family | `FAMILY_COLORS` key | HEX | RGB | Rationale |
+|---|---|---|---|---|
+| Silicon Photonics & Lasers | `"silicon_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Same hue as document-level Silicon Photonics |
+| Neuromorphic & In-Memory Compute | `"neuromorphic_in_memory"` | `#7a6c91` | `rgb(122, 108, 145)` | Same hue as document-level Neuromorphic |
+| Mixed | `"mixed"` | `#94a3b8` | `rgb(148, 163, 184)` | Slate — muted, no single family dominates the cluster |
 | Frontier / Unclustered | `"noise"` | `#d1d5db` | `rgb(209, 213, 219)` | Light grey — unclustered / frontier documents |
 
-Constant: `render.FAMILY_COLORS: dict[str, str]` (keyed by `family_id` from `seed_cluster_family`).
+Constant: `render.FAMILY_COLORS: dict[str, str]`.
 
 ### Document type
 

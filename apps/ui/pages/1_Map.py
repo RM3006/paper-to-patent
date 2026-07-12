@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
-from data import load_cluster_bubble, load_cluster_card, load_top_orgs
+from data import load_cluster_bubble, load_cluster_card, load_top_orgs, load_unclustered_counts
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
@@ -68,7 +68,10 @@ st.markdown("""
 render_nav("Technology Landscape", filter_sidebar=True)
 render_tour_banner(1)
 
-FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed", "noise"]
+FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed"]
+# 'noise' (c_noise / HDBSCAN's no-cluster bucket) is deliberately not a filter
+# option here -- load_cluster_bubble() excludes c_noise entirely, so a chip for
+# it could never match a bubble. Its scale is disclosed in the footer instead.
 
 # ── Load ─────────────────────────────────────────────────────────────────────────────
 df_all = load_cluster_bubble()
@@ -156,7 +159,7 @@ for fid in FAMILY_ORDER:
     hover_texts: list[str] = []
     for row in rows:
         if row["npl_reportable"] and row["npl_median_lag_years"] is not None:
-            lag_str = f"{row['npl_median_lag_years']:.1f} yr"
+            lag_str = f"{row['npl_median_lag_years']:.1f} yr ({row['npl_n_links']:,} links)"
         elif row["cohort_lag_years"] is not None:
             lag_str = f"~{row['cohort_lag_years']:.1f} yr (cohort estimate)"
         else:
@@ -260,12 +263,19 @@ if selected_cluster_id:
         pct_papers_all     = n_papers  / total_papers   * 100
 
         lag = crow["npl_median_lag_years"]
+        n_links = crow["npl_n_links"] or 0
         if lag is not None and crow["npl_reportable"]:
             lag_str = f"{lag:.1f} yr"
+            lag_tooltip = f"Based on {n_links:,} NPL-linked citations"
         elif crow["cohort_lag_years"] is not None:
             lag_str = f"~{crow['cohort_lag_years']:.1f} yr"
+            lag_tooltip = (
+                "Soft cohort estimate (median filing year minus median publication year) — "
+                "fewer than 20 direct NPL-linked citations in this cluster"
+            )
         else:
             lag_str = "—"
+            lag_tooltip = "Fewer than 20 NPL-linked citations and no cohort estimate available"
 
         summary = (crow["summary_friendly"] or "")
 
@@ -293,17 +303,18 @@ if selected_cluster_id:
         # ── 6 metric cards ────────────────────────────────────────────────────────────
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         _metrics = [
-            (m1, f"{pct_patents_all:.1f}%",    "of all patents"),
-            (m2, f"{pct_patents_family:.1f}%", "patents in family"),
-            (m3, f"{n_patents:,}",             "US patents"),
-            (m4, f"{pct_papers_all:.1f}%",     "of all papers"),
-            (m5, f"{n_papers:,}",              "papers"),
-            (m6, lag_str,                      "citation lag"),
+            (m1, f"{pct_patents_all:.1f}%",    "of all patents", None),
+            (m2, f"{pct_patents_family:.1f}%", "patents in family", None),
+            (m3, f"{n_patents:,}",             "US patents", None),
+            (m4, f"{pct_papers_all:.1f}%",     "of all papers", None),
+            (m5, f"{n_papers:,}",              "papers", None),
+            (m6, lag_str,                      "citation lag", lag_tooltip),
         ]
-        for col, value, label in _metrics:
+        for col, value, label, tooltip in _metrics:
             with col:
+                _title_attr = f" title='{tooltip}'" if tooltip else ""
                 st.markdown(
-                    f"<div class='card card--metric' style='--accent:{family_color};'>"
+                    f"<div{_title_attr} class='card card--metric' style='--accent:{family_color};'>"
                     f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
                     f"font-weight:800;line-height:1;'>{value}</div>"
                     f"<div style='font-size:12px;color:#888888;margin-top:6px;"
@@ -413,11 +424,16 @@ _scope_label = (
     if _is_filtered
     else f"{len(df)} clusters across 3 technology families."
 )
+_unclustered = load_unclustered_counts()
 st.markdown(
     f"<span style='font-size:11px;color:#888888;'>"
     f"{_scope_label} "
     f"Lag: NPL-linked median where ≥20 citations; ~ prefix = cohort estimate (soft). "
-    f"Granted US patents only (PatentsView). Papers from OpenAlex (2012–2025)."
+    f"Granted US patents only (PatentsView). Papers from OpenAlex (2012–2025). "
+    f"{_unclustered['unclustered_patents']:,} granted US patents and "
+    f"{_unclustered['unclustered_papers']:,} research papers are in scope but don't appear "
+    f"on this map — HDBSCAN found no technology cluster densely-connected enough around "
+    f"them, so we don't force them into one. They remain part of the full corpus."
     f"</span>",
     unsafe_allow_html=True,
 )

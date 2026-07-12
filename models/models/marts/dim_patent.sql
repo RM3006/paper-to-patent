@@ -18,7 +18,9 @@ select
     p.patent_id,
     p.title,
     p.filing_date,
-    p.grant_date,   -- metadata only; never used for time metrics
+    p.grant_date,   -- metadata display + the narrow grant-lag exception (see
+                     -- CLAUDE.md rule 2 and mart_family.avg_grant_lag_years);
+                     -- never used to compute citation lag or R&D-velocity claims
     p.patent_type
 
 from {{ ref('stg_patents_scoped') }} p

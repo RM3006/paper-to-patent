@@ -289,15 +289,17 @@ models:
   - name: mart_competitive
     description: >
       Who's active where: one row per (technology cluster, side,
-      organisation), where side is 'patent' (patents assigned to that
-      organisation) or 'paper' (papers attributed to that organisation). A
-      paper with several co-authoring organisations counts once per
-      organisation, so paper-side shares can add up to more than 100% within
-      a cluster — that reflects shared authorship, not an error. This is a
-      descriptive count of who shows up on each side of a cluster, not
-      evidence of a direct link between an organisation's own papers and its
-      own patents. Organisations that couldn't be resolved are still
-      included, labelled 'Unresolved', rather than silently dropped.
+      organisation, document-level technology family), where side is
+      'patent' (patents assigned to that organisation) or 'paper' (papers
+      attributed to that organisation). A paper with several co-authoring
+      organisations counts once per organisation, so paper-side shares can
+      add up to more than 100% within a cluster — that reflects shared
+      authorship, not an error. This is a descriptive count of who shows up
+      on each side of a cluster, not evidence of a direct link between an
+      organisation's own papers and its own patents. Organisations that
+      couldn't be resolved are still included, labelled 'Unresolved', rather
+      than silently dropped — the same applies to family_id_key for
+      documents whose own family couldn't be attributed.
     columns:
       - name: cluster_id
         description: "{{ doc('cluster_id') }}"
@@ -320,6 +322,9 @@ models:
       - name: org_id_key
         description: "The organisation identifier, or 'unresolved' when the organisation couldn't be resolved — never NULL, so it's always safe to group or join on."
         tests: [not_null]
+      - name: family_id_key
+        description: "The document's own direct technology family (5-way: euv/lasers/si_photonics/neuromorphic/in_memory, from fact_patent_filing.family_id / fact_publication.family_id), or 'unattributed' when the document's own family couldn't be resolved — never NULL, so it's always safe to group or join on. Independent of this row's cluster_id; a cluster can (and usually does) contain documents from more than one family_id_key."
+        tests: [not_null]
       - name: canonical_name
         description: "{{ doc('org_id') }} display name, or 'Unresolved' when the organisation couldn't be resolved."
         tests: [not_null]
@@ -330,16 +335,16 @@ models:
         description: "{{ doc('confidence') }} 'low' for unresolved organisations."
         tests: [not_null]
       - name: doc_count
-        description: "How many distinct patents (side='patent') or papers (side='paper') this organisation is attributed to in this cluster."
+        description: "How many distinct patents (side='patent') or papers (side='paper') this organisation is attributed to in this cluster AND this document-level family slice."
         tests: [not_null]
       - name: share
-        description: "This organisation's doc_count as a fraction of cluster_total. Always in [0, 1] per organisation; paper-side shares across all organisations in a cluster can add up past 100% (see model description)."
+        description: "This organisation's doc_count as a fraction of cluster_total — the denominator is the WHOLE cluster (all families combined), not the family slice, so this column's meaning is unchanged by the family_id_key grain. Always in [0, 1] per organisation-family row; paper-side shares across all organisations in a cluster can add up past 100% (see model description)."
         tests: [not_null]
       - name: cluster_total
-        description: "Total distinct documents on this side of this cluster — the denominator of share."
+        description: "Total distinct documents on this side of this cluster (all families combined) — the denominator of share."
         tests: [not_null]
       - name: rank_in_cluster
-        description: "This organisation's rank by doc_count within its (cluster, side). 1 = the most active organisation on that side of that cluster."
+        description: "This organisation's rank by ITS TOTAL doc_count across all its family_id_key slices within (cluster, side) — i.e. the same value repeats on every family-sliced row belonging to that org. 1 = the most active organisation on that side of that cluster overall, not within a single family slice."
         tests: [not_null]
 
   - name: mart_gap
@@ -496,51 +501,57 @@ models:
 
   - name: mart_family
     description: >
-      The headline scorecard: one row per technology family, rolling up
-      every cluster in that family. The three headline families are EUV
-      Lithography, Silicon Photonics (incl. lasers), and Neuromorphic &
-      In-Memory Compute; a "mixed" row (clusters no single family dominates)
-      is also included but excluded from headline charts.
-      patent_share is the key signal for how IP-intensive a family is
-      relative to its research volume. median_lag_years_weighted weights
-      each contributing cluster by how much citation-linked evidence it has.
-      Top assignee/researcher are approximate — the organisation that leads
-      the most clusters in the family, not a precise family-wide count. This
-      is a US-patenting scorecard throughout — every patent-side number
-      describes US activity only.
+      The headline scorecard: one row per DOCUMENT-LEVEL technology family
+      (5-way: euv, lasers, si_photonics, neuromorphic, in_memory — each
+      document's own direct family from fact_patent_filing.family_id /
+      fact_publication.family_id, independent of the cluster it algorithmically
+      landed in). Rebuilt 2026-07 off those facts directly; the prior version
+      aggregated via seed_cluster_family (a cluster-grained display label,
+      3-way + 'mixed') and under-counted every family as a result — see
+      fact_patent_filing.sql / fact_publication.sql for why the doc-level
+      family_id is authoritative for counting. seed_cluster_family remains
+      correct and unchanged for its own purpose, the Technology Landscape
+      map's cluster colouring. Documents with no resolvable family_id are not
+      a row here — they're a disclosed "unattributed" bucket the UI computes
+      separately at render time, never redistributed into one of the 5.
+      patent_share (2026-07: redefined from n_patents / (n_patents + n_papers)
+      to n_patents / total n_patents across all 5 families) is this family's
+      slice of the US patent pool — a composition question over patents alone,
+      not a research-to-patent capture rate; papers do not appear in the
+      formula. median_lag_years_weighted is a TRUE
+      median over every NPL-linked citation in the family (not a weighted
+      average of cluster medians, despite the legacy column name — kept
+      unchanged for now to avoid a UI-wide rename mid-refactor). This is a
+      US-patenting scorecard throughout — every patent-side number describes
+      US activity only.
     columns:
       - name: family_id
-        description: "Primary key of this model — see seed_cluster_family.family_id for the possible values."
+        description: "Primary key of this model. One of: euv, lasers, si_photonics, neuromorphic, in_memory."
         tests: [not_null, unique]
       - name: family_name
         description: "Human-readable display name for family_id."
         tests: [not_null]
       - name: family_sort_order
-        description: "Fixed display order for the families."
+        description: "Fixed display order for the families (1=euv .. 5=in_memory)."
         tests: [not_null]
       - name: n_papers
-        description: "Total papers across this family's clusters."
+        description: "Distinct papers whose own family_id is this family."
         tests: [not_null]
       - name: n_patents
-        description: "Total patents across this family's clusters."
-        tests: [not_null]
-      - name: n_clusters
-        description: "How many clusters roll up into this family."
+        description: "Distinct patents whose own family_id is this family."
         tests: [not_null]
       - name: patent_share
-        description: "n_patents / (n_patents + n_papers). Higher means more IP-intensive relative to research volume for this family. Describes US patenting activity only — not a claim about global patenting."
+        description: "n_patents / (total n_patents across all 5 families). This family's share of all US patents in scope — not a research-to-patent capture rate; papers are not part of the formula. Describes US patenting activity only — not a claim about global patenting."
       - name: n_research_orgs_sum
-        description: "Sum of distinct-organisation counts across this family's clusters. Approximate — an organisation active in several clusters of the same family is counted once per cluster, not deduplicated across the whole family."
+        description: "Exact count of distinct organisations with >=1 paper whose own family_id is this family. (Column name kept for continuity with the prior cluster-rollup version, which was an approximation; this is now exact — there is no cluster to cross-dedup across.)"
       - name: n_assignees_sum
-        description: "Sum of distinct-assignee counts across this family's clusters. Same cross-cluster approximation as n_research_orgs_sum."
+        description: "Exact count of distinct organisations with >=1 patent whose own family_id is this family. Same exactness note as n_research_orgs_sum."
       - name: median_lag_years_weighted
-        description: "A weighted average of each contributing cluster's typical citation lag, weighted by how much citation-linked evidence each cluster has. Never a lead-time or commercialisation-speed measure."
+        description: "TRUE median of citation_lag_years over every NPL-linked (paper, patent) pair whose citing patent's own family_id is this family. NULL when total_npl_links < 20. Never a lead-time or commercialisation-speed measure."
       - name: total_npl_links
-        description: "Total citation-linked pairs across this family's clusters — the weight-of-evidence behind median_lag_years_weighted."
-      - name: top_assignee_name
-        description: "The organisation that ranks #1 by patent activity in the most clusters within this family — an approximate 'who leads this family' signal, not a family-wide patent-count leaderboard."
-      - name: top_researcher_name
-        description: "The organisation that ranks #1 by paper activity in the most clusters within this family. Same approximation caveat as top_assignee_name."
+        description: "Count of NPL-linked pairs backing median_lag_years_weighted — the weight-of-evidence behind that median."
+      - name: avg_grant_lag_years
+        description: "Mean of (grant_date - filing_date) in years over this family's patents. The one narrow, explicitly authorised exception to the grant-date ban (CLAUDE.md rule 2, 2026-07 amendment) — a data-completeness diagnostic used to shade recent filing years that are under-counted because those patents haven't yet cleared USPTO examination. Never blended with median_lag_years_weighted (citation lag) and never described as R&D-velocity or lead time."
 
   - name: fact_npl_link
     description: >
