@@ -246,7 +246,21 @@ def _write_parquet_to_r2(
 
 @asset(
     group_name="ml",
-    deps=[AssetKey(["marts", "dim_paper"]), AssetKey(["marts", "dim_patent"])],
+    deps=[
+        AssetKey(["marts", "dim_paper"]),
+        AssetKey(["marts", "dim_patent"]),
+        # Resource-serialization dep, NOT a data dependency: this asset opens
+        # dev.duckdb (via connect_warehouse()) to read the corpus. Local DuckDB
+        # allows one writer XOR multiple readers, never a mix -- npl_links_raw
+        # opens dev.duckdb read_only=False (exclusive) to write its gold-eval
+        # table, so it must fully finish (and release the file) before any
+        # other dev.duckdb connection is attempted. See the matching comment on
+        # npl_links_raw's deps, which chains it after mf_npl_links the same way
+        # -- together the three form one serial chain, avoiding the
+        # IOException ("file already open in another process") that occurred
+        # once these became concurrently eligible under the acyclic graph.
+        AssetKey("npl_links_raw"),
+    ],
     description=(
         "Embeds all scope documents with all-MiniLM-L6-v2 (384-dim) on CPU, batched. "
         "Papers use abstract (falling back to title via the quality gate in "
@@ -255,6 +269,8 @@ def _write_parquet_to_r2(
         "upstream (document_exclusions → staging), so this asset only embeds; it no "
         "longer decides exclusions. Records a truncated flag for docs exceeding the "
         "256-token model limit. Persisted to R2 so re-clustering never re-embeds. "
+        "Serialized after the NPL matchers (resource constraint, not data lineage — "
+        "see deps comment). "
         "Depends on: dev.duckdb (main_marts.dim_paper, main_marts.dim_patent). "
         "Output: r2://p2p-lake/intermediate/embeddings/v{date}/embeddings.parquet"
     ),
