@@ -102,10 +102,14 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
             ('c1', 'Test Cluster One', 'patent', 'Org B', 80, 'org_b', 'euv', 'euv', 500, 0.16),
             ('c1', 'Test Cluster One', 'patent', 'Org C', 60, 'org_c', 'euv', 'euv', 500, 0.12),
             ('c1', 'Test Cluster One', 'patent', 'Org D', 40, 'org_d', 'euv', 'euv', 500, 0.08),
-            ('c1', 'Test Cluster One', 'patent', 'Unresolved', 200, 'org_unresolved', 'euv', 'euv', 500, 0.4),
-            ('c1', 'Test Cluster One', 'patent', 'US83920184', 5, 'org_native_frag', 'euv', 'euv', 500, 0.01),
-            ('c1', 'Test Cluster One', 'patent', 'Org A', 15, 'org_a', NULL, 'unattributed', 500, 0.03),
-            ('c_noise', 'Unclustered', 'patent', 'Noise Org', 500, 'org_noise_only', 'euv', 'euv', 500, 1.0)
+            ('c1', 'Test Cluster One', 'patent', 'Unresolved', 200, 'org_unresolved',
+             'euv', 'euv', 500, 0.4),
+            ('c1', 'Test Cluster One', 'patent', 'US83920184', 5, 'org_native_frag',
+             'euv', 'euv', 500, 0.01),
+            ('c1', 'Test Cluster One', 'patent', 'Org A', 15, 'org_a', NULL,
+             'unattributed', 500, 0.03),
+            ('c_noise', 'Unclustered', 'patent', 'Noise Org', 500, 'org_noise_only',
+             'euv', 'euv', 500, 1.0)
     """)
 
     con.execute("""

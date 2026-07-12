@@ -94,7 +94,8 @@ def compute_grant_lag_cutoff_year(max_year: int, avg_grant_lag_years: float | No
 
 @st.cache_data(ttl=3600)
 def load_family_scorecard() -> pl.DataFrame:
-    """One row per document-level technology family from mart_family (5-way), ordered by family_sort_order."""
+    """One row per document-level technology family from mart_family (5-way),
+    ordered by family_sort_order."""
     return _query("""
         SELECT
             family_id,
@@ -444,7 +445,8 @@ def load_family_velocity(
 def load_family_org_leaderboard(
     family_id: str, side: str, top_n: int = 50, cluster_ids: tuple[str, ...] | None = None
 ) -> pl.DataFrame:
-    """Top orgs for a document-level family by side ('paper'|'patent'), with total distinct org count.
+    """Top orgs for a document-level family by side ('paper'|'patent'), with
+    total distinct org count.
 
     Returns top_n rows ordered by doc_count DESC.
     Each row carries total_orgs = count of all distinct orgs for this family+side.

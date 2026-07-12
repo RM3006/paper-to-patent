@@ -183,8 +183,14 @@ confidence = profile["primary_confidence"]
 # is a real, selectable option -- see load_org_active_scope). Sorted by display
 # label, matching render.FAMILY_LABELS.
 _scope_df = load_org_active_scope(selected_org_id)
-_family_scope = sorted(
-    {(FAMILY_LABELS.get(fid, fid), fid) for fid in _scope_df["family_id"].to_list()}
+# family_id_key is never NULL in practice (see load_org_active_scope), but
+# polars' to_list() is typed permissively -- filter+annotate explicitly so
+# the declared list[str] actually narrows the type for pyright.
+_scope_family_ids: list[str] = [
+    fid for fid in _scope_df["family_id"].to_list() if fid is not None
+]
+_family_scope: list[tuple[str, str]] = sorted(
+    {(FAMILY_LABELS.get(fid, fid), fid) for fid in _scope_family_ids}
 )
 
 
