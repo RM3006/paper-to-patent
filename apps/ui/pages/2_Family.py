@@ -27,6 +27,7 @@ import polars as pl
 import streamlit as st
 
 from data import (
+    compute_grant_lag_cutoff_year,
     load_family_clusters,
     load_family_metrics,
     load_family_org_leaderboard,
@@ -305,9 +306,9 @@ if len(vel_df) > 0:
     patents = [int(v) for v in vel_df["patent_count"].to_list()]
     max_year = max(years)
 
-    _raw_lag = frow["median_lag_years_weighted"]
-    _provisional_years = max(1, round(float(_raw_lag))) if _raw_lag is not None else 3
-    cutoff = max_year - _provisional_years
+    _grant_lag = frow["avg_grant_lag_years"]
+    cutoff = compute_grant_lag_cutoff_year(max_year, _grant_lag)
+    _lag_str = f"{float(_grant_lag):.1f} yr" if _grant_lag is not None else "~2 yr"
 
     pat_solid = [p if y <= cutoff else None for y, p in zip(years, patents, strict=True)]
     pat_prov  = [p if y >= cutoff else None for y, p in zip(years, patents, strict=True)]
@@ -324,8 +325,8 @@ if len(vel_df) > 0:
         f"<div style='font-size:12px;color:#888888;margin-bottom:8px;'>"
         f"Annual research papers (by publication year) and granted US patents "
         f"(by filing year) in {family_name}{_vel_scope_note}. "
-        f"The shaded years are still moving "
-        f"through the grant pipeline and undercount real patenting — not a decline."
+        f"The shaded years are within this family's average USPTO grant lag "
+        f"({_lag_str}) and likely undercount real patenting — not a decline."
         f"</div>",
         unsafe_allow_html=True,
     )

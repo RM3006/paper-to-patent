@@ -38,7 +38,16 @@
   separately by the UI at render time (rule: no invented data, NULL stays NULL
   and disclosed, never silently redistributed into one of the 5 families).
 
-  Depends on: fact_patent_filing, fact_publication, fact_npl_link
+  avg_grant_lag_years = mean(grant_date - filing_date) per family, in years --
+  the ONE narrow, explicitly authorised exception to "grant date is never used
+  for a time metric" (CLAUDE.md rule 2, 2026-07 amendment). This is a data-
+  completeness diagnostic, not an R&D-velocity claim: it exists solely so the
+  UI can shade the recent filing years that are under-counted because those
+  patents haven't yet cleared USPTO examination (Family Deepdive velocity
+  chart). It is never blended with median_lag_years_weighted (citation lag)
+  and never described as "lead time" or innovation speed.
+
+  Depends on: fact_patent_filing, fact_publication, fact_npl_link, dim_patent
   Output: dev.duckdb main_marts.mart_family
 */
 
@@ -113,6 +122,21 @@ npl_lag as (
     from {{ ref('fact_npl_link') }} nl
     inner join patent_family pf on pf.patent_id = nl.patent_id
     group by 1
+),
+
+-- Grant lag: mean(grant_date - filing_date) per family, in years. The narrow,
+-- authorised exception to the grant-date ban (see module docstring) -- a
+-- data-completeness diagnostic, not a velocity claim. Every family clears
+-- hundreds of patents with a grant_date, so no reportability floor is needed
+-- here (unlike npl_lag's >= 20-link floor).
+grant_lag as (
+    select
+        pf.family_id,
+        avg(date_diff('day', dp.filing_date, dp.grant_date) / 365.25) as avg_grant_lag_years
+    from patent_family pf
+    inner join {{ ref('dim_patent') }} dp on dp.patent_id = pf.patent_id
+    where dp.grant_date is not null
+    group by 1
 )
 
 select
@@ -134,7 +158,8 @@ select
     case when coalesce(nl.npl_n_links, 0) >= 20
         then nl.npl_median_lag_years
     end                                                 as median_lag_years_weighted,
-    coalesce(nl.npl_n_links, 0)                        as total_npl_links
+    coalesce(nl.npl_n_links, 0)                        as total_npl_links,
+    round(gl.avg_grant_lag_years, 2)                   as avg_grant_lag_years
 
 from family_meta fm
 left join paper_counts       pc  on pc.family_id  = fm.family_id
@@ -142,6 +167,7 @@ left join patent_counts      ptc on ptc.family_id = fm.family_id
 left join paper_org_breadth  pob on pob.family_id = fm.family_id
 left join patent_org_breadth paob on paob.family_id = fm.family_id
 left join npl_lag            nl  on nl.family_id  = fm.family_id
+left join grant_lag          gl  on gl.family_id  = fm.family_id
 cross join patent_totals     pt
 
 order by fm.family_sort_order

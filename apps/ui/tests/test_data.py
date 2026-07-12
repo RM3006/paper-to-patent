@@ -31,6 +31,22 @@ def test_scope_clause_family_and_cluster() -> None:
     assert clause == " AND scf.family_id IN ('euv') AND mc.cluster_id IN ('c1')"
 
 
+def test_compute_grant_lag_cutoff_year_rounds_and_subtracts() -> None:
+    # neuromorphic's real avg_grant_lag_years (3.37) rounds to 3.
+    assert data_module.compute_grant_lag_cutoff_year(2024, 3.37) == 2021
+    # in_memory's (1.84) rounds to 2.
+    assert data_module.compute_grant_lag_cutoff_year(2024, 1.84) == 2022
+
+
+def test_compute_grant_lag_cutoff_year_floors_at_one_year() -> None:
+    # Even a near-zero lag still shades at least the most recent year.
+    assert data_module.compute_grant_lag_cutoff_year(2024, 0.1) == 2023
+
+
+def test_compute_grant_lag_cutoff_year_falls_back_when_no_sample() -> None:
+    assert data_module.compute_grant_lag_cutoff_year(2024, None) == 2022
+
+
 def test_load_family_scorecard_orders_by_sort_order(fixture_db: None) -> None:
     df = data_module.load_family_scorecard()
     assert df.columns == [
@@ -124,6 +140,7 @@ def test_load_family_metrics_matches_manual_counts_and_applies_lag_floor(
     # p1, p2 are euv; p5 is lasers; p3, p4 are NULL family_id (excluded from the
     # denominator) -- so the denominator is 3 (p1, p2, p5) and euv holds 2/3.
     assert m["patent_share"] == 0.667
+    assert m["avg_grant_lag_years"] == 2.35  # pulled straight from mart_family.euv
 
 
 def test_load_family_metrics_scopes_to_cluster_filter(fixture_db: None) -> None:
@@ -132,6 +149,8 @@ def test_load_family_metrics_scopes_to_cluster_filter(fixture_db: None) -> None:
     # Numerator narrows to the cluster filter, but the denominator (total
     # patents across all families) stays unscoped -- still 2/3.
     assert m_c1["patent_share"] == 0.667
+    # avg_grant_lag_years is family-level only, never narrowed by cluster_ids.
+    assert m_c1["avg_grant_lag_years"] == 2.35
 
     m_c2 = data_module.load_family_metrics("euv", cluster_ids=("c2",)).row(0, named=True)
     assert m_c2["n_patents"] == 0  # c2 has no euv-family patents

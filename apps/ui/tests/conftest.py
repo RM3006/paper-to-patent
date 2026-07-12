@@ -39,16 +39,17 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
             family_id VARCHAR, family_name VARCHAR, family_sort_order INTEGER,
             n_papers BIGINT, n_patents BIGINT,
             patent_share DOUBLE, n_research_orgs_sum BIGINT, n_assignees_sum BIGINT,
-            median_lag_years_weighted DOUBLE, total_npl_links BIGINT
+            median_lag_years_weighted DOUBLE, total_npl_links BIGINT,
+            avg_grant_lag_years DOUBLE
         )
     """)
     con.execute("""
         INSERT INTO main_marts.mart_family VALUES
-            ('euv', 'EUV Lithography', 1, 100, 40, 0.40, 20, 10, 3.5, 60),
-            ('lasers', 'Lasers', 2, 50, 10, 0.17, 8, 4, 4.5, 25),
-            ('si_photonics', 'Silicon Photonics', 3, 80, 20, 0.25, 15, 8, 4.1, 30),
-            ('neuromorphic', 'Neuromorphic Computing', 4, 60, 15, 0.20, 12, 6, 3.0, 22),
-            ('in_memory', 'In-Memory Compute', 5, 70, 18, 0.20, 14, 7, 2.8, 28)
+            ('euv', 'EUV Lithography', 1, 100, 40, 0.40, 20, 10, 3.5, 60, 2.35),
+            ('lasers', 'Lasers', 2, 50, 10, 0.17, 8, 4, 4.5, 25, 2.32),
+            ('si_photonics', 'Silicon Photonics', 3, 80, 20, 0.25, 15, 8, 4.1, 30, 2.13),
+            ('neuromorphic', 'Neuromorphic Computing', 4, 60, 15, 0.20, 12, 6, 3.0, 22, 3.37),
+            ('in_memory', 'In-Memory Compute', 5, 70, 18, 0.20, 14, 7, 2.8, 28, 1.84)
     """)
 
     con.execute("""

@@ -76,6 +76,22 @@ def _scope_clause(
     return (" AND " + " AND ".join(clauses)) if clauses else ""
 
 
+def compute_grant_lag_cutoff_year(max_year: int, avg_grant_lag_years: float | None) -> int:
+    """Last filing year the velocity chart treats as complete before its
+    "still pending" shading kicks in (years after this are shaded/dotted).
+
+    avg_grant_lag_years comes from mart_family.avg_grant_lag_years -- the one
+    narrow, explicitly authorised exception to "grant date is never used for
+    a time metric" (CLAUDE.md rule 2). Filing years within that many years of
+    max_year haven't had enough time to clear USPTO examination yet, so a
+    granted-patents-only dataset under-counts them. Falls back to 2 years
+    (roughly the corpus-wide average grant lag) on the defensive path where a
+    family has no grant-lag sample.
+    """
+    lag = avg_grant_lag_years if avg_grant_lag_years is not None else 2.0
+    return max_year - max(1, round(lag))
+
+
 @st.cache_data(ttl=3600)
 def load_family_scorecard() -> pl.DataFrame:
     """One row per document-level technology family from mart_family (5-way), ordered by family_sort_order."""
@@ -253,6 +269,12 @@ def load_family_metrics(
     (the denominator is always the unscoped, all-family total -- not narrowed by
     the family/cluster filter -- matching mart_family's own definition exactly).
     It is a slice of the US patent pool, not a research-to-patent capture rate.
+
+    avg_grant_lag_years is pulled straight from mart_family (family-level only,
+    never narrowed by cluster_ids) -- USPTO examination time is a property of
+    the family's technology area, not a given cluster subset, and per-cluster
+    samples can be too small for a stable average. See CLAUDE.md rule 2's
+    grant-lag exception and mart_family.sql for what this is (and isn't) used for.
     """
     cluster_filter = ""
     if cluster_ids:
@@ -291,6 +313,11 @@ def load_family_metrics(
                 ROUND(MEDIAN(nl.citation_lag_years), 2) AS npl_median_lag_years
             FROM main_marts.fact_npl_link nl
             INNER JOIN (SELECT DISTINCT patent_id FROM patents) p ON p.patent_id = nl.patent_id
+        ),
+        grant_lag AS (
+            SELECT avg_grant_lag_years
+            FROM main_marts.mart_family
+            WHERE family_id = ?
         )
         SELECT
             paper_agg.n_papers,
@@ -305,13 +332,15 @@ def load_family_metrics(
             CASE WHEN COALESCE(npl_lag.npl_n_links, 0) >= 20
                 THEN npl_lag.npl_median_lag_years
             END                                   AS median_lag_years_weighted,
-            COALESCE(npl_lag.npl_n_links, 0)      AS total_npl_links
+            COALESCE(npl_lag.npl_n_links, 0)      AS total_npl_links,
+            grant_lag.avg_grant_lag_years         AS avg_grant_lag_years
         FROM patent_agg
         CROSS JOIN paper_agg
         CROSS JOIN npl_lag
         CROSS JOIN total_patents
+        CROSS JOIN grant_lag
         """,
-        [family_id, family_id],
+        [family_id, family_id, family_id],
     )
 
 

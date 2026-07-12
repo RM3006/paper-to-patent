@@ -550,6 +550,8 @@ models:
         description: "TRUE median of citation_lag_years over every NPL-linked (paper, patent) pair whose citing patent's own family_id is this family. NULL when total_npl_links < 20. Never a lead-time or commercialisation-speed measure."
       - name: total_npl_links
         description: "Count of NPL-linked pairs backing median_lag_years_weighted — the weight-of-evidence behind that median."
+      - name: avg_grant_lag_years
+        description: "Mean of (grant_date - filing_date) in years over this family's patents. The one narrow, explicitly authorised exception to the grant-date ban (CLAUDE.md rule 2, 2026-07 amendment) — a data-completeness diagnostic used to shade recent filing years that are under-counted because those patents haven't yet cleared USPTO examination. Never blended with median_lag_years_weighted (citation lag) and never described as R&D-velocity or lead time."
 
   - name: fact_npl_link
     description: >
