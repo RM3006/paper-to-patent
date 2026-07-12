@@ -64,7 +64,8 @@ reportMissingTypeStubs = "none"
 extraPaths = ["apps/ui"]
 
 [tool.pytest.ini_options]
-testpaths = ["pipelines/nexus/tests"]
+testpaths = ["pipelines/nexus/tests", "apps/ui/tests"]
+pythonpath = ["apps/ui"]
 
 [dependency-groups]
 dev = [

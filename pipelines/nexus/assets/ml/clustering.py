@@ -7,19 +7,25 @@ class-based TF-IDF (BERTopic's c-TF-IDF formula).
 Noise points (HDBSCAN label = -1) → cluster_id = 'c_noise'. They retain
 UMAP coordinates and are presented honestly in the UI as an unclustered frontier.
 
+Frozen on the corpus signature (a hash of the doc-id set): an unchanged corpus
+reuses the existing realization rather than recomputing, because UMAP is
+non-deterministic in this environment and would otherwise reshuffle every
+cluster_id on each run. A changed corpus (documents onboarded) cuts a new one.
+
 Input:   R2 intermediate/embeddings/, dev.duckdb (texts for c-TF-IDF)
 Output:  r2://p2p-lake/intermediate/clusters/v{date}/clusters.parquet
          r2://p2p-lake/intermediate/cluster_terms/v{date}/cluster_terms.parquet
 """
 
 import datetime
+import hashlib
 import os
 import pathlib
 import tempfile
 
 import numpy as np
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetKey, OpExecutionContext, asset
 from sklearn.feature_extraction.text import CountVectorizer
 
 from nexus.assets.ingest.openalex import delete_r2_object
@@ -51,6 +57,22 @@ def make_cluster_id(label: int) -> str:
     Negative labels (noise) → 'c_noise'. Non-negative → 'c_{label}'.
     """
     return "c_noise" if label < 0 else f"c_{label}"
+
+
+def corpus_signature(doc_ids: list[str]) -> str:
+    """Deterministic fingerprint of the exact set of documents to be clustered.
+
+    Order-independent (sorts first) and duplicate-independent (dedupes), so it
+    identifies the *corpus content*, not the read order or an accidental
+    repeat. Used to freeze the clustering: UMAP is non-deterministic in this
+    environment (see MEMORY.md / ARCHITECTURE.md §8), so re-running would
+    silently reshuffle every cluster_id. We instead recompute only when the
+    corpus itself changed — i.e. when new documents were onboarded. An
+    unchanged corpus reuses the frozen realization; a changed one cuts a new
+    one. Returns a 16-char hex digest.
+    """
+    joined = "\n".join(sorted(set(doc_ids)))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
 def compute_ctfidf_terms(
@@ -161,11 +183,17 @@ def _write_df_to_r2(
 
 @asset(
     group_name="ml",
-    deps=["document_embeddings"],
+    deps=[
+        "document_embeddings",
+        AssetKey(["marts", "dim_paper"]),
+        AssetKey(["marts", "dim_patent"]),
+    ],
     description=(
         "UMAP (2D, cosine, n_neighbors=15, min_dist=0.1) + HDBSCAN (min_cluster_size=50) "
         "over all scope document embeddings. "
         "Extracts top c-TF-IDF terms per cluster. Noise points → cluster_id='c_noise'. "
+        "Frozen on corpus signature: reuses the existing clustering unless the corpus "
+        "changed (documents onboarded), since UMAP is non-deterministic here. "
         "Depends on: R2 embeddings Parquet (document_embeddings asset), "
         "dev.duckdb (main_marts.dim_paper, main_marts.dim_patent) for c-TF-IDF text. "
         "Output: r2://p2p-lake/intermediate/clusters/v{date}/clusters.parquet "
@@ -194,22 +222,7 @@ def document_clusters(
         f"r2://{bucket}/intermediate/cluster_terms/v{snapshot_date}/cluster_terms.parquet"
     )
 
-    # Idempotency: skip if both outputs exist
-    with duckdb.get_connection() as con:
-        def _exists(path: str) -> bool:
-            try:
-                n = con.execute(f"SELECT COUNT(*) FROM read_parquet('{path}')").fetchone()
-                return bool(n and n[0] > 0)
-            except Exception:
-                return False
-
-        if _exists(clusters_path) and _exists(terms_path):
-            context.log.info(
-                "Both cluster outputs exist for %s. Skipping.", snapshot_date
-            )
-            return
-
-    # Locate the latest embeddings snapshot
+    # Locate the latest embeddings snapshot (the clustering input).
     with duckdb.get_connection() as con:
         try:
             rows = con.execute(
@@ -227,6 +240,60 @@ def document_clusters(
         )
     embeddings_path = rows[0][0]
     context.log.info("Using embeddings: %s", embeddings_path)
+
+    # FREEZE: the clustering is a function of the corpus, not the wall clock.
+    # UMAP is non-deterministic in this environment (MEMORY.md / ARCHITECTURE.md
+    # §8), so recomputing on an UNCHANGED corpus would silently reshuffle every
+    # cluster_id, cluster count, and noise membership -- invalidating the Haiku
+    # taglines, the cluster-label review, and every findings.md citation. We
+    # therefore recompute only when the corpus itself changed (documents
+    # onboarded). Compare the current corpus signature against the one stamped
+    # on the latest existing clusters snapshot: identical -> reuse (freeze);
+    # different or absent -> cut a new realization.
+    with duckdb.get_connection() as con:
+        id_rows = con.execute(
+            f"SELECT doc_id FROM read_parquet('{embeddings_path}')"
+        ).fetchall()
+        current_signature = corpus_signature([r[0] for r in id_rows])
+
+        frozen_rows = con.execute(
+            f"SELECT file FROM glob('r2://{bucket}/intermediate/clusters/*/clusters.parquet') "
+            "ORDER BY file DESC LIMIT 1"
+        ).fetchall()
+        frozen_signature: str | None = None
+        frozen_file: str | None = frozen_rows[0][0] if frozen_rows else None
+        if frozen_file is not None:
+            try:
+                sig_rows = con.execute(
+                    f"SELECT DISTINCT corpus_signature FROM read_parquet('{frozen_file}')"
+                ).fetchall()
+                if sig_rows and sig_rows[0][0] is not None:
+                    frozen_signature = str(sig_rows[0][0])
+            except Exception:
+                frozen_signature = None  # pre-freeze snapshot without the column
+
+    context.log.info(
+        "Corpus signature %s (%s docs).", current_signature, f"{len(id_rows):,}"
+    )
+    if frozen_signature is not None and frozen_signature == current_signature:
+        context.log.info(
+            "Corpus unchanged since frozen clustering (%s). Reusing it; not re-clustering.",
+            frozen_file,
+        )
+        context.add_output_metadata(
+            {
+                "frozen": True,
+                "reused_snapshot": frozen_file or "",
+                "corpus_signature": current_signature,
+                "total_docs": len(id_rows),
+            }
+        )
+        return
+
+    context.log.info(
+        "Corpus changed or no frozen clustering; cutting a new realization at %s.",
+        snapshot_date,
+    )
 
     # Load embeddings from R2 → numpy matrix
     context.log.info("Loading embeddings…")
@@ -292,7 +359,7 @@ def document_clusters(
     # Load original texts for c-TF-IDF
     dev_con = connect_warehouse()
     try:
-        corpus, _excluded = load_corpus(dev_con)
+        corpus = load_corpus(dev_con)
     finally:
         dev_con.close()
     id_to_text = {d["doc_id"]: d["text"] for d in corpus}
@@ -313,6 +380,9 @@ def document_clusters(
             "umap_x": coords[:, 0].tolist(),
             "umap_y": coords[:, 1].tolist(),
             "model_version": [_MODEL_VERSION] * len(doc_ids),
+            # stamps the exact corpus this realization was cut from, so a later
+            # run on the same corpus reuses it instead of reshuffling (see FREEZE).
+            "corpus_signature": [current_signature] * len(doc_ids),
         },
         schema={
             "doc_id": pl.String,
@@ -321,6 +391,7 @@ def document_clusters(
             "umap_x": pl.Float32,
             "umap_y": pl.Float32,
             "model_version": pl.String,
+            "corpus_signature": pl.String,
         },
     )
 
@@ -348,7 +419,9 @@ def document_clusters(
     )
     context.add_output_metadata(
         {
+            "frozen": False,
             "snapshot_date": snapshot_date,
+            "corpus_signature": current_signature,
             "total_docs": len(doc_ids),
             "n_clusters": n_clusters,
             "n_noise": n_noise,

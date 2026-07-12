@@ -34,8 +34,8 @@
   Grain: one row per cluster_id.
   c_noise is included but is_noise = true; exclude from headline findings.
 
-  Depends on: fact_patent_filing, fact_publication, fact_npl_link, dim_patent,
-              dim_technology_cluster
+  Depends on: fact_patent_filing, fact_publication, fact_npl_link,
+              fact_document_cluster, dim_technology_cluster
   Output: dev.duckdb main_marts.mart_gap
 */
 
@@ -110,16 +110,18 @@ institution_breadth as (
     group by 1
 ),
 
--- NPL-linked citation lag; patent cluster is the anchor per project decision
+-- NPL-linked citation lag; patent cluster is the anchor per project decision.
+-- cluster_id via the bridge fact_document_cluster (one row per patent), since
+-- dim_patent no longer carries cluster_id.
 npl_lag as (
     select
-        dpat.cluster_id,
+        fdc.cluster_id,
         count(*)                                            as npl_n_links,
         round(median(nl.citation_lag_years), 2)             as npl_median_lag_years
     from {{ ref('fact_npl_link') }} nl
-    inner join {{ ref('dim_patent') }} dpat
-        on dpat.patent_id = nl.patent_id
-    where dpat.cluster_id is not null
+    inner join {{ ref('fact_document_cluster') }} fdc
+        on fdc.doc_id = nl.patent_id and fdc.doc_type = 'patent'
+    where fdc.cluster_id is not null
     group by 1
 ),
 

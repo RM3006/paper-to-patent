@@ -151,33 +151,6 @@ def load_cluster_bubble() -> pl.DataFrame:
 
 
 @st.cache_data(ttl=3600)
-def load_umap_points() -> pl.DataFrame:
-    """All ~196k papers+patents with UMAP coords, cluster, family, and year."""
-    return _query("""
-        SELECT
-            fdc.doc_id,
-            fdc.doc_type,
-            fdc.umap_x,
-            fdc.umap_y,
-            fdc.cluster_id,
-            dtc.tagline,
-            COALESCE(scf.family_id,   'noise')                   AS family_id,
-            COALESCE(scf.family_name, 'Frontier / Unclustered')  AS family_name,
-            COALESCE(
-                dp.publication_year,
-                YEAR(dp2.filing_date)
-            )::INTEGER                                            AS year
-        FROM main_marts.fact_document_cluster   fdc
-        JOIN  main_marts.dim_technology_cluster dtc  ON dtc.cluster_id  = fdc.cluster_id
-        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id  = fdc.cluster_id
-        LEFT JOIN main_marts.dim_paper  dp           ON dp.work_id      = fdc.doc_id
-                                                     AND fdc.doc_type   = 'paper'
-        LEFT JOIN main_marts.dim_patent dp2          ON dp2.patent_id   = fdc.doc_id
-                                                     AND fdc.doc_type   = 'patent'
-    """)
-
-
-@st.cache_data(ttl=3600)
 def load_family_clusters(family_id: str) -> pl.DataFrame:
     """Clusters belonging to one family, with gap metrics, for the family-detail page."""
     return _query(
@@ -480,7 +453,7 @@ def load_dataset_totals(
         df = _query("""
             SELECT SUM(n_papers) AS total_papers, SUM(n_patents) AS total_patents
             FROM main_marts.mart_family
-            WHERE family_id != 'adjacent'
+            WHERE family_id != 'mixed'
         """)
     else:
         scope = _scope_clause("scf.family_id", "mg.cluster_id", family_ids, cluster_ids)
@@ -708,7 +681,9 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
         FROM main_marts.dim_paper dp
         LEFT JOIN primary_org po ON po.work_id = dp.work_id
         LEFT JOIN main_marts.dim_organization dorg ON dorg.org_id = po.org_id
-        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = dp.cluster_id
+        LEFT JOIN main_marts.fact_document_cluster fdc
+            ON fdc.doc_id = dp.work_id AND fdc.doc_type = 'paper'
+        LEFT JOIN main_marts.seed_cluster_family scf ON scf.cluster_id = fdc.cluster_id
         WHERE dp.work_id = ?
         """,
         [work_id, work_id],

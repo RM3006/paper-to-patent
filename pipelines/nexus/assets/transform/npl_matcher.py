@@ -26,7 +26,7 @@ from typing import Any
 
 import duckdb as _duckdb_lib
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetKey, OpExecutionContext, asset
 from rapidfuzz import fuzz
 
 from nexus.assets.ingest.openalex import delete_r2_object
@@ -222,13 +222,32 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @asset(
     group_name="transform",
+    deps=[
+        AssetKey(["staging", "stg_npl"]),
+        AssetKey(["staging", "stg_openalex_works"]),
+        # Resource-serialization dep, NOT a data dependency: this asset opens
+        # dev.duckdb with read_only=False (it writes ref_npl_gold_eval), which
+        # requires an EXCLUSIVE handle -- local DuckDB permits one writer XOR
+        # multiple readers, never a mix. mf_npl_links (read-only) racing this
+        # asset's write-mode open caused a real IOException in production use
+        # ("file already open in another process") once both became eligible to
+        # run concurrently under the acyclic graph. Ordering after mf_npl_links
+        # here (and document_embeddings depending on this asset below) forces
+        # the three dev.duckdb-touching Python assets into one serial chain.
+        # MotherDuck (prod) allows genuine concurrent connections and would not
+        # need this, but the graph shape is kept identical in both targets for
+        # simplicity -- these matcher steps are fast, so the cost is small.
+        AssetKey("mf_npl_links"),
+    ],
     description=(
         "NPL link matcher: resolves paper↔patent edges from g_other_reference strings. "
         "DOI route (high confidence): pre-extracted bare DOI → exact join. "
         "Fuzzy route (medium confidence): inverted-index + rapidfuzz token_set_ratio "
         "at threshold tuned on the Marx & Fuegi gold eval set (precision ≥ 0.80). "
         "Output: r2://p2p-lake/intermediate/npl/v{date}/npl_links.parquet. "
-        "Depends on dbt staging models (stg_npl, stg_openalex_works) in dev.duckdb."
+        "Depends on dbt staging models (stg_npl, stg_openalex_works) in dev.duckdb. "
+        "Also serialized after mf_npl_links (resource constraint, not data lineage — "
+        "see deps comment)."
     ),
 )
 def npl_links_raw(

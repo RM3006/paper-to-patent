@@ -24,7 +24,7 @@ st.set_page_config(
 
 _FONT = '"Space Grotesk", -apple-system, system-ui, sans-serif'
 
-# Family IDs in display order (excludes adjacent / noise).
+# Family IDs in display order (excludes mixed / noise).
 _FAMILY_IDS = ["euv", "silicon_photonics", "neuromorphic_in_memory"]
 
 _FAMILY_DESC: dict[str, str] = {
@@ -247,7 +247,7 @@ def main() -> None:
 
     scorecard = load_family_scorecard()
     rows = (
-        scorecard.filter(scorecard["family_id"] != "adjacent")
+        scorecard.filter(scorecard["family_id"] != "mixed")
         .sort("patent_share", descending=True, nulls_last=True)
         .to_dicts()
     )
@@ -285,7 +285,10 @@ def main() -> None:
         "2014–2025). "
         "In-scope research papers from OpenAlex (2012–2025, English, matched to EUV, silicon "
         "photonics, lasers, neuromorphic, and in-memory compute topics). "
-        "Citation links are non-patent-literature (NPL) references from USPTO filings. "
+        "Citation links are non-patent-literature (NPL) references from USPTO filings — the "
+        "gold-standard Marx &amp; Fuegi &lsquo;Reliance on Science&rsquo; dataset where it "
+        "covers a patent, and our own DOI + fuzzy-title matcher (recall measured against that "
+        "gold set) for recent grants beyond its vintage; link counts are a lower bound. "
         "Lag = paper publication date → citing patent filing date; never grant date. "
         "Patent counts after 2019 understate activity due to grant-processing delay. "
         "This is not causal inference — NPL citations record reference, not derivation."

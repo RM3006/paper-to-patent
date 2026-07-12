@@ -24,7 +24,7 @@ from collections import defaultdict
 
 import anthropic as _anthropic
 import polars as pl
-from dagster import OpExecutionContext, asset
+from dagster import AssetKey, OpExecutionContext, asset
 
 from nexus.assets.ingest.openalex import delete_r2_object
 from nexus.logging import logger
@@ -163,7 +163,11 @@ def _write_df_to_r2(
 
 @asset(
     group_name="ml",
-    deps=["document_clusters"],
+    deps=[
+        "document_clusters",
+        AssetKey(["marts", "dim_paper"]),
+        AssetKey(["marts", "dim_patent"]),
+    ],
     description=(
         f"Labels each technology cluster with {_MODEL}. "
         "Reads top c-TF-IDF terms and representative doc titles from R2; "

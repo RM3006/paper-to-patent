@@ -89,6 +89,12 @@
       {% do run_query("CREATE OR REPLACE VIEW er_intermediate.npl_links AS SELECT * FROM read_parquet('" ~ root ~ "/intermediate/npl/v" ~ npl_date ~ "/npl_links.parquet')") %}
     {% endif %}
 
+    -- mf_npl_links view only registered if the source path exists (mf_npl_links asset writes it)
+    {% set mf_npl_date = latest_snapshot_date('intermediate/mf_npl', 'mf_npl_links.parquet') %}
+    {% if mf_npl_date %}
+      {% do run_query("CREATE OR REPLACE VIEW er_intermediate.mf_npl_links AS SELECT * FROM read_parquet('" ~ root ~ "/intermediate/mf_npl/v" ~ mf_npl_date ~ "/mf_npl_links.parquet')") %}
+    {% endif %}
+
     -- ml_intermediate views — only registered once Part 5 ML assets have run
     {% set clusters_date = latest_snapshot_date('intermediate/clusters', 'clusters.parquet') %}
     {% if clusters_date %}
@@ -103,8 +109,13 @@
     -- excluded_documents: unlike clusters/cluster_labels above, this view is
     -- ALWAYS created (never conditionally skipped), because stg_openalex_works
     -- and stg_patents_scoped reference it unconditionally in a NOT IN filter.
-    -- Before Part 5 has ever run, it resolves to an empty relation, making
-    -- that filter a no-op rather than a compile/run error on a fresh build.
+    -- It is produced by the document_exclusions Dagster asset, which the graph
+    -- schedules UPSTREAM of staging (the excluded_documents source maps to that
+    -- asset key), so in a normal orchestrated run the real snapshot already
+    -- exists when staging builds. The empty-relation fallback below is now only
+    -- a defensive net for a standalone `dbt build` before document_exclusions
+    -- has ever produced a snapshot: there it resolves to an empty relation,
+    -- making the filter a no-op rather than a compile/run error.
     {% set excluded_docs_date = latest_snapshot_date('intermediate/excluded_documents', 'excluded_documents.parquet') %}
     {% if excluded_docs_date %}
       {% do run_query("CREATE OR REPLACE VIEW ml_intermediate.excluded_documents AS SELECT * FROM read_parquet('" ~ root ~ "/intermediate/excluded_documents/v" ~ excluded_docs_date ~ "/excluded_documents.parquet')") %}

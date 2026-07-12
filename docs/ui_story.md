@@ -10,41 +10,46 @@
 
 ---
 
-## Data foundations (Part 6 final numbers)
+## Data foundations
 
-| Metric | Value |
+**Row counts (papers, patents, clusters, links, orgs) are volatile across rebuilds and are
+not pinned here** — see `docs/data_source_manifest.md` (verified snapshots) and
+`docs/findings.md` (headline metrics) for live figures. The structural scope the UI is
+designed around:
+
+| Dimension | Scope |
 |---|---|
-| Papers in scope | 162,787 (2012–2025, English, OpenAlex) |
-| Patents in scope | 33,578 (US only, CPC-matched, filing 2014–2025) |
-| NPL citation links | 5,921 (1,091 high/DOI + 4,830 medium/fuzzy) |
-| Organisations resolved | 14,209 distinct org_ids |
-| Technology clusters | 303 non-noise + c_noise bucket |
-| Technology families | 5 headline + 1 adjacent |
+| Papers | OpenAlex, English abstracts, publication 2012–2025, four scope topics |
+| Patents | US only (PatentsView / USPTO), CPC **top-5** matched, filing 2014–2025 |
+| Organisations | canonical `org_id`s via `int_organization_crosswalk` |
+| Technology clusters | dozens of Haiku-named families + a `c_noise` "Frontier / Unclustered" bucket |
+| Technology families | **3** headline: EUV lithography; silicon photonics; neuromorphic & in-memory compute |
+| NPL citation links | hybrid Marx & Fuegi (gold) + DOI/fuzzy-title matcher; counts are a lower bound |
 
 ---
 
-## Five technology families (presentation rollup)
+## Three technology families (presentation rollup)
 
-Source: `mart_family` (aggregates `mart_gap` via `seed_cluster_family`).
+The UI rolls the dozens of clusters up into **3** headline families via `seed_cluster_family`,
+surfaced through `mart_family` (which aggregates `mart_gap`):
 
-| Family | Papers | Patents | Pat% | Med. Lag | Top Patenter | Top Researcher |
-|---|---|---|---|---|---|---|
-| EUV Lithography | 4,965 | 5,390 | **52%** | 3.03 yr | TSMC | IMEC |
-| Silicon Photonics & Optical I/O | 35,389 | 2,396 | 6% | 3.59 yr | GlobalFoundries | Chinese Academy of Sciences |
-| Lasers & Light Sources | 8,714 | 388 | 4% | 3.00 yr | Intel | Chinese Academy of Sciences |
-| Neuromorphic / Brain-inspired | 13,009 | 1,696 | 11.5% | 2.94 yr | IBM | University of California |
-| In-Memory & Emerging Memory | 12,003 | 3,520 | 23% | 2.91 yr | Micron Technology | Tsinghua University |
+1. **EUV Lithography**
+2. **Silicon Photonics** (incl. lasers / optical I/O)
+3. **Neuromorphic & In-Memory Compute**
 
-**Pat%** = n_patents / (n_patents + n_papers). Comparison point: EUV is more patent than paper; Silicon Photonics is the opposite.
-
-**Lag** = weighted median citation lag (paper pub_date → citing patent filing_date, via NPL links). US patents only.
+Per-family figures — paper/patent counts, patent share (**Pat%** = n_patents / (n_patents +
+n_papers)), weighted median citation lag (paper pub_date → citing patent filing_date, via NPL
+links; US patents only), and top patenter/researcher — are volatile across rebuilds; see
+`docs/findings.md` for current values. The original 5-way split (separating *Lasers* and
+splitting *In-Memory* from *Neuromorphic*) was reverted 2026-07-04 after purity measurement
+showed those two extra seams were not real boundaries (see `ARCHITECTURE.md` §Data model).
 
 ---
 
 ## Navigation funnel (4 surfaces)
 
 ### Surface 1 — Family overview (front door)
-- **Five scorecard tiles** (headline families only; "adjacent" excluded).
+- **Three scorecard tiles** (the 3 headline families; `mixed` clusters excluded).
 - Each tile: family name, paper count, patent count, top patenter, median lag.
 - **Primary call-to-action:** "Explore [family]" → Surface 2.
 - Secondary CTAs: "Find an organisation" → Surface 3; "Technology map" → Surface 4.
@@ -114,7 +119,7 @@ This is a static/semi-static page backed by `fact_npl_link`, `dim_paper`, `dim_p
 ## Data-quality honesty rails (embedded in UI)
 
 - **US patents only**: "PatentsView covers US patents issued by USPTO. EPO/WIPO/CN filings are not represented."
-- **NPL links**: "Citation links are extracted from USPTO non-patent-literature reference strings. High-confidence links used a DOI match; medium-confidence used fuzzy title matching. Precision vs Marx & Fuegi gold set: 0.831."
+- **NPL links**: "Citation links come from two sources, per patent — the Marx & Fuegi 'Reliance on Science' dataset (gold-standard published citations) wherever it covers the patent, and our own DOI + fuzzy-title matcher over USPTO non-patent-literature reference strings for recent grants beyond that dataset's vintage. DOI / front-page citation = high confidence; fuzzy title / body-only = medium. Link counts are a lower bound; the matcher's measured precision/recall against the Marx & Fuegi gold pairs is disclosed in the methodology footer (see `docs/data_source_manifest.md`)."
 - **Patent filing-year truncation**: "Filing counts after 2019 appear lower because recently filed patents take 2–4 years to be granted and enter PatentsView. The drop does not reflect real decline in activity."
 - **Confidence badges on all org matches**: shown in Surface 3 org card.
 
@@ -149,5 +154,5 @@ This is a static/semi-static page backed by `fact_npl_link`, `dim_paper`, `dim_p
 
 - [ ] Validate `seed_cluster_family` against Part 0 CPC scope (confirm EUV clusters contain G03F 7/20, SiPhotonics contain G02B/H01S, Neuro contain G06N 3/049).
 - [ ] Push rebuilt `mart_family` + `seed_cluster_family` to production R2 Parquet.
-- [ ] Investigate c_114 (Samsung Display) in "adjacent" — ensure it doesn't contaminate Lasers family charts.
+- [x] Off-family cluster contamination is handled structurally: `seed_cluster_family`'s confidence floor (added 2026-07-08) routes clusters that don't clear the ≥80% / ≥50% thresholds into `mixed`, which is excluded from headline charts.
 - [ ] Write Streamlit `apps/ui/` scaffold with `.env.local` R2 read-only credentials.

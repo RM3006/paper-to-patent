@@ -151,7 +151,10 @@ sources:
             tests: [not_null]
 
       - name: npl_links
-        description: One row per resolved paper↔patent citation link.
+        description: >
+          One row per resolved paper↔patent citation link from our own DOI +
+          fuzzy-title matcher. Only source for patents Marx & Fuegi does not
+          cover (see mf_npl_links) — fact_npl_link.sql implements this seam.
         columns:
           - name: patent_id
             description: "{{ doc('patent_id') }} The citing, in-scope patent."
@@ -167,6 +170,33 @@ sources:
             tests: [not_null]
           - name: doi_extracted
             description: Paper identifier (DOI) found directly in the citation text, when there was one.
+
+      - name: mf_npl_links
+        description: >
+          One row per Marx & Fuegi ("Reliance on Science", CC-BY-4.0, Zenodo
+          record 7996195) patent↔paper citation link, filtered to scope
+          patents and our OpenAlex corpus. Primary NPL source in
+          fact_npl_link.sql for any patent this dataset covers at all —
+          coverage caps out around patents granted ~early 2023.
+        columns:
+          - name: patent_id
+            description: "{{ doc('patent_id') }} The citing, in-scope patent."
+            tests: [not_null]
+          - name: work_id
+            description: "{{ doc('work_id') }} The matched paper."
+            tests: [not_null]
+          - name: match_method
+            description: "{{ doc('match_method') }}"
+            tests: [not_null]
+          - name: confidence
+            description: "{{ doc('confidence') }} Derived from wherefound: front/both → high, body-only → medium."
+            tests: [not_null]
+          - name: wherefound
+            description: "Where Marx & Fuegi located this citation: 'front' (patent's printed front page), 'body' (in-text full-text extraction only), or 'both'."
+          - name: confscore
+            description: Marx & Fuegi's own match-confidence score (1–10) for this citation, exposed as-is and not used to gate inclusion.
+          - name: self
+            description: "Marx & Fuegi's self-citation flag: 'isself' (citing org authored the cited paper), 'notself', or 'unkself' (unknown)."
 
   - name: ml_intermediate
     description: >

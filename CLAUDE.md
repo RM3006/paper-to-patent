@@ -16,6 +16,7 @@
 10. **Tests for every asset.** One fixture-based correctness test, next to the code. Tests check values, not just "runs without error." Entity resolution and lead-time logic get tests on hand-labelled fixtures, not just schema checks.
 11. **`ruff`, `pyright`, `pytest` all pass before merge.** No `print` in production paths; use `from nexus.logging import logger`.
 12. **Dynamic documentation.** Update the affected `docs/` files in the same commit as the change that triggers it (see the maintenance table).
+13. **Documentation metrics** Never hard code metrics number, in comments/docs files, that are prone to change on every run (like number of clusters or number of dbt tests).
 
 ## Provenance & confidence pattern (the integrity backbone)
 
@@ -28,7 +29,7 @@ Rules that follow from it:
 - The UI **shows** confidence. An NPL-citation-linked lead time is presented differently from a co-occurrence signal. The user always knows whether they are looking at a hard link or a soft one.
 - `fuzzy_review` rows (matches below the auto-accept threshold) never enter a mart silently — they are either resolved in the eval set or excluded.
 - Any headline number in the UI must be reproducible from a single gold mart whose top-of-file comment states the claim's basis.
-- **NPL linkage quality is measured against the Marx & Fuegi gold eval set** (their matched pairs joined to OpenAlex via `ids.mag`). Precision and recall vs that benchmark are recorded in `docs/data_source_manifest.md` and disclosed in the UI methodology footer.
+- **NPL linkage is a hybrid source.** For any patent the Marx & Fuegi "Reliance on Science" dataset (CC-BY-4.0, gold-standard published citations; vintage caps ~early-2023 grants) covers at all, its links are used directly (`link_source = 'marx_fuegi'`). For patents outside that coverage, our own DOI + fuzzy-title matcher supplies the edges (`link_source = 'doi'` / `'fuzzy_title'`) — never both for the same patent (see `assert_fact_npl_link_single_source.sql`). The matcher's precision/recall is measured against the Marx & Fuegi pairs as a gold eval set (`oaid` in their CSV is already an OpenAlex work ID, joined directly — no MAG-ID bridge needed) and recorded in `docs/data_source_manifest.md`, disclosed in the UI methodology footer.
 
 ## Tech stack (fixed — ask before deviating)
 

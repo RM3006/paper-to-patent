@@ -106,11 +106,12 @@ models:
 
   - name: dim_paper
     description: >
-      One row per paper in scope (162,787 rows). Non-research entries
-      misclassified as papers by the upstream source (e.g. dataset files,
-      software release notes) are excluded. cluster_id is filled in once
-      clustering has been computed for the current corpus, and is NULL
-      before then.
+      One row per paper in scope. Non-research entries misclassified as papers
+      by the upstream source (e.g. dataset files, software release notes) are
+      excluded. The paper's technology cluster is deliberately NOT stored here
+      (that would make the dim depend on the clustering that itself reads it) —
+      join the bridge fact_document_cluster (doc_type='paper') when a cluster is
+      needed.
     columns:
       - name: work_id
         description: "{{ doc('work_id') }} Primary key of this model."
@@ -135,20 +136,13 @@ models:
         description: "The subject-area topic this paper is primarily about, drawn from a fixed set of topics in scope for this atlas (EUV lithography, silicon photonics, lasers, or advanced memory and neural computing). Drives this paper's own technology family in fact_publication."
       - name: primary_topic_name
         description: "Human-readable name for primary_topic_id."
-      - name: cluster_id
-        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
-        tests:
-          - relationships:
-              arguments:
-                to: ref('dim_technology_cluster')
-                field: cluster_id
 
   - name: dim_patent
     description: >
-      One row per patent in scope (33,578 rows — matching the relevant
-      classification codes, filed between 2014 and 2025). cluster_id is
-      filled in once clustering has been computed for the current corpus,
-      and is NULL before then.
+      One row per patent in scope (matching the relevant classification codes,
+      filed between 2014 and 2025). The patent's technology cluster is
+      deliberately NOT stored here (see dim_paper) — join the bridge
+      fact_document_cluster (doc_type='patent') when a cluster is needed.
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }} Primary key of this model."
@@ -163,13 +157,6 @@ models:
         description: "The date this patent was formally granted. Shown for reference only — never used to measure timing, since it reflects patent-office processing time rather than anything about the invention itself."
       - name: patent_type
         description: "utility | design | plant | reissue | defensive_publication."
-      - name: cluster_id
-        description: "{{ doc('cluster_id') }} NULL until clustering has been computed for the current corpus."
-        tests:
-          - relationships:
-              arguments:
-                to: ref('dim_technology_cluster')
-                field: cluster_id
 
   - name: fact_publication
     description: >
@@ -465,9 +452,9 @@ models:
       A display-level mapping from each technology cluster to one of the
       three broad technology families this atlas was originally scoped
       around (EUV lithography; silicon photonics, including lasers;
-      neuromorphic and in-memory computing, combined) plus a catch-all
-      "adjacent" family. Recomputed from each member document's own
-      classification signal. The combined groupings here reflect a
+      neuromorphic and in-memory computing, combined) plus a "mixed" bucket
+      for clusters no single family clearly dominates. Recomputed from each
+      member document's own classification signal. The combined groupings reflect a
       deliberate choice: a finer 5-way split was tried and abandoned once
       analysis showed that a large share of clusters genuinely mix content
       across the finer boundaries — lasers with silicon photonics, and
@@ -494,22 +481,26 @@ models:
                 to: ref('dim_technology_cluster')
                 field: cluster_id
       - name: family_id
-        description: "'euv' | 'silicon_photonics' | 'neuromorphic_in_memory' | 'adjacent' (used when no member document has a resolvable family signal). Assigned by majority vote across the cluster's member documents."
-        tests: [not_null]
+        description: "'euv' | 'silicon_photonics' | 'neuromorphic_in_memory' | 'mixed'. A real family is assigned only when it is >= 80% of ALL the cluster's documents (off-scope/NULL documents count in the denominator); otherwise 'mixed'."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed"]
       - name: family_name
-        description: "Human-readable display name for family_id (e.g. 'EUV Lithography')."
+        description: "Human-readable display name for family_id (e.g. 'EUV Lithography', 'Mixed')."
         tests: [not_null]
       - name: family_sort_order
-        description: "Fixed display order for the 4 families (1=EUV, 2=Silicon Photonics, 3=Neuromorphic & In-Memory, 4=Adjacent)."
+        description: "Fixed display order for the 4 families (1=EUV, 2=Silicon Photonics, 3=Neuromorphic & In-Memory, 4=Mixed)."
         tests: [not_null]
 
   - name: mart_family
     description: >
       The headline scorecard: one row per technology family, rolling up
-      every cluster in that family. The 5 families are EUV Lithography,
-      Silicon Photonics & Optical I/O, Lasers & Light Sources, Neuromorphic
-      / Brain-inspired computing, and In-Memory & Emerging Memory; an
-      "adjacent" row is also included but excluded from headline charts.
+      every cluster in that family. The three headline families are EUV
+      Lithography, Silicon Photonics (incl. lasers), and Neuromorphic &
+      In-Memory Compute; a "mixed" row (clusters no single family dominates)
+      is also included but excluded from headline charts.
       patent_share is the key signal for how IP-intensive a family is
       relative to its research volume. median_lag_years_weighted weights
       each contributing cluster by how much citation-linked evidence it has.
@@ -554,12 +545,17 @@ models:
   - name: fact_npl_link
     description: >
       Resolved paper↔patent links: rows where a patent explicitly cites a
-      specific paper as prior art. The citation-lag interval is computed
-      here, from each pair's publication and filing dates. Only pairs where
-      the paper was published before the patent was filed are kept — a
-      citation to a paper published after the patent's own filing date would
-      be a data error, not a genuine lag. Every row states how the link was
-      established and how confident that match is.
+      specific paper as prior art. Hybrid source, partitioned per patent: for
+      any patent Marx & Fuegi ("Reliance on Science", CC-BY-4.0) covers at
+      all, ALL of that patent's edges come from Marx & Fuegi; the remaining
+      patents (Marx & Fuegi's vintage caps out around patents granted
+      ~early 2023) draw edges from our own DOI + fuzzy-title matcher instead —
+      see link_source. The citation-lag interval is computed here, from each
+      pair's publication and filing dates. Only pairs where the paper was
+      published before the patent was filed are kept — a citation to a paper
+      published after the patent's own filing date would be a data error,
+      not a genuine lag. Every row states how the link was established and
+      how confident that match is.
     columns:
       - name: patent_id
         description: "{{ doc('patent_id') }}"
@@ -578,13 +574,26 @@ models:
                 to: ref('dim_paper')
                 field: work_id
       - name: match_method
-        description: "{{ doc('match_method') }} Always a resolved citation for this table — either the paper's own identifier was found directly in the patent's citation text, or the citation was matched by title similarity (see doi_extracted)."
+        description: "{{ doc('match_method') }} Always a resolved citation for this table — either the paper's own identifier was found directly in the patent's citation text, or the citation was matched by title similarity (see doi_extracted), or the link comes from the published Marx & Fuegi dataset (see link_source)."
         tests: [not_null]
       - name: confidence
-        description: "{{ doc('confidence') }} High when the paper's own identifier was found directly; medium when matched by title similarity instead."
+        description: "{{ doc('confidence') }} High when the paper's own identifier was found directly, or when Marx & Fuegi located the citation on the patent's front page; medium when matched by title similarity, or when Marx & Fuegi located the citation only via in-text extraction."
         tests: [not_null]
+      - name: link_source
+        description: "Which source this edge came from: 'marx_fuegi' (published dataset — wins on any patent it covers at all), 'doi' (our matcher's DOI route), or 'fuzzy_title' (our matcher's fuzzy-title route, only reached for patents Marx & Fuegi doesn't cover)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['marx_fuegi', 'doi', 'fuzzy_title']
       - name: doi_extracted
-        description: "The paper identifier found directly in the patent's citation text, when there was one. NULL when the link was instead established by title similarity."
+        description: "The paper identifier found directly in the patent's citation text, when link_source = 'doi'. NULL for 'fuzzy_title' and 'marx_fuegi' rows."
+      - name: mf_confscore
+        description: "Marx & Fuegi's own match-confidence score (1–10), when link_source = 'marx_fuegi'. NULL otherwise. Exposed as-is, not used to gate inclusion."
+      - name: mf_wherefound
+        description: "Marx & Fuegi's citation-location flag ('front' | 'body' | 'both'), when link_source = 'marx_fuegi'. NULL otherwise."
+      - name: mf_self
+        description: "Marx & Fuegi's self-citation flag ('isself' | 'notself' | 'unkself'), when link_source = 'marx_fuegi'. NULL otherwise."
       - name: publication_date
         description: "{{ doc('publication_date') }} Carried through here as the starting point for citation_lag_days/citation_lag_years."
         tests: [not_null]

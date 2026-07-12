@@ -61,7 +61,7 @@ st.markdown("""
 render_nav("Family Deepdive", filter_sidebar=True)
 render_tour_banner(2)
 
-_HEADLINE_FAMILIES = {k: v for k, v in FAMILY_LABELS.items() if k not in ("adjacent", "noise")}
+_HEADLINE_FAMILIES = {k: v for k, v in FAMILY_LABELS.items() if k not in ("mixed", "noise")}
 
 _FAMILY_DESC: dict[str, str] = {
     "euv": (

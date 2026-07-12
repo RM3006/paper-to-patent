@@ -68,7 +68,7 @@ st.markdown("""
 render_nav("Technology Landscape", filter_sidebar=True)
 render_tour_banner(1)
 
-FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "adjacent", "noise"]
+FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed", "noise"]
 
 # ── Load ─────────────────────────────────────────────────────────────────────────────
 df_all = load_cluster_bubble()
