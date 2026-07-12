@@ -66,15 +66,16 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     con.execute("""
         CREATE TABLE main_marts.mart_gap (
             cluster_id VARCHAR, n_papers BIGINT, n_patents BIGINT,
-            npl_median_lag_years DOUBLE, npl_reportable BOOLEAN, cohort_lag_years DOUBLE
+            npl_median_lag_years DOUBLE, npl_reportable BOOLEAN, npl_n_links BIGINT,
+            cohort_lag_years DOUBLE
         )
     """)
     con.execute("""
         INSERT INTO main_marts.mart_gap VALUES
-            ('c1', 60, 25, 3.2, true, 2.8),
-            ('c2', 40, 15, 4.0, true, 3.5),
-            ('c3', 10, 5, 5.0, true, 4.5),
-            ('c_noise', 500, 500, NULL, false, NULL)
+            ('c1', 60, 25, 3.2, true, 34, 2.8),
+            ('c2', 40, 15, 4.0, true, 22, 3.5),
+            ('c3', 10, 5, 5.0, true, 21, 4.5),
+            ('c_noise', 500, 500, NULL, false, 0, NULL)
     """)
 
     con.execute("""

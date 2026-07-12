@@ -168,6 +168,12 @@ def _html_family_card(
     pct = (row["patent_share"] or 0.0) * 100
     lag = row["median_lag_years_weighted"]
     lag_str = f"{lag:.1f} yr" if lag is not None else "—"
+    n_links = row["total_npl_links"] or 0
+    lag_tooltip = (
+        f"Based on {n_links:,} NPL-linked citations"
+        if lag is not None
+        else "Fewer than 20 NPL-linked citations — not reportable"
+    )
     card_cls = "card card--family is-highlighted" if highlighted else "card card--family"
     accent_vars = f"--accent:{color};--accent-border:{color}55;--accent-glow:{color}44;"
 
@@ -199,7 +205,7 @@ def _html_family_card(
         f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>"
         f"granted US patents</div>"
         f"</div>"
-        f"<div style='display:flex;flex-direction:column;"
+        f"<div title='{lag_tooltip}' style='display:flex;flex-direction:column;"
         f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{lag_str}</div>"

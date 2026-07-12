@@ -103,6 +103,9 @@ def test_load_cluster_bubble_excludes_noise_and_coalesces_unmapped_cluster(
     assert rows["c2"]["family_id"] == "silicon_photonics"
     assert rows["c3"]["family_id"] == "noise"  # no seed_cluster_family row -> COALESCE fallback
     assert rows["c3"]["family_name"] == "Frontier / Unclustered"
+    # npl_n_links backs the hover tooltip's link-count disclosure (evidence weight
+    # behind the lag figure) -- must survive the query alongside the lag itself.
+    assert rows["c1"]["npl_n_links"] == 34
 
 
 def test_load_org_output_by_family_discloses_unattributed_bucket(fixture_db: None) -> None:

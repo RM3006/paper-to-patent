@@ -203,17 +203,25 @@ lag       = frow["median_lag_years_weighted"]
 lag_str   = f"{lag:.1f} yr" if lag is not None else "—"
 n_patents = frow["n_patents"] or 0
 n_papers  = frow["n_papers"] or 0
+n_links   = frow["total_npl_links"] or 0
+lag_tooltip = (
+    f"Based on {n_links:,} NPL-linked citations"
+    if lag is not None
+    else "Fewer than 20 NPL-linked citations — not reportable"
+)
 
 m1, m2, m3, m4 = st.columns(4)
-for col, value, label in [
-    (m1, f"{pct:.0f}%",    "patent share"),
-    (m2, lag_str,           "citation lag"),
-    (m3, f"{n_patents:,}", "granted US patents"),
-    (m4, f"{n_papers:,}",  "research papers"),
+for col, value, label, tooltip in [
+    (m1, f"{pct:.0f}%",    "patent share", None),
+    (m2, lag_str,           "citation lag", lag_tooltip),
+    (m3, f"{n_patents:,}", "granted US patents", None),
+    (m4, f"{n_papers:,}",  "research papers", None),
 ]:
     with col:
+        _title_attr = f" title='{tooltip}'" if tooltip else ""
         st.markdown(
-            f"<div class='card card--metric' style='margin-bottom:1rem;--accent:{family_color};'>"
+            f"<div{_title_attr} class='card card--metric' "
+            f"style='margin-bottom:1rem;--accent:{family_color};'>"
             f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
             f"font-weight:800;line-height:1;'>{value}</div>"
             f"<div style='font-size:12px;color:#888888;margin-top:6px;"

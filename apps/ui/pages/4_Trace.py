@@ -127,9 +127,11 @@ family_df = load_trace_family_stat(family_id)
 
 # ── Compute stat card values ──────────────────────────────────────────────────
 fam_med: float | None = None
+fam_links = 0
 if len(family_df) > 0:
     frow = family_df.row(0, named=True)
     fam_med = frow["median_lag_years_weighted"]
+    fam_links = frow["total_npl_links"] or 0
 
 lags_known = [
     r["citation_lag_years"]
@@ -139,6 +141,11 @@ lags_known = [
 fastest = min(lags_known) if lags_known else None
 fastest_str = f"{fastest:.1f} yr" if fastest is not None else "—"
 fam_med_str = f"{fam_med:.1f} yr" if fam_med is not None else "—"
+fam_med_tooltip = (
+    f"Based on {fam_links:,} NPL-linked citations"
+    if fam_med is not None
+    else "Fewer than 20 NPL-linked citations — not reportable"
+)
 
 # ── Paper card + stat (single flex row → equal height guaranteed) ─────────────
 abstract_raw = paper.get("abstract") or ""
@@ -165,14 +172,16 @@ st.markdown(
 
 # ── Metrics cards (3 columns) ─────────────────────────────────────────────────
 _m1, _m2, _m3 = st.columns(3)
-for _col, _val, _lbl in [
-    (_m1, str(n_citing), "Patents citing this paper"),
-    (_m2, fastest_str,   "Fastest citation lag"),
-    (_m3, fam_med_str,   "Family median lag"),
+for _col, _val, _lbl, _tooltip in [
+    (_m1, str(n_citing), "Patents citing this paper", None),
+    (_m2, fastest_str,   "Fastest citation lag", None),
+    (_m3, fam_med_str,   "Family median lag", fam_med_tooltip),
 ]:
     with _col:
+        _title_attr = f" title='{_tooltip}'" if _tooltip else ""
         st.markdown(
-            f"<div class='card card--metric' style='margin-bottom:1.5rem;--accent:{family_color};'>"
+            f"<div{_title_attr} class='card card--metric' "
+            f"style='margin-bottom:1.5rem;--accent:{family_color};'>"
             f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
             f"font-weight:800;line-height:1;'>{_val}</div>"
             f"<div style='font-size:12px;color:#888888;margin-top:6px;"

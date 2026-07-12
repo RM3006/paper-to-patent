@@ -206,6 +206,7 @@ def load_cluster_bubble() -> pl.DataFrame:
             mg.n_patents,
             mg.npl_median_lag_years,
             mg.npl_reportable,
+            mg.npl_n_links,
             mg.cohort_lag_years
         FROM main_marts.mart_gap mg
         JOIN  main_marts.dim_technology_cluster dtc ON dtc.cluster_id = mg.cluster_id
@@ -370,6 +371,7 @@ def load_cluster_card(cluster_id: str) -> pl.DataFrame:
             mg.n_patents,
             mg.npl_median_lag_years,
             mg.npl_reportable,
+            mg.npl_n_links,
             mg.cohort_lag_years,
             scf.family_id,
             scf.family_name,
