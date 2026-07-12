@@ -440,9 +440,10 @@ fixtures. Docs are updated **in the same commit** as the change that triggers th
    semiconductor-specific one (no free CPC-level worldwide breakdown exists); the true US-only
    share for our four CPC families is plausibly *lower* than 16%, so the cited figure is a
    conservative upper bound, not a precise domain measurement. Actually ingesting and merging
-   non-US patent data — assessed feasible via patent families + pre-harmonized assignee sources
-   (Google Patents Public Data or PATSTAT/OECD HAN), but a multi-day v2 project, not a docs
-   change — remains open.
+   non-US patent data remains open — assessed feasible and phased into a spike + 2 stages, not a
+   docs change. See `ROADMAP.md` → *Beyond v1* #2 for the full design sketch (source options,
+   the Japan CPC-coverage gap, why citation lag likely wouldn't extend to non-US patents) and
+   `docs/data_source_manifest.md` §4a for the per-office breakdown of what's currently invisible.
 5. **No versioned history of served snapshots.** Each prod build overwrites MotherDuck
    (`CREATE OR REPLACE`); the immutable R2 gold layer was traded away for a single source of
    truth. Fine for a point-in-time portfolio piece, but there's no time-travel on the served
