@@ -45,6 +45,8 @@ from data import (
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
+    confidence_badge,
+    method_badge,
     render_chip_multiselect,
     render_nav,
     render_tour_banner,
@@ -274,11 +276,18 @@ else:
         role_label = "Both researcher and IP holder"
 
 # ── Org identity header ───────────────────────────────────────────────────────
+# match_meth/confidence come from dim_organization.primary_match_method/
+# primary_confidence -- how this org's identity was resolved into the crosswalk
+# (rule: every match carries provenance and confidence, and the UI shows it).
 st.markdown(
     f"<div style='margin-top:1rem;margin-bottom:1.2rem;'>"
+    f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:4px;'>"
     f"<div style='font-family:{_FONT};font-size:28px;font-weight:800;"
-    f"color:#111111;line-height:1.2;margin-bottom:4px;'>{org_name}</div>"
-    f"<div style='font-size:12px;color:#888888;'>{role_label}</div>"
+    f"color:#111111;line-height:1.2;'>{org_name}</div>"
+    f"{method_badge(match_meth)}"
+    f"</div>"
+    f"<div style='font-size:12px;color:#888888;'>{role_label} &middot; "
+    f"{confidence_badge(confidence)} match confidence</div>"
     f"</div>",
     unsafe_allow_html=True,
 )

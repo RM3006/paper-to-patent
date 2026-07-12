@@ -25,7 +25,19 @@ import streamlit as st
 from streamlit_searchbox import StyleOverrides, st_searchbox
 
 from data import load_trace_family_stat, load_trace_links, load_trace_paper, search_papers_ilike
-from render import FAMILY_COLORS, FAMILY_LABELS, render_nav, render_tour_banner
+from render import (
+    FAMILY_COLORS,
+    FAMILY_LABELS,
+    confidence_badge,
+    render_nav,
+    render_tour_banner,
+)
+
+_LINK_SOURCE_LABEL: dict[str, str] = {
+    "marx_fuegi":  "Marx & Fuegi (gold, published citation)",
+    "doi":         "DOI match",
+    "fuzzy_title": "Fuzzy title match",
+}
 
 st.set_page_config(
     page_title="Trace a Paper — The Chips Behind AI",
@@ -244,38 +256,53 @@ else:
             annotation_position="top right",
         )
 
-    # Build hover texts
-    hover_texts = []
-    for row in links_with_lag:
-        lag_str  = f"{row['citation_lag_years']:.1f} yr"
-        title    = (row["patent_title"] or "Untitled")[:60]
-        assignee = row["assignee"] or "Unresolved"
+    # Build hover texts -- discloses link provenance per the project's confidence
+    # pattern (rule: every match carries provenance and confidence, shown in the UI).
+    def _hover_text(row: dict) -> str:
+        lag_str   = f"{row['citation_lag_years']:.1f} yr"
+        title     = (row["patent_title"] or "Untitled")[:60]
+        assignee  = row["assignee"] or "Unresolved"
         filed_str = row["filing_date"].strftime("%d/%m/%Y")
-        hover_texts.append(
+        source    = _LINK_SOURCE_LABEL.get(row["link_source"], row["link_source"] or "unknown")
+        return (
             f"<b>{title}</b><br>"
             f"Assignee: {assignee}<br>"
             f"Filed: {filed_str}<br>"
             f"Lag: {lag_str}<br>"
-            f"Patent: US{row['patent_id']}"
+            f"Patent: US{row['patent_id']}<br>"
+            f"{row['confidence'].title()} confidence — {source}"
         )
 
-    fig.add_trace(go.Scatter(
-        x=[r["filing_date"].isoformat() for r in links_with_lag],
-        y=y_positions,
-        mode="markers+text",
-        marker=dict(
-            color=family_color,
-            size=12,
-            symbol="circle",
-            line=dict(color="#ffffff", width=1.5),
-        ),
-        text=[f"  {(r['assignee'] or 'Unresolved')[:22]}" for r in links_with_lag],
-        textposition="middle right",
-        textfont=dict(size=10, color="#555555"),
-        hovertext=hover_texts,
-        hoverinfo="text",
-        name="Citing patents",
-    ))
+    # Solid marker = high confidence, hollow = medium -- the visual encoding for
+    # the "hard link vs soft link" distinction the confidence pattern requires.
+    high_idx   = [i for i, r in enumerate(links_with_lag) if r["confidence"] == "high"]
+    medium_idx = [i for i, r in enumerate(links_with_lag) if r["confidence"] != "high"]
+
+    _high_style = (
+        "circle", dict(color="#ffffff", width=1.5), "Citing patents — high confidence",
+    )
+    _medium_style = (
+        "circle-open", dict(color=family_color, width=2), "Citing patents — medium confidence",
+    )
+    for idxs, (symbol, marker_line, trace_name) in (
+        (high_idx, _high_style),
+        (medium_idx, _medium_style),
+    ):
+        if not idxs:
+            continue
+        rows = [links_with_lag[i] for i in idxs]
+        fig.add_trace(go.Scatter(
+            x=[r["filing_date"].isoformat() for r in rows],
+            y=[y_positions[i] for i in idxs],
+            mode="markers+text",
+            marker=dict(color=family_color, size=12, symbol=symbol, line=marker_line),
+            text=[f"  {(r['assignee'] or 'Unresolved')[:22]}" for r in rows],
+            textposition="middle right",
+            textfont=dict(size=10, color="#555555"),
+            hovertext=[_hover_text(r) for r in rows],
+            hoverinfo="text",
+            name=trace_name,
+        ))
 
     fig.update_layout(
         height=max(260, n * 36 + 80),
@@ -306,6 +333,15 @@ else:
     st.plotly_chart(
         fig, use_container_width=True,
         config={"displayModeBar": False, "displaylogo": False}, key="trace_timeline",
+    )
+
+    st.markdown(
+        f"<div style='font-size:11px;color:#888888;margin-top:-4px;'>"
+        f"&#9679; Solid marker = {confidence_badge('high')} link (Marx &amp; Fuegi gold citation "
+        f"or DOI match) &nbsp;&nbsp; "
+        f"&#9675; Hollow marker = {confidence_badge('medium')} link (fuzzy title match)"
+        f"</div>",
+        unsafe_allow_html=True,
     )
 
     if links_no_lag:

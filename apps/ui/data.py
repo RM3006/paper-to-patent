@@ -875,12 +875,15 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_trace_links(work_id: str) -> pl.DataFrame:
-    """Citing patents for a paper — one row per patent with primary assignee and lag."""
+    """Citing patents for a paper — one row per patent with primary assignee, lag,
+    and NPL link provenance (confidence + link_source: 'marx_fuegi' gold citation
+    vs. our own 'doi' / 'fuzzy_title' matcher — see the hybrid NPL linkage rule).
+    """
     return _query(
         """
         WITH npl AS (
             SELECT DISTINCT ON (patent_id)
-                patent_id, confidence, citation_lag_years
+                patent_id, confidence, link_source, citation_lag_years
             FROM main_marts.fact_npl_link
             WHERE work_id = ?
             ORDER BY patent_id,
@@ -897,6 +900,7 @@ def load_trace_links(work_id: str) -> pl.DataFrame:
         SELECT
             n.patent_id,
             n.confidence,
+            n.link_source,
             n.citation_lag_years,
             dp.title AS patent_title,
             dp.filing_date,

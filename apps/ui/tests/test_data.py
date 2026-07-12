@@ -114,24 +114,23 @@ def test_load_family_metrics_matches_manual_counts_and_applies_lag_floor(
     assert m["total_npl_links"] == 2
     assert m["median_lag_years_weighted"] is None  # 2 links < the 20-link floor
     # patent_share = family n_patents / total n_patents across all families.
-    # p1, p2 are the only two family-attributed patents in the fixture (p3, p4
-    # are NULL family_id, excluded from the denominator too) -- so euv holds
-    # the entire pool: 2/2 = 1.0.
-    assert m["patent_share"] == 1.0
+    # p1, p2 are euv; p5 is lasers; p3, p4 are NULL family_id (excluded from the
+    # denominator) -- so the denominator is 3 (p1, p2, p5) and euv holds 2/3.
+    assert m["patent_share"] == 0.667
 
 
 def test_load_family_metrics_scopes_to_cluster_filter(fixture_db: None) -> None:
     m_c1 = data_module.load_family_metrics("euv", cluster_ids=("c1",)).row(0, named=True)
     assert m_c1["n_patents"] == 2  # both euv patents are in c1
     # Numerator narrows to the cluster filter, but the denominator (total
-    # patents across all families) stays unscoped -- still 2/2 = 1.0.
-    assert m_c1["patent_share"] == 1.0
+    # patents across all families) stays unscoped -- still 2/3.
+    assert m_c1["patent_share"] == 0.667
 
     m_c2 = data_module.load_family_metrics("euv", cluster_ids=("c2",)).row(0, named=True)
     assert m_c2["n_patents"] == 0  # c2 has no euv-family patents
     assert m_c2["n_papers"] == 0
-    # Numerator is 0, but the denominator is still the unscoped total (2) --
-    # 0/2 = 0.0, not NULL.
+    # Numerator is 0, but the denominator is still the unscoped total (3) --
+    # 0/3 = 0.0, not NULL.
     assert m_c2["patent_share"] == 0.0
 
 
@@ -148,6 +147,29 @@ def test_load_family_top_orgs_ranks_top_three_and_excludes_unresolved(fixture_db
     # NULL-family_id row (15) -- that's a different, excluded ("unattributed") bucket.
     org_a_count = next(r["doc_count"] for r in euv_patent_rows if r["canonical_name"] == "Org A")
     assert org_a_count == 100
+
+
+def test_load_org_profile_returns_match_method_and_confidence(fixture_db: None) -> None:
+    row = data_module.load_org_profile("org_a").row(0, named=True)
+    assert row["primary_match_method"] == "fuzzy_high"
+    assert row["primary_confidence"] == "high"
+
+    row_medium = data_module.load_org_profile("org_noise_only").row(0, named=True)
+    assert row_medium["primary_confidence"] == "medium"
+
+
+def test_load_trace_links_returns_confidence_and_link_source_per_link(fixture_db: None) -> None:
+    df = data_module.load_trace_links("w1")
+    rows = {r["patent_id"]: r for r in df.to_dicts()}
+    assert set(rows) == {"p1", "p5"}
+    # p1: gold Marx & Fuegi citation, high confidence.
+    assert rows["p1"]["confidence"] == "high"
+    assert rows["p1"]["link_source"] == "marx_fuegi"
+    # p5: our own fuzzy-title matcher, medium confidence.
+    assert rows["p5"]["confidence"] == "medium"
+    assert rows["p5"]["link_source"] == "fuzzy_title"
+    # Ordered by citation_lag_years ascending: p5 (1.2yr) before p1 (2.0yr).
+    assert df["patent_id"].to_list() == ["p5", "p1"]
 
 
 def test_search_orgs_ilike_short_query_returns_default_active_list(fixture_db: None) -> None:

@@ -116,7 +116,8 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
             ('p1', 'org_a', 'euv', 'c1'),
             ('p2', 'org_b', 'euv', 'c1'),
             ('p3', 'org_a', NULL, 'c1'),
-            ('p4', 'org_b', NULL, 'c2')
+            ('p4', 'org_b', NULL, 'c2'),
+            ('p5', 'org_a', 'lasers', 'c3')
     """)
 
     con.execute("""
@@ -133,26 +134,51 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     con.execute("""
         CREATE TABLE main_marts.fact_npl_link (
-            patent_id VARCHAR, work_id VARCHAR, citation_lag_years DOUBLE
+            patent_id VARCHAR, work_id VARCHAR, citation_lag_years DOUBLE,
+            confidence VARCHAR, link_source VARCHAR
         )
     """)
     con.execute("""
         INSERT INTO main_marts.fact_npl_link VALUES
-            ('p1', 'w1', 2.0),
-            ('p1', 'w2', 3.0)
+            ('p1', 'w1', 2.0, 'high',   'marx_fuegi'),
+            ('p1', 'w2', 3.0, 'medium', 'fuzzy_title'),
+            ('p5', 'w1', 1.2, 'medium', 'fuzzy_title')
     """)
 
     con.execute("""
         CREATE TABLE main_marts.dim_organization (
-            org_id VARCHAR, canonical_name VARCHAR, primary_match_method VARCHAR
+            org_id VARCHAR, canonical_name VARCHAR, primary_match_method VARCHAR,
+            primary_confidence VARCHAR
         )
     """)
     con.execute("""
         INSERT INTO main_marts.dim_organization VALUES
-            ('org_a', 'Org A', 'fuzzy_high'),
-            ('org_b', 'Org B', 'fuzzy_high'),
-            ('org_native_frag', 'US83920184', 'native_id'),
-            ('org_noise_only', 'Noise Org', 'fuzzy_high')
+            ('org_a', 'Org A', 'fuzzy_high', 'high'),
+            ('org_b', 'Org B', 'fuzzy_high', 'high'),
+            ('org_native_frag', 'US83920184', 'native_id', 'high'),
+            ('org_noise_only', 'Noise Org', 'fuzzy_high', 'medium')
+    """)
+
+    con.execute("""
+        CREATE TABLE main_marts.dim_paper (
+            work_id VARCHAR, title VARCHAR, publication_date DATE,
+            abstract VARCHAR, primary_topic_name VARCHAR
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_paper VALUES
+            ('w1', 'Test Paper One', DATE '2015-01-01', 'An abstract.', 'Test Topic')
+    """)
+
+    con.execute("""
+        CREATE TABLE main_marts.dim_patent (
+            patent_id VARCHAR, title VARCHAR, filing_date DATE
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_patent VALUES
+            ('p1', 'Patent One', DATE '2017-01-01'),
+            ('p5', 'Patent Five', DATE '2016-06-01')
     """)
 
     con.close()
