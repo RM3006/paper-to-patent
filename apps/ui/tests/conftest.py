@@ -67,26 +67,33 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         CREATE TABLE main_marts.mart_gap (
             cluster_id VARCHAR, n_papers BIGINT, n_patents BIGINT,
             npl_median_lag_years DOUBLE, npl_reportable BOOLEAN, npl_n_links BIGINT,
-            cohort_lag_years DOUBLE
+            cohort_lag_years DOUBLE, hhi DOUBLE, hhi_reportable BOOLEAN,
+            n_research_orgs BIGINT, n_assignees BIGINT
         )
     """)
     con.execute("""
         INSERT INTO main_marts.mart_gap VALUES
-            ('c1', 60, 25, 3.2, true, 34, 2.8),
-            ('c2', 40, 15, 4.0, true, 22, 3.5),
-            ('c3', 10, 5, 5.0, true, 21, 4.5),
-            ('c_noise', 500, 500, NULL, false, 0, NULL)
+            ('c1', 60, 25, 3.2, true, 34, 2.8, 0.35, true, 20, 10),
+            ('c2', 40, 15, 4.0, true, 22, 3.5, 0.20, true, 15, 8),
+            ('c3', 10, 5, 5.0, true, 21, 4.5, NULL, false, 5, 2),
+            ('c_noise', 500, 500, NULL, false, 0, NULL, NULL, false, 200, 150)
     """)
 
     con.execute("""
-        CREATE TABLE main_marts.dim_technology_cluster (cluster_id VARCHAR, tagline VARCHAR)
+        CREATE TABLE main_marts.dim_technology_cluster (
+            cluster_id VARCHAR, tagline VARCHAR, summary_friendly VARCHAR,
+            top_terms VARCHAR[]
+        )
     """)
     con.execute("""
         INSERT INTO main_marts.dim_technology_cluster VALUES
-            ('c1', 'EUV Sources'),
-            ('c2', 'Photonic Waveguides'),
-            ('c3', 'Unmapped Cluster'),
-            ('c_noise', 'Unclustered')
+            ('c1', 'EUV Sources', 'EUV light sources for next-gen lithography.',
+             ['euv', 'lithography', 'photoresist']),
+            ('c2', 'Photonic Waveguides', 'Silicon waveguides routing light on-chip.',
+             ['waveguide', 'silicon photonics', 'modulator']),
+            ('c3', 'Unmapped Cluster', 'A small cluster of laser-related work.',
+             ['laser', 'diode']),
+            ('c_noise', 'Unclustered', '', [])
     """)
 
     con.execute("""

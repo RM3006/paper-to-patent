@@ -8,9 +8,9 @@
 
     duckdb_tables() exposes estimated_size, a row count DuckDB already
     maintains in its storage layer (no live COUNT(*) needed). duckdb_views()
-    has no equivalent, since a view isn't materialized -- views (e.g.
-    idea_journey) are left with row_count NULL and stats:row_count:include
-    false, so they keep has_stats: false rather than showing a fake count.
+    has no equivalent, since a view isn't materialized -- views are left
+    with row_count NULL and stats:row_count:include false, so they keep
+    has_stats: false rather than showing a fake count.
   #}
   {%- call statement('catalog', fetch_result=True) -%}
     with relations AS (
