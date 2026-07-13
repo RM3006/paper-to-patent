@@ -238,6 +238,7 @@ def load_family_clusters(family_id: str) -> pl.DataFrame:
         SELECT
             mg.cluster_id,
             dtc.tagline,
+            dtc.top_terms,
             mg.n_papers,
             mg.n_patents,
             mg.hhi,

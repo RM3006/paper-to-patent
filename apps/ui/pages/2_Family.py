@@ -427,6 +427,7 @@ if len(_clusters_filtered) > 0:
               .otherwise(None)
               .cast(pl.Float64)
               .alias("hhi_display"),
+            pl.col("top_terms").list.join(", ").alias("top_terms_display"),
         ])
         .select([
             pl.col("tagline").alias("Cluster"),
@@ -436,6 +437,7 @@ if len(_clusters_filtered) > 0:
             pl.col("hhi_display").alias("HHI"),
             pl.col("n_research_orgs").alias("# of Researchers"),
             pl.col("n_assignees").alias("# of Patenters"),
+            pl.col("top_terms_display").alias("Top Terms"),
         ])
     )
 
@@ -472,6 +474,14 @@ if len(_clusters_filtered) > 0:
             ),
             "# of Researchers": st.column_config.NumberColumn(format="%d", width="small"),
             "# of Patenters": st.column_config.NumberColumn(format="%d", width="small"),
+            "Top Terms": st.column_config.TextColumn(
+                width="large",
+                help=(
+                    "The words that most distinguish this cluster from every other "
+                    "cluster (c-TF-IDF), computed during clustering -- the evidence "
+                    "the cluster's name and description were written from."
+                ),
+            ),
         },
     )
 
