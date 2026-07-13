@@ -279,6 +279,17 @@ if selected_cluster_id:
 
         summary = (crow["summary_friendly"] or "")
 
+        top_terms = crow["top_terms"] or []
+        terms_block = ""
+        if top_terms:
+            _chips = "".join(
+                f"<span style='font-size:11px;color:#666666;background:#f2f2f2;"
+                f"border-radius:4px;padding:3px 8px;margin:2px 4px 2px 0;"
+                f"display:inline-block;'>{t}</span>"
+                for t in top_terms
+            )
+            terms_block = f"<div style='margin-top:10px;'>{_chips}</div>"
+
         # ── Header card ──────────────────────────────────────────────────────────────
         st.markdown(
             f"<div class='card' style='margin-top:1rem;display:flex;"
@@ -292,6 +303,7 @@ if selected_cluster_id:
             f"<div style='font-size:11px;color:#aaaaaa;margin-bottom:10px;'>"
             f"{selected_cluster_id}</div>"
             f"<div style='font-size:13px;color:#555555;line-height:1.6;'>{summary}</div>"
+            f"{terms_block}"
             f"</div>"
             f"<a href='/Family?family={family_id}' target='_self'"
             f" class='family-explore' style='flex-shrink:0;'>"

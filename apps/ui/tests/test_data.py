@@ -108,6 +108,27 @@ def test_load_cluster_bubble_excludes_noise_and_coalesces_unmapped_cluster(
     assert rows["c1"]["npl_n_links"] == 34
 
 
+def test_load_cluster_card_returns_terms_and_family_totals(fixture_db: None) -> None:
+    df = data_module.load_cluster_card("c1")
+    row = df.row(0, named=True)
+    assert row["tagline"] == "EUV Sources"
+    # top_terms grounds the Map cluster card's AI-written tagline/summary in the
+    # c-TF-IDF evidence they were generated from -- must survive the query.
+    assert row["top_terms"] == ["euv", "lithography", "photoresist"]
+    assert row["n_papers"] == 60
+    assert row["n_patents"] == 25
+    assert row["family_id"] == "euv"
+    assert row["total_patents"] == 45   # c1(25) + c2(15) + c3(5), c_noise excluded
+    assert row["family_patents"] == 25  # only c1 maps to the euv cluster-label family
+
+
+def test_load_family_clusters_includes_top_terms(fixture_db: None) -> None:
+    df = data_module.load_family_clusters("euv")
+    rows = {r["cluster_id"]: r for r in df.to_dicts()}
+    # Backs the Family Deepdive cluster table's "Top Terms" column.
+    assert rows["c1"]["top_terms"] == ["euv", "lithography", "photoresist"]
+
+
 def test_load_org_output_by_family_discloses_unattributed_bucket(fixture_db: None) -> None:
     df = data_module.load_org_output_by_family("org_a")
     rows = {r["family_id"]: r["n_patents"] for r in df.to_dicts()}
