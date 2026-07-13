@@ -32,6 +32,3 @@ models:
     marts:
       +materialized: table
       +schema: marts
-    queries:
-      +materialized: view
-      +schema: marts

@@ -73,7 +73,7 @@ Entered from search box (any surface) or from Surface 2 leaderboard.
 - **Intake (papers they cite)**: top 5 cited institutions (via `fact_npl_link`: patents → works → fact_publication → org). Split self-citations vs external.
 - **Influence (who cites their papers)**: top 5 orgs filing patents that cite this org's papers.
 - **Flagship document**: highest-NPL-link paper (most cited by patents) + highest-patent-count patent.
-- Source: `idea_journey` (view), `fact_npl_link`, `mart_competitive`, `dim_organization`.
+- Source: `fact_npl_link`, `fact_patent_filing`, `fact_publication`, `mart_competitive`, `dim_organization`, `dim_paper`, `dim_patent` — queried live and composed in `apps/ui/data.py` (no single canonical dbt query backs this page).
 - **Confidence note**: "Links are NPL citations only — co-occurrence links are not shown here."
 
 ### Surface 4 — Technology map (UMAP)
@@ -133,7 +133,7 @@ This is a static/semi-static page backed by `fact_npl_link`, `dim_paper`, `dim_p
 | Family asymmetry panel | `mart_gap` + `seed_cluster_family` |
 | Family leaderboard (patenters / researchers) | `mart_competitive` filtered to family |
 | Cluster lag spectrum scatter | `mart_gap` (`npl_median_lag_years`, `npl_n_links`, `npl_reportable`) |
-| Org profile output/intake/influence | `idea_journey` + `fact_npl_link` + `mart_competitive` |
+| Org profile output/intake/influence | `fact_npl_link` + `fact_patent_filing` + `fact_publication` + `mart_competitive` |
 | Technology map (UMAP scattergl) | `fact_document_cluster` + `dim_technology_cluster` + `seed_cluster_family` |
 | Cluster mini-card | `dim_technology_cluster` (tagline, summary_friendly, top_terms) |
 | Trace-one-idea page | `fact_npl_link` + `dim_paper` + `dim_patent` + `dim_organization` |
@@ -144,7 +144,7 @@ This is a static/semi-static page backed by `fact_npl_link`, `dim_paper`, `dim_p
 
 1. **Family scorecard tiles** (Surface 1, read-only, `mart_family`) — tests the full data path from mart to UI.
 2. **Technology map** (Surface 4, scattergl, `fact_document_cluster`) — visual hook.
-3. **Org search + profile** (Surface 3, `idea_journey`) — highest user interest, differentiator.
+3. **Org search + profile** (Surface 3, `fact_npl_link` + `mart_competitive`) — highest user interest, differentiator.
 4. **Family detail + lag spectrum** (Surface 2) — analytical depth layer.
 5. **Trace-one-idea** narrative (guided tour, mostly static) — storytelling capstone.
 
