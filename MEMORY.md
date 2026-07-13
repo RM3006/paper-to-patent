@@ -460,3 +460,28 @@ Pushed the checkpoint-review fixes commit; GitHub Actions CI failed on `ruff che
 **Live data verification (queried `dev.duckdb` directly, not just "tests passed"):** `dim_paper`/`dim_patent` = 153,362/23,397 with **zero orphans** against the bridge `fact_document_cluster` on both sides (the number that actually matters for this refactor — confirms dropping `cluster_id` from the dims and routing everything through the bridge didn't silently drop or orphan a single document). `fact_document_cluster` = 176,759 rows / 228 clusters (227 + noise) / 72,573 noise — matches the frozen clustering exactly. `fact_npl_link` = 9,025 (7,032 marx_fuegi + 480 doi + 1,513 fuzzy_title). `mart_family` and `seed_cluster_family` cluster counts agree exactly (25/125/58/19 across the 4 buckets), confirming the bridge-routed paper votes replaced the old `dim_paper.cluster_id` denormalization without changing behavior.
 
 **Still open:** prod (MotherDuck) still not rebuilt from this refactor — `dev.duckdb` is now ahead of it. Promote when ready via a real `dagster asset materialize -m nexus` with `DBT_TARGET` unset/`prod` and `MOTHERDUCK_TOKEN` set (the concurrency fix applies identically there, just shouldn't ever trigger in practice since MotherDuck allows real concurrent connections).
+
+---
+
+## UI analytics-integrity review: 8 critical/moderate + 3 minor findings closed (2026-07-12)
+
+Full analytics-quality audit of the Streamlit atlas (`apps/ui/`). Every fix shipped with a fixture test and same-commit doc updates. **PR #11 = the 8 critical/moderate (squash-merged `c674b77`); PR #12 = the minor cleanup (branch `fix/minor-findings-cleanup`, open).** The CI-cleanup commit (`fix(ci): clear pre-existing ruff/pyright`) is not itself a finding, just the unblock.
+
+**Critical (wrong numbers, hard-rule, or metric misuse):**
+1. **Family counts ran on the wrong grain.** Every family number used `seed_cluster_family` (3-way cluster *label*) instead of each document's own 5-way `family_id` — undercounted all families and produced a live, visible contradiction (TSMC metric card = 844 patents while the filing-year chart below it summed to 1,575). Rebuilt `mart_family`/`mart_competitive` on the doc-level grain; the Map deliberately stays 3-way (a cluster ≠ one family). Both paths now read 1,575.
+2. **`patent_share` overclaimed.** Was `n_patents/(n_patents+n_papers)`, described as "research captured as US patents" — a causal claim the data doesn't support. Redefined as a family's share of the *total US patent pool* (papers out of the formula); rewrote the front-door + tour copy.
+3. **Confidence/match-method never surfaced (hard-rule-3 violation).** `confidence_badge()`/`method_badge()` were fully built but uncalled, so a `fuzzy_title` link rendered identically to a gold Marx & Fuegi one. Wired badges into Org + Trace pages (solid vs hollow markers by confidence).
+4. **Velocity "still-pending" shading used citation lag** — a metric with no link to USPTO grant time; it under-shaded every family (missed neuromorphic's real 49% 2021 filing drop). Added `mart_family.avg_grant_lag_years` and shaded on real grant lag. This is the change that **amended CLAUDE.md rule 2** to allow grant lag as a narrow, separately-labelled data-completeness diagnostic.
+
+**Moderate (disclosure / honesty gaps):**
+5. Dead "Frontier / Unclustered" map chip (unreachable — `load_cluster_bubble` already excludes `c_noise`) removed; the real ~41% HDBSCAN noise share now disclosed in a footer.
+6. NPL link count now shown alongside every headline citation-lag number (lag was a narrow 2.5–3.3 yr but the evidence behind each ranged 448–2,963 links — presented as equally solid before).
+7. Tour step-3 copy promised HHI in the Family Deepdive metrics strip, where it has never appeared; re-attributed to the cluster table.
+8. Hybrid NPL linkage + its lower-bound basis disclosed in the methodology footer.
+
+**Minor (PR #12):**
+- Removed the `idea_journey` dbt view — an unused cartesian-product bug (independent LEFT JOINs on org → ~19.5M rows from ~9K real NPL links). 0 UI callers.
+- Surfaced cluster `top_terms` (the c-TF-IDF evidence the Haiku tagline/summary were written from) in the Map cluster card and as the far-right column of the Family Deepdive cluster table.
+- **Skipped, with rationale:** normalizing USPTO all-caps org display names. 90% of all-caps names (799/887) come from `native_id` matches (real legal records); the cure breaks true acronyms (ASML, TSMC, IBM) — worse than the symptom.
+
+**One correction made after the fact:** an early write-up framed the NPL matcher's 0.32 recall as *the* linkage weakness. It isn't — post-hybrid, ~78% of `fact_npl_link` edges (7,032/9,025) come straight from Marx & Fuegi gold; the 0.32 is our own matcher's standalone recall and now governs only the recent-grant tail M&F can't reach. "Lower bound" still holds; "recall ≈ 0.32 across the whole linkage" does not.
