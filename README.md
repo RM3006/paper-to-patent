@@ -1,5 +1,9 @@
 # Paper → Patent: The Chips Behind AI
 
+**Live app:** https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/
+
+![The Chips Behind AI — Organisation Profile view showing TSMC's US patent and research output by technology family](hero_screenshot.png)
+
 Tracing science-adjacent microchip hardware — EUV lithography, silicon photonics, neuromorphic & in-memory compute — from research paper to US patent.
 
 We ingest global scientific output (OpenAlex) and US patents (PatentsView bulk data), resolve the organisations behind both into one identity, link papers to the patents that cite them via non-patent-literature (NPL) citations, cluster everything into named technology families, and surface three things:
