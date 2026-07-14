@@ -1,5 +1,9 @@
 # Paper → Patent: The Chips Behind AI
 
+<!-- MAINTAINED: links -->
+[Architecture](./ARCHITECTURE.md) · [Roadmap](./ROADMAP.md) · [Setup](./SETUP.md) · [Data manifest](./docs/data_source_manifest.md) · [Findings](./docs/findings.md) · [dbt docs ↗](https://rm3006.github.io/paper-to-patent/)
+<!-- /MAINTAINED -->
+
 **Live app:** https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/
 
 ![The Chips Behind AI — Organisation Profile view showing TSMC's US patent and research output by technology family](hero_screenshot.png)
