@@ -18,8 +18,22 @@ all (vintage caps ~early-2023 grants), with our own DOI + fuzzy-title matcher fi
 patents M&F has zero coverage of (`link_source` column; see `ARCHITECTURE.md` §7 and
 `docs/data_source_manifest.md`). Total links rose from ~6,139 to **9,025** and distinct linked
 patents from ~2,973 to **3,528**. Clustering itself is unchanged — only NPL-lag numbers below
-(Findings 1–2, and the family table's weighted median lag) moved; Findings 3–4 (HHI-based) are
+(Findings 1–2, and the family table's median lag) moved; Findings 3–4 (HHI-based) are
 unaffected.
+
+**Family-level rebuild (2026-07-12)**: `mart_family` and `mart_competitive` were rebuilt off
+each document's own 5-way `family_id` (`euv` / `lasers` / `si_photonics` / `neuromorphic` /
+`in_memory`, from `fact_patent_filing.family_id` / `fact_publication.family_id`) rather than
+the 3-way cluster-label rollup (`seed_cluster_family`) the original Part 6 build used. The
+3-way scheme still exists and still colours the Technology Landscape map — a cluster is a
+group of documents that need not share one family — but every family-level count, share, and
+leaderboard now reads the document-level column instead. `patent_share` was redefined at the
+same time: it is a family's share of the *total US patent pool* (patents only; papers do not
+appear in the ratio), not a research-to-patent conversion rate. See `mart_family.sql` and
+`ARCHITECTURE.md` §Data model ("two-tier family tagging"). The **cluster-level** Findings 1–4
+below are unaffected — they read `mart_gap`, whose clustering realization and formulas have
+not changed since the 2026-07-08 snapshot (re-verified against live MotherDuck prod on
+2026-07-14: all four findings' numbers hold).
 
 **Caveats applying to all findings:**
 - Patent data is US-only (PatentsView). Findings describe US patenting, not global IP capture.
@@ -32,9 +46,9 @@ unaffected.
 
 ---
 
-## Finding 1 — Fastest NPL citation lag: In-Memory Computing with Resistive Memory
+## Finding 1 — Fastest NPL citation lag: In-Memory Computing with Resistive Devices
 
-**Cluster:** `c_147` — In-Memory Computing with Resistive Memory
+**Cluster:** `c_147` — In-Memory Computing with Resistive Devices
 **Metric:** Median NPL-linked citation lag
 **Value:** **1.47 years** (median publication-to-filing interval across 49 confirmed NPL-linked paper→patent pairs)
 
@@ -44,10 +58,9 @@ unaffected.
 > NPL-linkage refresh (see snapshot note above). Anchored on the citing patent's filing date,
 > not its grant date. The cluster has 311 co-located research institutions against 45
 > patents and 23 assignees — a broad research base feeding a comparatively narrow patent
-> footprint. Under the prior (matcher-only) NPL source this cluster did not clear the N ≥ 20
-> reportability floor at all; `c_71` "Neural Networks and Reinforcement Learning" held this
-> spot before (now 2.04 years, N = 213 — still fast, but no longer fastest) and `c_68`
-> "Neuromorphic Synapses and Neural Devices" (now 2.12 years, N = 67) is close behind.
+> footprint. The next-closest reportable clusters are `c_67` "Deep Learning Neural Network
+> Processing" (1.90 years, N = 20 — right at the reportability floor) and `c_144` "Memristor
+> Devices and Circuit Modeling" (1.91 years, N = 33).
 
 **Reproducible query** (from `main_marts.mart_gap`):
 ```sql
@@ -57,7 +70,7 @@ FROM main_marts.mart_gap
 WHERE npl_n_links >= 20
 ORDER BY npl_median_lag_years ASC
 LIMIT 3;
--- Top row: c_147 | In-Memory Computing with Resistive Memory | 1.47 | 49 | 311 | 23 | 45 | 356
+-- Top row: c_147 | In-Memory Computing with Resistive Devices | 1.47 | 49 | 311 | 23 | 45 | 356
 ```
 
 ---
@@ -147,33 +160,43 @@ the scope, so the on-domain memristor cluster is used here as the headline.
 
 ---
 
-## Family-level headline numbers (`mart_family`, 3 headline families + Mixed — see ARCHITECTURE.md §Data model)
+## Family-level headline numbers (`mart_family`, 5 document-level families — see ARCHITECTURE.md §Data model)
 
-| Family | Clusters | Papers | Patents | Patent share | Weighted median lag | Top assignee |
+| Family | Papers | Patents | Patent share | Median NPL lag | NPL links | Top assignee (by patents) |
 |---|---|---|---|---|---|---|
-| EUV Lithography | 25 | 5,159 | 3,558 | 40.8% | 2.70 yr | TSMC |
-| Silicon Photonics | 125 | 45,798 | 2,267 | 4.7% | 3.49 yr | IBM |
-| Neuromorphic & In-Memory Compute | 58 | 26,092 | 4,289 | 14.1% | 2.61 yr | Micron Technology |
-| Mixed *(excluded from headline charts)* | 19 | 927 | 3,041 | 76.6% | 3.12 yr | ASML |
+| EUV Lithography | 8,411 | 5,623 | 34.2% | 2.97 yr | 553 | ASML (1,435 patents) |
+| Lasers | 17,041 | 697 | 4.2% | 3.34 yr | 448 | Gigaphoton (40 patents) |
+| Silicon Photonics | 62,294 | 3,382 | 20.6% | 3.23 yr | 2,963 | GlobalFoundries (210 patents) |
+| Neuromorphic | 19,620 | 2,692 | 16.4% | 2.55 yr | 1,707 | IBM (368 patents) |
+| In-Memory Compute | 17,447 | 4,028 | 24.5% | 2.72 yr | 1,293 | Micron Technology (681 patents) |
 
-*(2026-07-10 snapshot. Patent share = family n_patents / (family n_papers + family n_patents).
-Clustering realization unchanged from the 2026-07-08 build (paper/patent counts and shares are
-identical) — only the weighted median lag moved, following the hybrid NPL-linkage refresh
-described in the snapshot note above.)*
+*(Verified against live MotherDuck prod, 2026-07-14. Patent share = family `n_patents` / total
+US patents across the 5 families (patents only — papers do not appear in the ratio; see
+`mart_family.sql`). Median NPL lag is a TRUE median over every NPL-linked citation in the
+family, not a weighted average of per-cluster medians (the mart's `median_lag_years_weighted`
+column name is a legacy holdover from the prior cluster-rollup version). "Top assignee" is
+computed directly from `fact_patent_filing` joined to `dim_organization`, grouped by family —
+it is not a `mart_family` column.)*
 
-Note: each cluster is assigned to a family by `seed_cluster_family` only when a single family
-is **>= 80% of the cluster's family-resolvable documents AND those resolvable documents are
->= 50% of the cluster** (a confidence floor, added 2026-07-08). Clusters that genuinely span
-two families or are mostly off-scope go to **Mixed** — it holds the 19 such clusters, which is
-why its patent count (3,041) is high relative to its papers (mostly patent-heavy off-primary-CPC
-clusters like semiconductor-fabrication and IC-testing). The four rows sum to 13,155 patents
-(the non-noise clustered patents); the remaining ~10.2k of `dim_patent` (23,397) sit in
-`c_noise` (unclustered). The three headline families hold 10,114; Mixed separates out 3,041 that
-were previously force-attributed to a headline family. See `docs/cluster_label_review.md`.
+Note: this is the **document-level, 5-way** family scheme (`euv` / `lasers` / `si_photonics` /
+`neuromorphic` / `in_memory`), each document classified directly from its own CPC prefix
+(patents) or OpenAlex topic + keyword tiebreak (papers) — independent of whichever cluster it
+algorithmically landed in. It is distinct from the **cluster-level, 3-way** display scheme
+(`seed_cluster_family`: `euv` / `silicon_photonics` (includes lasers) / `neuromorphic_in_memory`
+(merged) / `mixed`) that colours the Technology Landscape map only. See "Family-level rebuild"
+in the snapshot note above and `ARCHITECTURE.md`'s "two-tier family tagging" section for why
+both grains coexist.
 
-Note: these 3 families are the original Part 0 scope families (Silicon Photonics includes
-lasers; Neuromorphic & In-Memory Compute is merged) — not the 5-way split used in an
-earlier version of this project's UI design. See `MEMORY.md` for why.
+**Unattributed documents** (no resolvable `family_id`, disclosed separately — never
+redistributed into one of the 5): **6,975 of 23,397 patents (29.8%)** — patents whose *primary*
+CPC code is outside the six scope subclasses; they entered the corpus via a secondary scope
+code in their top-5 classifications. **5,611 of 130,424 institution-resolved papers (4.3%)** —
+papers whose primary topic is `T10502` but whose title/abstract keyword tiebreak matched
+neither the neuromorphic nor in-memory pattern. (Note `fact_publication`'s grain is
+(paper, institution) — its 130,424 distinct papers is smaller than `dim_paper`'s 153,362
+because roughly 18% of papers have no OpenAlex-resolved institution at all, consistent with
+the ~82% institution-coverage figure recorded at Part 1 ingest; this is a pre-existing data
+coverage limit, not new to this family scheme.)
 
 ---
 
@@ -181,7 +204,7 @@ earlier version of this project's UI design. See `MEMORY.md` for why.
 
 | Finding | Cluster | Metric | Value | N |
 |---|---|---|---|---|
-| Fastest NPL lag | c_147 In-Memory Computing with Resistive Memory | citation lag | **1.47 yr** | 49 |
+| Fastest NPL lag | c_147 In-Memory Computing with Resistive Devices | citation lag | **1.47 yr** | 49 |
 | Slowest NPL lag | c_117 Memristor-Based True Random Number Generation | citation lag | **5.41 yr** | 31 |
 | Extreme concentration | c_2 Lithographic Apparatus and Device Manufacturing | HHI | **1.0** (1 assignee) | 161 patents |
 | Broad research, narrow patent | c_155 Memristor-Based Logic and Computing | gap | **478 institutions / 5 assignees / HHI=0.32** | 10 patents |

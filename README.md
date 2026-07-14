@@ -26,7 +26,7 @@ A curious teenager should grasp the map in 90 seconds. An R&D strategist or VC a
 | 4 | dbt modeling + NPL linkage + gold eval | ✅ Done |
 | 5 | Embeddings, clustering, and interpretable labels | ✅ Done |
 | 6 | Citation-lag & competitive-intelligence analytics | ✅ Done |
-| 7 | Streamlit app + polish | ⬜ Pending |
+| 7 | Streamlit app + polish | ✅ Done |
 | 8 | Documentation, deploy, portfolio integration | ⬜ Pending |
 <!-- /MAINTAINED -->
 
