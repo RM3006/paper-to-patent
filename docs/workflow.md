@@ -342,11 +342,11 @@ descriptive count).
 
 **What.** The prod `dbt build --target prod` materializes marts straight into **MotherDuck**
 (`md:paper_to_patent`). The Streamlit app (Community Cloud) reads them with **in-process
-DuckDB** (`md:` + token), cached via `st.cache_data`/`st.cache_resource`. Pages: `app.py`
-(overview/scorecard), `1_Map.py` (**per-cluster patents×papers bubble chart**, colour =
-family), `2_Family.py` (the 3 headline families), `3_Org.py` (ILIKE org searchbox),
-`4_Trace.py` (trace a paper→patent journey); `data.py` (connection + queries), `render.py`
-(Plotly + FAMILY_COLORS/LABELS), `tour.py`.
+DuckDB** (`md:` + token), cached via `st.cache_data`/`st.cache_resource`. Pages, in nav order:
+`app.py` (overview/scorecard), `1_Family.py` (the 5 headline families), `2_Map.py`
+(**per-cluster patents×papers bubble chart**, colour = family), `3_Org.py` (ILIKE org
+searchbox), `4_Trace.py` (trace a paper→patent journey); `data.py` (connection + queries),
+`render.py` (Plotly + FAMILY_COLORS/LABELS), `tour.py`.
 
 **Why.** MotherDuck is the same DuckDB engine the marts were built with, so the app queries
 it directly — no export step to keep in sync. This **replaced** the prior "export versioned

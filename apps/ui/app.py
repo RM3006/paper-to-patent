@@ -29,7 +29,7 @@ _FAMILY_IDS = ["euv", "lasers", "si_photonics", "neuromorphic", "in_memory"]
 
 _FAMILY_DESC: dict[str, str] = {
     "euv": (
-        "Extreme-UV optics that print transistors smaller than a virus — "
+        "Extreme-UV optics that print transistors smaller than a virus: "
         "the bottleneck of the entire chip industry."
     ),
     "lasers": (
@@ -38,14 +38,14 @@ _FAMILY_DESC: dict[str, str] = {
     ),
     "si_photonics": (
         "Silicon waveguides and modulators that route light-encoded data "
-        "across a chip — cutting latency and power inside AI data centres."
+        "across a chip, cutting latency and power inside AI data centres."
     ),
     "neuromorphic": (
-        "Chips that compute the way neurons do — spiking, event-driven "
+        "Chips that compute the way neurons do: spiking, event-driven "
         "circuits trading raw clock speed for energy efficiency."
     ),
     "in_memory": (
-        "Memory that computes where data lives — resistive and phase-change "
+        "Memory that computes where data lives: resistive and phase-change "
         "cells that skip the slow trip to a separate processor."
     ),
 }
@@ -89,7 +89,7 @@ hr { border-color: #e6e6e6 !important; }
     box-shadow: 0 0 0 4px var(--accent-glow, transparent);
 }
 .card--family .card-title    { color: var(--accent); }
-.card--family .card-tile-pct { background: var(--accent); }
+.card--family .card-tile-pct { background: #ffffff; }
 /* .card-stat and .family-explore already resolve var(--accent) generically (render.py). */
 
 [data-testid="stVerticalBlockBorderWrapper"] {
@@ -172,7 +172,7 @@ def _html_family_card(
     lag_tooltip = (
         f"Based on {n_links:,} NPL-linked citations"
         if lag is not None
-        else "Fewer than 20 NPL-linked citations — not reportable"
+        else "Fewer than 20 NPL-linked citations, not reportable"
     )
     card_cls = "card card--family is-highlighted" if highlighted else "card card--family"
     accent_vars = f"--accent:{color};--accent-border:{color}55;--accent-glow:{color}44;"
@@ -187,48 +187,48 @@ def _html_family_card(
         f"justify-content:center;'>"
         f"<div class='card-title' style='font-family:{_FONT};font-size:16px;font-weight:700;"
         f"letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px;'>{row['family_name']}</div>"
-        f"<div style='font-size:12px;color:#888888;line-height:1.5;'>{desc}</div>"
+        f"<div style='font-size:13px;color:#555555;line-height:1.5;'>{desc}</div>"
         f"</div>"
         f"<div style='flex-shrink:0;display:grid;"
         f"grid-template-columns:104px 104px;grid-template-rows:48px 48px;gap:8px;'>"
         f"<div class='card-tile-pct' style='border-radius:10px;"
         f"display:flex;flex-direction:column;align-items:center;justify-content:center;'>"
         f"<div style='font-family:{_FONT};font-size:18px;font-weight:800;"
-        f"color:#ffffff;line-height:1;'>{pct:.0f}%</div>"
-        f"<div style='font-size:9px;color:rgba(255,255,255,0.75);margin-top:3px;"
+        f"color:{color};line-height:1;'>{pct:.0f}%</div>"
+        f"<div style='font-size:12px;color:#707070;margin-top:3px;"
         f"white-space:nowrap;'>patent share</div>"
         f"</div>"
         f"<div style='display:flex;flex-direction:column;"
         f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{row['n_patents']:,}</div>"
-        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>"
+        f"<div style='font-size:12px;color:#707070;margin-top:3px;white-space:nowrap;'>"
         f"granted US patents</div>"
         f"</div>"
         f"<div title='{lag_tooltip}' style='display:flex;flex-direction:column;"
         f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{lag_str}</div>"
-        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>"
+        f"<div style='font-size:12px;color:#707070;margin-top:3px;white-space:nowrap;'>"
         f"citation lag</div>"
         f"</div>"
         f"<div style='display:flex;flex-direction:column;"
         f"align-items:center;justify-content:center;'>"
         f"<div class='card-stat' style='font-family:{_FONT};font-size:18px;font-weight:700;"
         f"line-height:1;'>{row['n_papers']:,}</div>"
-        f"<div style='font-size:9px;color:#888888;margin-top:3px;white-space:nowrap;'>papers</div>"
+        f"<div style='font-size:12px;color:#707070;margin-top:3px;white-space:nowrap;'>papers</div>"
         f"</div>"
         f"</div>"
         f"<div style='flex-shrink:0;display:flex;gap:24px;align-self:stretch;'>"
         f"<div style='width:188px;min-width:0;overflow:hidden;"
         f"display:flex;flex-direction:column;justify-content:space-between;'>"
         f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-        f"text-transform:uppercase;color:#888888;'>Top patenters</div>"
+        f"text-transform:uppercase;color:#707070;'>Top patenters</div>"
         f"{pat_html}</div>"
         f"<div style='width:188px;min-width:0;overflow:hidden;"
         f"display:flex;flex-direction:column;justify-content:space-between;'>"
         f"<div style='font-size:10px;font-weight:700;letter-spacing:.07em;"
-        f"text-transform:uppercase;color:#888888;'>Top researchers</div>"
+        f"text-transform:uppercase;color:#707070;'>Top researchers</div>"
         f"{res_html}</div>"
         f"</div>"
         f"<div style='flex:0 0 auto;display:flex;align-items:center;padding:0 32px 0 16px;'>"
@@ -244,7 +244,7 @@ def _org_rows(names: list[str], color: str) -> str:
     if not names:
         return "<div style='font-size:12px;color:#aaaaaa;'>—</div>"
     return "".join(
-        f'<div style="margin-bottom:4px;font-size:12.5px;color:#111111;line-height:1.3;'
+        f'<div style="margin-bottom:4px;font-size:13px;color:#555555;line-height:1.3;'
         f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'
         f'{name[:30] + "…" if len(name) > 30 else name}</div>'
         for name in names
@@ -268,7 +268,7 @@ def main() -> None:
 
     st.markdown(
         "<div style='font-size:14px;color:#555555;line-height:1.65;margin-bottom:1.4rem;'>"
-        "These are the 5 technology families powering the next generation of AI hardware — "
+        "These are the 5 technology families powering the next generation of AI hardware: "
         "from the extreme-ultraviolet optics that print the world's smallest transistors to the "
         "brain-inspired chips that process data the way neurons do. "
         "Each row shows what share of all US patenting activity in this space the family "
@@ -289,26 +289,26 @@ def main() -> None:
     unattributed = load_unattributed_counts()
     st.markdown(
         "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
-        "font-size:11px;color:#aaaaaa;line-height:1.6;'>"
+        "font-size:11px;color:#707070;line-height:1.6;'>"
         "<strong>Scope:</strong> Granted US patents only (PatentsView / USPTO, filing dates "
         "2014–2025). US filings are roughly 1 in 6 (~16%) of the world's patent applications "
-        "(WIPO, World Intellectual Property Indicators 2025) — treat concentration and "
+        "(WIPO, World Intellectual Property Indicators 2025). Treat concentration and "
         "IP-capture figures here as a US-filing view, not a global one. "
         "In-scope research papers from OpenAlex (2012–2025, English, matched to EUV, silicon "
         "photonics, lasers, neuromorphic, and in-memory compute topics). "
         f"{unattributed['unattributed_patents']:,} granted US patents and "
         f"{unattributed['unattributed_papers']:,} research papers are in scope but aren't shown "
-        "in any family card above — their primary classification falls outside the five family "
+        "in any family card above. Their primary classification falls outside the five family "
         "definitions (patents that entered scope via a secondary CPC code) or, for papers, an "
         "unresolved neuromorphic/in-memory keyword split. They remain part of the full corpus; "
         "we don't guess which family they belong to. "
-        "Citation links are non-patent-literature (NPL) references from USPTO filings — the "
+        "Citation links are non-patent-literature (NPL) references from USPTO filings: the "
         "gold-standard Marx &amp; Fuegi &lsquo;Reliance on Science&rsquo; dataset where it "
         "covers a patent, and our own DOI + fuzzy-title matcher (recall measured against that "
         "gold set) for recent grants beyond its vintage; link counts are a lower bound. "
         "Lag = paper publication date → citing patent filing date; never grant date. "
         "Patent counts after 2019 understate activity due to grant-processing delay. "
-        "This is not causal inference — NPL citations record reference, not derivation."
+        "This is not causal inference; NPL citations record reference, not derivation."
         "</div>",
         unsafe_allow_html=True,
     )

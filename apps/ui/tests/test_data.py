@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 
+import duckdb
 import pytest
 
 import data as data_module
@@ -72,19 +73,22 @@ def test_load_unclustered_counts_counts_distinct_c_noise_docs(fixture_db: None) 
 
 
 def test_load_dataset_totals_sums_all_families(fixture_db: None) -> None:
+    # Unfiltered now counts every distinct patent/paper in fact_patent_filing/
+    # fact_publication directly (not mart_family, which excludes 'unattributed'
+    # documents) -- p1..p9 (9 patents) and w1..w4 (4 papers), including NULL-family
+    # and c_noise rows, so this always matches the numerator basis (mart_competitive
+    # incl. 'unattributed') used by the Organisation Profile page's metric cards.
     totals = data_module.load_dataset_totals()
-    # 100+50+80+60+70 papers; 40+10+20+15+18 patents -- mart_family is now 5-way
-    # with no 'mixed' row to exclude (see mart_family rebuild).
-    assert totals == {"total_papers": 360, "total_patents": 103}
+    assert totals == {"total_papers": 4, "total_patents": 9}
 
 
 def test_load_dataset_totals_scoped_by_family(fixture_db: None) -> None:
     # Scoped branch now queries fact_patent_filing/fact_publication directly by
     # their own family_id (COALESCE'd to 'unattributed') -- mart_gap has no family
-    # dimension and can't be filtered by a 5-way family_id. euv: p1, p2 patents
+    # dimension and can't be filtered by a 5-way family_id. euv: p1, p2, p9 patents
     # (p3 is NULL family, excluded); w1 paper (w2 is NULL family, excluded).
     totals = data_module.load_dataset_totals(family_ids=("euv",))
-    assert totals == {"total_papers": 1, "total_patents": 2}
+    assert totals == {"total_papers": 1, "total_patents": 3}
 
 
 def test_load_dataset_totals_scoped_by_unattributed(fixture_db: None) -> None:
@@ -97,12 +101,14 @@ def test_load_cluster_bubble_excludes_noise_and_coalesces_unmapped_cluster(
 ) -> None:
     df = data_module.load_cluster_bubble()
     rows = {r["cluster_id"]: r for r in df.to_dicts()}
-    assert set(rows) == {"c1", "c2", "c3"}  # c_noise excluded
-    assert df["cluster_id"].to_list() == ["c1", "c2", "c3"]  # ORDER BY n_papers DESC: 60>40>10
+    assert set(rows) == {"c1", "c2", "c3", "c4"}  # c_noise excluded
+    # ORDER BY n_papers DESC: 60>40>10>5
+    assert df["cluster_id"].to_list() == ["c1", "c2", "c3", "c4"]
     assert rows["c1"]["family_id"] == "euv"
     assert rows["c2"]["family_id"] == "silicon_photonics"
     assert rows["c3"]["family_id"] == "noise"  # no seed_cluster_family row -> COALESCE fallback
     assert rows["c3"]["family_name"] == "Frontier / Unclustered"
+    assert rows["c4"]["family_id"] == "noise"  # likewise, c4 has no seed_cluster_family row
     # npl_n_links backs the hover tooltip's link-count disclosure (evidence weight
     # behind the lag figure) -- must survive the query alongside the lag itself.
     assert rows["c1"]["npl_n_links"] == 34
@@ -118,7 +124,7 @@ def test_load_cluster_card_returns_terms_and_family_totals(fixture_db: None) -> 
     assert row["n_papers"] == 60
     assert row["n_patents"] == 25
     assert row["family_id"] == "euv"
-    assert row["total_patents"] == 45   # c1(25) + c2(15) + c3(5), c_noise excluded
+    assert row["total_patents"] == 48   # c1(25) + c2(15) + c3(5) + c4(3), c_noise excluded
     assert row["family_patents"] == 25  # only c1 maps to the euv cluster-label family
 
 
@@ -129,11 +135,74 @@ def test_load_family_clusters_includes_top_terms(fixture_db: None) -> None:
     assert rows["c1"]["top_terms"] == ["euv", "lithography", "photoresist"]
 
 
+def test_load_family_clusters_is_existence_based_and_family_scoped(
+    fixture_db: None,
+) -> None:
+    # c4 has a lasers majority (p7, p8) but also carries one euv patent (p9) --
+    # existence-based membership means c4 shows up under BOTH pills, each time
+    # with only that family's own slice, not the cluster's overall total.
+    euv = {r["cluster_id"]: r for r in data_module.load_family_clusters("euv").to_dicts()}
+    lasers = {r["cluster_id"]: r for r in data_module.load_family_clusters("lasers").to_dicts()}
+    assert set(euv) == {"c1", "c4"}
+    assert set(lasers) == {"c3", "c4"}
+    # c4 under euv: only p9 counts, not p7/p8 (lasers).
+    assert euv["c4"]["n_patents"] == 1
+    # c4 under lasers: only p7, p8 count, not p9 (euv).
+    assert lasers["c4"]["n_patents"] == 2
+    # c1 is untouched by the c4 additions -- still exactly its own euv patents.
+    assert euv["c1"]["n_patents"] == 2
+
+
+def test_load_family_clusters_lists_spillover_families(fixture_db: None) -> None:
+    euv = {r["cluster_id"]: r for r in data_module.load_family_clusters("euv").to_dicts()}
+    lasers = {r["cluster_id"]: r for r in data_module.load_family_clusters("lasers").to_dicts()}
+    # c1 is purely euv (p1, p2; p3 is NULL family_id) -- no other family present.
+    assert euv["c1"]["spillover_family_ids"] is None
+    # c4 has both lasers (p7, p8) and euv (p9) documents -- each pill's row for
+    # c4 must list the OTHER family, not itself.
+    assert euv["c4"]["spillover_family_ids"] == ["lasers"]
+    assert lasers["c4"]["spillover_family_ids"] == ["euv"]
+
+
+def test_load_family_clusters_matches_load_family_metrics_when_cluster_selected(
+    fixture_db: None,
+) -> None:
+    # Family Deepdive's contract: selecting a cluster in the sidebar filter must
+    # make the top metric cards (load_family_metrics, family+cluster intersection)
+    # agree exactly with that cluster's row in the bottom table.
+    cluster_row = {
+        r["cluster_id"]: r for r in data_module.load_family_clusters("euv").to_dicts()
+    }["c4"]
+    metrics_row = data_module.load_family_metrics("euv", cluster_ids=("c4",)).row(0, named=True)
+    assert cluster_row["n_patents"] == metrics_row["n_patents"]
+    assert cluster_row["n_papers"] == metrics_row["n_papers"]
+
+
 def test_load_org_output_by_family_discloses_unattributed_bucket(fixture_db: None) -> None:
     df = data_module.load_org_output_by_family("org_a")
     rows = {r["family_id"]: r["n_patents"] for r in df.to_dicts()}
     assert rows["euv"] == 100          # Org A's euv-family patents in c1
     assert rows["unattributed"] == 15  # Org A's NULL-family patents in c1 -- disclosed, not dropped
+
+
+def test_load_org_intake_includes_self_citation(fixture_db: None) -> None:
+    # p1 and p5 (org_a's patents) NPL-cite w1 and w2 -- both also org_a's own
+    # papers. Self-citation is a real, disclosed signal, not filtered out.
+    df = data_module.load_org_intake("org_a")
+    rows = df.to_dicts()
+    assert len(rows) == 1
+    assert rows[0]["paper_org_id"] == "org_a"
+    assert rows[0]["n_papers_cited"] == 2  # distinct w1, w2
+
+
+def test_load_org_influence_includes_self_citation(fixture_db: None) -> None:
+    # w1 and w2 (org_a's papers) are NPL-cited by p1 and p5 -- both also org_a's
+    # own patents. Symmetric with load_org_intake: self-citation is not excluded.
+    df = data_module.load_org_influence("org_a")
+    rows = df.to_dicts()
+    assert len(rows) == 1
+    assert rows[0]["patenter_org_id"] == "org_a"
+    assert rows[0]["n_patents"] == 2  # distinct p1, p5
 
 
 def test_load_org_top_patent_clusters_reaggregates_family_slices_before_ranking(
@@ -154,33 +223,33 @@ def test_load_family_metrics_matches_manual_counts_and_applies_lag_floor(
     fixture_db: None,
 ) -> None:
     m = data_module.load_family_metrics("euv").row(0, named=True)
-    assert m["n_patents"] == 2            # p1, p2 -- p3 is NULL family_id, excluded
+    assert m["n_patents"] == 3            # p1, p2, p9 -- p3 is NULL family_id, excluded
     assert m["n_papers"] == 1             # w1 -- w2 is NULL family_id, excluded
     assert m["n_assignees_sum"] == 2      # org_a, org_b (patent side)
     assert m["n_research_orgs_sum"] == 1  # org_a (paper side)
     assert m["total_npl_links"] == 2
     assert m["median_lag_years_weighted"] is None  # 2 links < the 20-link floor
     # patent_share = family n_patents / total n_patents across all families.
-    # p1, p2 are euv; p5 is lasers; p3, p4 are NULL family_id (excluded from the
-    # denominator) -- so the denominator is 3 (p1, p2, p5) and euv holds 2/3.
-    assert m["patent_share"] == 0.667
+    # p1, p2, p9 are euv; p5, p7, p8 are lasers; p3, p4 are NULL family_id
+    # (excluded from the denominator) -- so the denominator is 6 and euv holds 3/6.
+    assert m["patent_share"] == 0.5
     assert m["avg_grant_lag_years"] == 2.35  # pulled straight from mart_family.euv
 
 
 def test_load_family_metrics_scopes_to_cluster_filter(fixture_db: None) -> None:
     m_c1 = data_module.load_family_metrics("euv", cluster_ids=("c1",)).row(0, named=True)
-    assert m_c1["n_patents"] == 2  # both euv patents are in c1
+    assert m_c1["n_patents"] == 2  # both of c1's euv patents (p1, p2) -- p9 is in c4
     # Numerator narrows to the cluster filter, but the denominator (total
-    # patents across all families) stays unscoped -- still 2/3.
-    assert m_c1["patent_share"] == 0.667
+    # patents across all families) stays unscoped -- still 6, so 2/6.
+    assert m_c1["patent_share"] == 0.333
     # avg_grant_lag_years is family-level only, never narrowed by cluster_ids.
     assert m_c1["avg_grant_lag_years"] == 2.35
 
     m_c2 = data_module.load_family_metrics("euv", cluster_ids=("c2",)).row(0, named=True)
     assert m_c2["n_patents"] == 0  # c2 has no euv-family patents
     assert m_c2["n_papers"] == 0
-    # Numerator is 0, but the denominator is still the unscoped total (3) --
-    # 0/3 = 0.0, not NULL.
+    # Numerator is 0, but the denominator is still the unscoped total (6) --
+    # 0/6 = 0.0, not NULL.
     assert m_c2["patent_share"] == 0.0
 
 
@@ -220,6 +289,129 @@ def test_load_trace_links_returns_confidence_and_link_source_per_link(fixture_db
     assert rows["p5"]["link_source"] == "fuzzy_title"
     # Ordered by citation_lag_years ascending: p5 (1.2yr) before p1 (2.0yr).
     assert df["patent_id"].to_list() == ["p5", "p1"]
+
+
+def test_load_trace_links_concatenates_all_assignees(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A multi-assignee patent shows every co-assignee (sequence-ordered), not
+    just one arbitrarily picked -- kept isolated from fixture_db since it would
+    otherwise change patent counts relied on by other tests (e.g. dataset totals).
+    """
+    monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+    db_path = tmp_path / "fixture.duckdb"
+    con = duckdb.connect(str(db_path))
+    con.execute("CREATE SCHEMA main_marts")
+    con.execute("""
+        CREATE TABLE main_marts.dim_paper (
+            work_id VARCHAR, title VARCHAR, publication_date DATE,
+            abstract VARCHAR, primary_topic_name VARCHAR
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_paper VALUES
+            ('w1', 'Test Paper', DATE '2015-01-01', 'An abstract.', 'Test Topic')
+    """)
+    con.execute("""
+        CREATE TABLE main_marts.dim_patent (
+            patent_id VARCHAR, title VARCHAR, filing_date DATE
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_patent VALUES ('p1', 'Patent One', DATE '2017-01-01')
+    """)
+    con.execute("""
+        CREATE TABLE main_marts.fact_patent_filing (
+            patent_id VARCHAR, org_id VARCHAR, family_id VARCHAR, cluster_id VARCHAR,
+            assignee_sequence INTEGER
+        )
+    """)
+    # Inserted out of sequence order -- STRING_AGG must sort by assignee_sequence,
+    # not insertion order.
+    con.execute("""
+        INSERT INTO main_marts.fact_patent_filing VALUES
+            ('p1', 'org_b', 'euv', 'c1', 1),
+            ('p1', 'org_a', 'euv', 'c1', 0)
+    """)
+    con.execute("""
+        CREATE TABLE main_marts.dim_organization (
+            org_id VARCHAR, canonical_name VARCHAR, primary_match_method VARCHAR,
+            primary_confidence VARCHAR
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_organization VALUES
+            ('org_a', 'Org A', 'fuzzy_high', 'high'),
+            ('org_b', 'Org B', 'fuzzy_high', 'high')
+    """)
+    con.execute("""
+        CREATE TABLE main_marts.fact_npl_link (
+            patent_id VARCHAR, work_id VARCHAR, citation_lag_years DOUBLE,
+            confidence VARCHAR, link_source VARCHAR
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.fact_npl_link VALUES ('p1', 'w1', 2.0, 'high', 'marx_fuegi')
+    """)
+    con.close()
+    monkeypatch.setattr(data_module, "_LOCAL_DB", db_path)
+
+    row = data_module.load_trace_links("w1").row(0, named=True)
+    assert row["assignee"] == "Org A, Org B"
+
+
+def test_load_trace_paper_org_name_reflects_true_affiliation_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """org_name is NULL (not a fabricated 'Multiple institutions') when a paper has
+    zero resolved organisations, and lists every org (comma-joined) when it has several
+    -- kept isolated from fixture_db, which only models the single-org case.
+    """
+    monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+    db_path = tmp_path / "fixture.duckdb"
+    con = duckdb.connect(str(db_path))
+    con.execute("CREATE SCHEMA main_marts")
+    con.execute("""
+        CREATE TABLE main_marts.dim_paper (
+            work_id VARCHAR, title VARCHAR, publication_date DATE,
+            abstract VARCHAR, primary_topic_name VARCHAR
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_paper VALUES
+            ('w_none', 'No-Org Paper', DATE '2015-01-01', 'An abstract.', 'Test Topic'),
+            ('w_multi', 'Multi-Org Paper', DATE '2016-01-01', 'An abstract.', 'Test Topic')
+    """)
+    con.execute("""
+        CREATE TABLE main_marts.dim_organization (
+            org_id VARCHAR, canonical_name VARCHAR, primary_match_method VARCHAR,
+            primary_confidence VARCHAR
+        )
+    """)
+    con.execute("""
+        INSERT INTO main_marts.dim_organization VALUES
+            ('org_a', 'Org A', 'fuzzy_high', 'high'),
+            ('org_b', 'Org B', 'fuzzy_high', 'high')
+    """)
+    con.execute("""
+        CREATE TABLE main_marts.fact_publication (
+            work_id VARCHAR, org_id VARCHAR, family_id VARCHAR, cluster_id VARCHAR
+        )
+    """)
+    # Inserted out of order -- STRING_AGG must sort by canonical_name, not insertion order.
+    con.execute("""
+        INSERT INTO main_marts.fact_publication VALUES
+            ('w_multi', 'org_b', 'euv', 'c1'),
+            ('w_multi', 'org_a', 'euv', 'c1')
+    """)
+    con.close()
+    monkeypatch.setattr(data_module, "_LOCAL_DB", db_path)
+
+    no_org = data_module.load_trace_paper("w_none").row(0, named=True)
+    assert no_org["org_name"] is None
+
+    multi_org = data_module.load_trace_paper("w_multi").row(0, named=True)
+    assert multi_org["org_name"] == "Org A, Org B"
 
 
 def test_search_orgs_ilike_short_query_returns_default_active_list(fixture_db: None) -> None:

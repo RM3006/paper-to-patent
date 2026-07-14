@@ -27,8 +27,8 @@ The two are connected in three ways:
    few hundred clusters of closely related work, based on the similarity of
    its text. Each cluster gets a short, plain-English name and description.
    Clusters roll up further into a handful of headline technology families
-   (EUV Lithography, Silicon Photonics, Lasers, Neuromorphic Computing,
-   In-Memory & Emerging Memory).
+   (EUV Lithography, Lasers, Silicon Photonics, Neuromorphic, In-Memory
+   Compute).
 
 **Two important caveats baked into every number in this atlas:**
 

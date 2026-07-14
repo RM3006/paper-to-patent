@@ -1,8 +1,10 @@
 # pyright: basic
 """Guided tour definition — "The Chips Behind AI".
 
-Five stops, one per page. Each step narrates the key insight of its page
-and carries the page_file path used by render_tour_banner() for navigation.
+Five stops, one per page, in nav order: Overview, Family Deepdive, Technology
+Landscape, Organisation Profile, Trace a Paper. Each step narrates the key
+insight of its page and carries the page_file path used by render_tour_banner()
+for navigation.
 """
 from __future__ import annotations
 
@@ -32,20 +34,6 @@ TOUR_STEPS: list[TourStep] = [
         page_file="app.py",
     ),
     TourStep(
-        title="Every cluster at a glance",
-        narration=(
-            "Each dot is a technology cluster: a coherent group of papers and patents "
-            "identified by semantic similarity. "
-            "Position encodes the balance between research volume (Y axis) "
-            "and patent capture (X axis), both on a log scale. "
-            "Dots high and left are prolific research areas with little IP capture; "
-            "dots low and right are industrialised niches. "
-            "<strong>Click any dot</strong> to open its detail card: plain English summary, "
-            "citation lag, top patenters, and top researchers."
-        ),
-        page_file="pages/1_Map.py",
-    ),
-    TourStep(
         title="Inside a technology family",
         narration=(
             "Use the pills at the top to switch between the five technology families. "
@@ -57,7 +45,21 @@ TOUR_STEPS: list[TourStep] = [
             "with its own HHI (a concentration index measuring how few organisations "
             "dominate that cluster's patents)."
         ),
-        page_file="pages/2_Family.py",
+        page_file="pages/1_Family.py",
+    ),
+    TourStep(
+        title="Every cluster at a glance",
+        narration=(
+            "Each dot is a technology cluster: a coherent group of papers and patents "
+            "identified by semantic similarity. "
+            "Position encodes the balance between research volume (Y axis) "
+            "and patent capture (X axis), both on a log scale. "
+            "Dots high and left are prolific research areas with little IP capture; "
+            "dots low and right are industrialised niches. "
+            "<strong>Click any dot</strong> to open its detail card: plain English summary, "
+            "citation lag, top patenters, and top researchers."
+        ),
+        page_file="pages/2_Map.py",
     ),
     TourStep(
         title="Who owns the IP?",

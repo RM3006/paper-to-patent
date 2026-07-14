@@ -36,6 +36,17 @@
   and are the authoritative source for any patent-share, HHI, or leaderboard
   number. Join through cluster_id only when you want the cluster's own label.
 
+  ONE NAMED EXCEPTION: the Technology Landscape cluster-detail card's "% patents
+  in family group" stat (apps/ui/data.py load_cluster_card, family_totals CTE)
+  is allowed to sum mart_gap.n_patents by this table's family_id. That stat is
+  deliberately about the pooled DISPLAY family the cluster belongs to (e.g. how
+  a cluster's patents compare to the combined Silicon-Photonics-&-Lasers total),
+  not a document-level share number, so pooling is the correct denominator
+  there -- the UI label says "family group" to keep that scope honest. This is
+  the only sanctioned use of family_id for a share/percentage; every other
+  patent-share, HHI, or leaderboard number still must use the document-level
+  family_id above.
+
   Method: a confidence-floored dominant-family vote per cluster.
     - Patents vote via primary_cpc prefix (G03F->euv; G02B or H01S->
       silicon_photonics; G06N, G11C, or H10N->neuromorphic_in_memory). A patent

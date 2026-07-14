@@ -13,16 +13,18 @@ FAMILY_COLORS: dict[str, str] = {
     # 5-way document-level family (each paper/patent's own direct family --
     # Overview, Family Deepdive, Organisation Profile).
     "euv":          "#3a4a6b",  # deep navy — editorial "cool technical" palette
-    "lasers":       "#4a7f96",  # darker steel blue — shade of si_photonics
-    "si_photonics": "#5a8fa8",  # steel blue
-    "neuromorphic": "#7a6c91",  # slate purple
-    "in_memory":    "#5f4f75",  # darker slate purple — shade of neuromorphic
+    "lasers":       "#c1666b",  # dusty rose — coherent light, warm without danger-red
+    "si_photonics": "#5a8fa8",  # steel blue — light through glass and silicon
+    "neuromorphic": "#7a6c91",  # slate purple — neural/biological-digital bridge
+    "in_memory":    "#6a9c89",  # sage green — storage, data, growth
     # 3-way cluster-label family (Technology Landscape map only -- a cluster's
     # majority-vote display label; see seed_cluster_family.sql for why clusters
     # stay 3-way while documents are 5-way).
-    "silicon_photonics":      "#5a8fa8",  # steel blue (was si_photonics; now includes lasers)
-    "neuromorphic_in_memory": "#7a6c91",  # slate purple (was neuromorphic; now includes in_memory)
-    "mixed":                  "#94a3b8",  # slate — muted, cross-family / no clear majority
+    "silicon_photonics":      "#8e7a8a",  # blend of si_photonics #5a8fa8 + lasers #c1666b
+    "neuromorphic_in_memory": "#72848d",  # blend of neuromorphic #7a6c91 + in_memory #6a9c89
+    "mixed":                  "#8f8f8f",  # neutral grey (zero saturation) --
+                                           # reads as "no dominant family",
+                                           # distinct from the 3 hued colors
     "noise":                  "#d1d5db",  # light grey — frontier / unclustered
 }
 
@@ -31,7 +33,7 @@ FAMILY_LABELS: dict[str, str] = {
     "euv":          "EUV Lithography",
     "lasers":       "Lasers",
     "si_photonics": "Silicon Photonics",
-    "neuromorphic": "Neuromorphic Computing",
+    "neuromorphic": "Neuromorphic",
     "in_memory":    "In-Memory Compute",
     "unattributed": "Unattributed",
     # 3-way cluster-label family (Technology Landscape map only).
@@ -57,27 +59,6 @@ def confidence_color(level: str) -> str:
         "medium": CONFIDENCE_MEDIUM,
         "low":    CONFIDENCE_LOW,
     }.get(level, CONFIDENCE_MEDIUM)
-
-
-_METHOD_BADGE: dict[str, tuple[str, str]] = {
-    "seed_crosswalk": ("Seed list",      "#6366f1"),
-    "ror":            ("Verified ROR",   "#22c55e"),
-    "native_id":      ("Verified",       "#22c55e"),
-    "ror_bridge":     ("ROR bridge",     "#0ea5e9"),
-    "fuzzy_high":     ("Fuzzy match",    "#f97316"),
-    "fuzzy_review":   ("Fuzzy reviewed", "#f97316"),
-    "npl_citation":   ("NPL citation",   "#ec4899"),
-}
-
-
-def method_badge(method: str) -> str:
-    """Inline HTML badge for a match_method value."""
-    label, color = _METHOD_BADGE.get(method, (method.replace("_", " "), "#888888"))
-    return (
-        f"<span style='background:{color}22;color:{color};"
-        f"border:1px solid {color}66;border-radius:4px;"
-        f"padding:2px 8px;font-size:11px;font-weight:600;'>{label}</span>"
-    )
 
 
 def confidence_badge(level: str) -> str:
@@ -228,7 +209,7 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
         ".card-tag  { color: var(--accent, #888888); }"
         ".card-stat { color: var(--accent, #111111); }"
         ".family-explore {"
-        "  font-size:14px;font-weight:600;text-decoration:underline !important;"
+        "  font-size:13px;font-weight:600;text-decoration:underline !important;"
         "  text-underline-offset:3px;transition:opacity 0.18s ease;"
         "  white-space:nowrap;color:var(--accent, #111111) !important;"
         "}"
@@ -259,7 +240,7 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
             f"The Chips Behind AI</div>"
             f"<div style='color:#888888;font-size:0.9rem;'>"
             f"Tracing global semiconductor research papers to US patents "
-            f"across 5 technology families · 2012–2025"
+            f"across 5 technology families · papers 2012–2025, patents filed 2014–2025"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -268,11 +249,11 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
             if st.button("Take the 90-second tour", key=f"_hdr_tour_{active}", type="primary"):
                 from tour import TOUR_STEPS
 
-                # TOUR_STEPS is ordered Overview, Map, Family, Org, Trace -- same
+                # TOUR_STEPS is ordered Overview, Family, Map, Org, Trace -- same
                 # order as the tab strip below -- so this label lookup stays valid
                 # as long as both lists list pages in that order.
                 _nav_labels = [
-                    "Overview", "Technology Landscape", "Family Deepdive",
+                    "Overview", "Family Deepdive", "Technology Landscape",
                     "Organisation Profile", "Trace a Paper",
                 ]
                 st.session_state["tour_step"] = 0
@@ -287,8 +268,8 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
     # ── Tab strip ──────────────────────────────────────────────────────────────
     _tabs = [
         ("Overview",             "/"),
-        ("Technology Landscape", "/Map"),
         ("Family Deepdive",      "/Family"),
+        ("Technology Landscape", "/Map"),
         ("Organisation Profile", "/Org"),
         ("Trace a Paper",        "/Trace"),
     ]
