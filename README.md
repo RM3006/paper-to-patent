@@ -1,14 +1,17 @@
 # Paper → Patent: The Chips Behind AI
 
+> Tracing science-adjacent microchip hardware — EUV lithography, silicon photonics, neuromorphic & in-memory compute — from research paper to US patent.
+
 <!-- MAINTAINED: links -->
-[Architecture](./ARCHITECTURE.md) · [Roadmap](./ROADMAP.md) · [Setup](./SETUP.md) · [Data manifest](./docs/data_source_manifest.md) · [Findings](./docs/findings.md) · [dbt docs ↗](https://rm3006.github.io/paper-to-patent/)
+[Architecture](./ARCHITECTURE.md) · [Roadmap](./ROADMAP.md) · [Setup](./SETUP.md) · [dbt docs](https://rm3006.github.io/paper-to-patent/) · **Status**: Part 8 in progress
 <!-- /MAINTAINED -->
 
-**Live app:** https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/
+<!-- MAINTAINED: hero -->
+> **[Open the live app →](https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/)**
+> Explore the technology map, trace a paper to the US patents that cite it, and see who's capturing the IP.
+<!-- /MAINTAINED -->
 
 ![The Chips Behind AI — Organisation Profile view showing TSMC's US patent and research output by technology family](hero_screenshot.png)
-
-Tracing science-adjacent microchip hardware — EUV lithography, silicon photonics, neuromorphic & in-memory compute — from research paper to US patent.
 
 We ingest global scientific output (OpenAlex) and US patents (PatentsView bulk data), resolve the organisations behind both into one identity, link papers to the patents that cite them via non-patent-literature (NPL) citations, cluster everything into named technology families, and surface three things:
 
