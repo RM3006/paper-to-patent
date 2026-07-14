@@ -33,11 +33,11 @@ flowchart LR
   CLU --> MART
   LAB --> MART
   EVAL --> MART
-  MART --> GOLD[(R2 gold/ Parquet)]
-  GOLD --> APP[Streamlit + Plotly - DuckDB read path]
+  MART --> MD[(MotherDuck - main_marts)]
+  MD --> APP[Streamlit + Plotly - DuckDB read path]
 ```
 
-Raw data lands as Parquet in R2. The PatentsView side uses bulk TSV downloads (no API key; full corpus in one shot). The Marx & Fuegi dataset joins to OpenAlex directly on its own numeric work ID (no MAG-ID bridge needed) and serves two roles: it forms the NPL gold eval set, and — for any patent it covers at all — it is the primary source of `fact_npl_link` edges, with our own DOI + fuzzy-title matcher filling only the patents outside its coverage (see §7). DuckDB (via dbt) reads R2 in place, the rapidfuzz-built crosswalk unifies organisations, and the ML branch adds technology clusters as a late-arriving attribute. The modelled gold layer is written back to R2 as small Parquet files, which the Streamlit app reads directly with in-process DuckDB. Dagster orchestrates everything and owns the lineage.
+Raw data lands as Parquet in R2. The PatentsView side uses bulk TSV downloads (no API key; full corpus in one shot). The Marx & Fuegi dataset joins to OpenAlex directly on its own numeric work ID (no MAG-ID bridge needed) and serves two roles: it forms the NPL gold eval set, and — for any patent it covers at all — it is the primary source of `fact_npl_link` edges, with our own DOI + fuzzy-title matcher filling only the patents outside its coverage (see §7). `dbt build --target prod` reads R2 raw Parquet via `httpfs` and materialises staging → intermediate → marts directly into **MotherDuck**, the served warehouse (see §5); the rapidfuzz-built crosswalk unifies organisations, and the ML branch adds technology clusters as a late-arriving attribute. The Streamlit app reads `main_marts.*` from MotherDuck directly with in-process DuckDB — no export step. Dagster orchestrates everything and owns the lineage.
 <!-- /MAINTAINED -->
 
 ## Tech stack

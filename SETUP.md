@@ -175,8 +175,8 @@ One-time install on the development machine.
 - **Cost**: free for public apps.
 - **Steps**:
   1. Sign in at share.streamlit.io via GitHub OAuth.
-  2. At Part 7, point it at `apps/ui/streamlit_app.py`.
-  3. Prefer a **read-only** (read-scaling) MotherDuck token for the app — but MotherDuck's free tier cannot issue one. **On the free tier**, add the same read-write `MOTHERDUCK_TOKEN` and `MOTHERDUCK_DATABASE=paper_to_patent` to Streamlit Cloud's **Secrets** UI instead. Accepted risk: the warehouse is fully derived from R2 and rebuilt by `dbt build --target prod` in about a minute, so a leaked token means downtime, not data loss — but keep the app **private** (not public) while on this token, and rotate the token + redeploy if it ever leaks. Switch to a genuine read-only token the moment the MotherDuck account is upgraded.
+  2. Point the app at this repo's `main` branch, entrypoint `apps/ui/app.py` (not `streamlit_app.py`).
+  3. Add the read-write `MOTHERDUCK_TOKEN` and `MOTHERDUCK_DATABASE=paper_to_patent` to Streamlit Cloud's **Secrets** UI. MotherDuck's free tier cannot issue a read-scaling (read-only) token, so the public app knowingly runs on the same read-write token as the build pipeline (Part 8, accepted risk — see `ARCHITECTURE.md` §9 and Known Limitations): the warehouse is fully derived from R2 and rebuilt by `dbt build --target prod` in about a minute, so a leaked token means downtime, not data loss. Rotate the token + redeploy if it ever leaks. Switch to a genuine read-only token the moment the MotherDuck account is upgraded.
 - **Secrets**: configured in the Streamlit Cloud UI, not in `.env.local`.
 
 ---
