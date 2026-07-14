@@ -123,7 +123,7 @@ Notable: Samsung Electronics Co., Ltd. does not appear as a top assignee in our 
 - `rapidfuzz==3.14.5` added to pyproject.toml (approved in CLAUDE.md tech stack).
 - `build_openalex_institutions_staging()` implemented in crosswalk.py: DuckDB parallel UNNEST on institution_ids + institution_display_names, deduplicate by institution_id, normalize, tag ror/high. 9 new tests → total 154, all green.
 - `fuzzy_org_bridge` asset (fuzzy_bridge.py): token_set_ratio blocking on first token; HIGH_THRESHOLD=90→fuzzy_high/high, REVIEW_THRESHOLD=75→fuzzy_review/medium. 12 tests.
-- `org_crosswalk` asset (assemble.py): long-format `int_organization_crosswalk` (source, source_id, org_id, canonical_name, match_method, confidence). Seed org_ids inherited by OA side via fuzzy bridge; fallback org_ids generated as `org_pv_*` / `org_oa_*`. 15 tests.
+- `org_crosswalk` asset (assemble.py): long-format `int_org_crosswalk` (source, source_id, org_id, canonical_name, match_method, confidence). Seed org_ids inherited by OA side via fuzzy bridge; fallback org_ids generated as `org_pv_*` / `org_oa_*`. 15 tests.
 - `docs/er_eval_set.md` created: ~55 labelled pairs across Tier 1 (unambiguous), Tier 2 (near matches), Tier 3 (hard non-matches). Precision/recall record table pending first materialize run.
 
 **One remaining manual step before Part 3 is complete:**

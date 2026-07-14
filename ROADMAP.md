@@ -201,7 +201,7 @@ The two sources share no key. You will resolve organisations with a layered stra
 **Deliverables**
 - `docs/er_eval_set.md`: hand-labelled organisation pairs (true match / non-match), drawn from orgs that appear in **both** sources within the scope. Span easy (NVIDIA Corp ↔ NVIDIA) and hard (university tech-transfer offices, research subsidiaries, abbreviations).
 - Staging-layer cleaning: normalised organisation names (case, legal suffixes, punctuation, unicode) for both sources, in one tested shared function.
-- `int_organization_crosswalk` — a Dagster asset writing Parquet to `r2://p2p-lake/intermediate/er/org_crosswalk/` with `org_id`, source IDs, `match_method`, `confidence` (per the provenance pattern in `CLAUDE.md`). Part 4 dbt reads this as a source.
+- `int_org_crosswalk` — a Dagster asset writing Parquet to `r2://p2p-lake/intermediate/er/org_crosswalk/` with `org_id`, source IDs, `match_method`, `confidence` (per the provenance pattern in `CLAUDE.md`). Part 4 dbt reads this as a source.
 - A precision/recall report against the eval set, recorded in `docs/er_eval_set.md`.
 
 **Tasks**
@@ -492,7 +492,7 @@ If a checkpoint fails, **do not skip ahead.** Fix it first.
    - **Phase 0 (~1 day spike, no commitment):** for the US patents already in-scope, pull just their **patent family** (via EPO OPS or a single free-tier BigQuery query) and report family size — "this invention was also protected in N other jurisdictions." No new ER, no new corpus, reuses the family concept the full build needs anyway. Converts the biggest weakness into a disclosed, per-patent fact.
    - **Phase 1:** ingest the EPO specifically first — CPC-native (no classification-coverage risk), structurally closest to USPTO, proves the harmonized-assignee bridge pattern end to end before taking on Asia's classification and volume complexity.
    - **Phase 2:** extend to JPO/KIPO/CNIPA — larger volume (CNIPA alone may exceed the entire current corpus size, breaking the "~1–2 GB, lakehouse-lite" sizing assumption in `ARCHITECTURE.md` §1 — re-verify before committing), classification-coverage caveats (especially Japan), and a genuine ER expansion from 2 node types (OpenAlex-ROR research orgs, PatentsView US assignees) to include worldwide corporate assignees ROR barely covers.
-   - **Before Phase 1:** run a proper spike measuring, for the exact scope CPC list: non-US in-scope patent volume, CPC-vs-IPC-only fraction by office, fraction of harmonized assignees already resolvable against `int_organization_crosswalk`, and NPL/citation field availability. These four numbers turn "assessed feasible" into a sized, committable project.
+   - **Before Phase 1:** run a proper spike measuring, for the exact scope CPC list: non-US in-scope patent volume, CPC-vs-IPC-only fraction by office, fraction of harmonized assignees already resolvable against `int_org_crosswalk`, and NPL/citation field availability. These four numbers turn "assessed feasible" into a sized, committable project.
 3. **Semantic "find related work"** — in-warehouse cosine (DuckDB array functions); "papers/patents like this one." (~half a part)
 4. **Citation-network tab** — patent→patent and paper→patent edges as an explorable graph. (~1–2 parts)
 5. **Incremental Dagster assets + scheduled refresh** — turns the one-shot build into a living atlas. (~1 part)

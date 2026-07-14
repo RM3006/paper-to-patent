@@ -113,7 +113,7 @@ The project's spine: one `org_id` per real-world organisation, unifying two sour
 | 2 | `seed_crosswalk_oa_matched` | Hand-seed (OA side, explicit OA ID) | `seed_crosswalk` |
 | 3 | `fuzzy_org_bridge` | Cross-source fuzzy | `fuzzy_high` (**score = 100 only**) |
 | 3b | `ror_bridge` | OpenAlex Institutions API subset-match | `ror_bridge` |
-| — | `int_organization_crosswalk` (assemble) | Union + dedupe → the crosswalk | — |
+| — | `int_org_crosswalk` (assemble) | Union + dedupe → the crosswalk | — |
 
 **Why.** A single false org merge poisons every downstream competitive-intelligence number
 (HHI, assignee counts, leaderboards), so the whole cascade **favours precision over
@@ -359,9 +359,9 @@ gold Parquet to R2, read over httpfs" design: one served source of truth, no
   `resources/warehouse.py` for the pipeline, `apps/ui/data.py` for the app. Assets never
   re-derive it. Both pick MotherDuck when `MOTHERDUCK_TOKEN` is set.
 - The app should run on a **read-only** MotherDuck token, but the free tier can't issue one,
-  so it currently shares the build's read-write token — accepted risk (warehouse is fully
-  rebuildable from R2 in about a minute, so a leak means downtime not data loss; app kept
-  private meanwhile).
+  so the public app shares the build's read-write token — accepted risk, made knowingly
+  (warehouse is fully rebuildable from R2 in about a minute, so a leak means downtime not
+  data loss).
 - **The UI shows confidence.** An NPL-linked lag is rendered differently from a
   co-occurrence signal — the reader always knows hard link vs soft.
 - Streamlit `session_state` + `st.rerun()` has a known footgun with `key=` on text inputs

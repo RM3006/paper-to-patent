@@ -21,7 +21,7 @@ designed around:
 |---|---|
 | Papers | OpenAlex, English abstracts, publication 2012–2025, four scope topics |
 | Patents | US only (PatentsView / USPTO), CPC **top-5** matched, filing 2014–2025 |
-| Organisations | canonical `org_id`s via `int_organization_crosswalk` |
+| Organisations | canonical `org_id`s via `int_org_crosswalk` |
 | Technology clusters | dozens of Haiku-named families + a `c_noise` "Frontier / Unclustered" bucket |
 | Technology families | **3** headline: EUV lithography; silicon photonics; neuromorphic & in-memory compute |
 | NPL citation links | hybrid Marx & Fuegi (gold) + DOI/fuzzy-title matcher; counts are a lower bound |
