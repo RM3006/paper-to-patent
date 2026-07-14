@@ -219,42 +219,155 @@ def load_cluster_bubble() -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_family_clusters(family_id: str) -> pl.DataFrame:
-    """Clusters touched by >=1 document of this (5-way, document-level) family.
+    """Clusters touched by >=1 document of this (5-way, document-level) family,
+    with every metric column scoped to THIS family's own documents in each
+    cluster -- not the cluster's overall totals. A cluster can (and often does)
+    contain documents from more than one family; membership here is existence-
+    based (>=1 doc of this family_id in the cluster, not the cluster's own
+    seed_cluster_family majority label -- see that model's docstring for why
+    cluster labels stay 3-way while documents are 5-way), so the same cluster
+    can appear under more than one family pill, each time showing only that
+    family's slice.
 
-    HHI/lag are cluster-level (from mart_gap) and describe the WHOLE cluster, not
-    just this family's slice of it -- a cluster can (and usually does) contain
-    documents from more than one family; the Family Deepdive page captions this.
-    Membership is existence-based (>=1 doc of this family_id in the cluster), not
-    the cluster's own seed_cluster_family label -- see that model's docstring for
-    why cluster labels stay 3-way while documents are 5-way.
+    This mirrors load_family_metrics's family+cluster intersection exactly
+    (same reportability floors: HHI needs >=10 resolved patents, NPL lag needs
+    >=20 links), so selecting a cluster row here and reading the page's top
+    metric cards for that same cluster shows the same numbers -- there is no
+    mart at this (family, cluster) grain, so this is computed live, same
+    reasoning as load_family_metrics/load_family_velocity below.
+
+    spillover_family_ids: every OTHER (5-way) family with >=1 document in this
+    cluster, ordered by that family's document count in the cluster (desc),
+    ties broken by family_id. Backs the cluster table's "Other Families" column
+    -- e.g. a cluster shown under the EUV pill that is mostly Neuromorphic
+    patents lists 'neuromorphic' (and any other family present) here, so the
+    reader can see where the rest of the cluster's documents actually live.
     """
     return _query(
         """
-        WITH family_clusters AS (
-            SELECT DISTINCT cluster_id FROM main_marts.fact_patent_filing WHERE family_id = ?
+        WITH scoped_patents AS (
+            SELECT patent_id, cluster_id, org_id, assignee_sequence
+            FROM main_marts.fact_patent_filing
+            WHERE family_id = ? AND cluster_id IS NOT NULL AND cluster_id != 'c_noise'
+        ),
+        scoped_papers AS (
+            SELECT work_id, cluster_id, org_id
+            FROM main_marts.fact_publication
+            WHERE family_id = ? AND cluster_id IS NOT NULL AND cluster_id != 'c_noise'
+        ),
+        family_clusters AS (
+            SELECT DISTINCT cluster_id FROM scoped_patents
             UNION
-            SELECT DISTINCT cluster_id FROM main_marts.fact_publication WHERE family_id = ?
+            SELECT DISTINCT cluster_id FROM scoped_papers
+        ),
+        -- Every family's document count per cluster (all 5, not just the scoped
+        -- one), restricted to clusters already in family_clusters -- backs the
+        -- "Other Families" spillover column below.
+        all_family_docs AS (
+            SELECT t.cluster_id, t.family_id, COUNT(DISTINCT t.doc_id) AS n_docs
+            FROM (
+                SELECT cluster_id, family_id, patent_id AS doc_id
+                FROM main_marts.fact_patent_filing
+                WHERE family_id IS NOT NULL AND cluster_id IS NOT NULL
+                UNION ALL
+                SELECT cluster_id, family_id, work_id AS doc_id
+                FROM main_marts.fact_publication
+                WHERE family_id IS NOT NULL AND cluster_id IS NOT NULL
+            ) t
+            INNER JOIN family_clusters fc2 ON fc2.cluster_id = t.cluster_id
+            GROUP BY t.cluster_id, t.family_id
+        ),
+        spillover AS (
+            SELECT cluster_id, LIST(family_id ORDER BY n_docs DESC, family_id ASC) AS family_ids
+            FROM all_family_docs
+            WHERE family_id != ?
+            GROUP BY cluster_id
+        ),
+        -- Primary assignee per patent (assignee_sequence = 0 preferred; fall back
+        -- to lowest non-null; unresolved-org patents get their own NULL bucket) --
+        -- same methodology as mart_gap's hhi_calc, scoped to this family.
+        primary_assignee AS (
+            SELECT DISTINCT ON (patent_id)
+                patent_id, cluster_id, org_id AS primary_org_id
+            FROM scoped_patents
+            ORDER BY
+                patent_id,
+                CASE
+                    WHEN assignee_sequence = 0 THEN 0
+                    WHEN assignee_sequence IS NULL THEN 2
+                    ELSE 1
+                END,
+                assignee_sequence
+        ),
+        org_counts AS (
+            SELECT cluster_id, primary_org_id, COUNT(*) AS org_patents
+            FROM primary_assignee
+            GROUP BY 1, 2
+        ),
+        cluster_patent_totals AS (
+            SELECT
+                cluster_id,
+                SUM(org_patents)                                          AS n_patents,
+                SUM(org_patents) FILTER (WHERE primary_org_id IS NOT NULL) AS resolved_patents
+            FROM org_counts
+            GROUP BY 1
+        ),
+        hhi_calc AS (
+            SELECT
+                oc.cluster_id,
+                ROUND(SUM(
+                    (oc.org_patents * 1.0 / ct.resolved_patents)
+                    * (oc.org_patents * 1.0 / ct.resolved_patents)
+                ), 4)                                       AS hhi_raw,
+                COUNT(DISTINCT oc.primary_org_id)            AS n_assignees
+            FROM org_counts oc
+            INNER JOIN cluster_patent_totals ct ON ct.cluster_id = oc.cluster_id
+            WHERE oc.primary_org_id IS NOT NULL
+            GROUP BY 1
+        ),
+        paper_counts AS (
+            SELECT
+                cluster_id,
+                COUNT(DISTINCT work_id)  AS n_papers,
+                COUNT(DISTINCT org_id)   AS n_research_orgs
+            FROM scoped_papers
+            GROUP BY 1
+        ),
+        npl_lag AS (
+            SELECT
+                sp.cluster_id,
+                COUNT(*)                                 AS npl_n_links,
+                ROUND(MEDIAN(nl.citation_lag_years), 2)  AS npl_median_lag_years
+            FROM main_marts.fact_npl_link nl
+            INNER JOIN scoped_patents sp ON sp.patent_id = nl.patent_id
+            GROUP BY 1
         )
         SELECT
-            mg.cluster_id,
+            fc.cluster_id,
             dtc.tagline,
             dtc.top_terms,
-            mg.n_papers,
-            mg.n_patents,
-            mg.hhi,
-            mg.hhi_reportable,
-            mg.n_research_orgs,
-            mg.n_assignees,
-            mg.npl_median_lag_years,
-            mg.npl_n_links,
-            mg.npl_reportable
-        FROM main_marts.mart_gap mg
-        JOIN main_marts.dim_technology_cluster dtc ON dtc.cluster_id = mg.cluster_id
-        JOIN family_clusters fc ON fc.cluster_id = mg.cluster_id
-        WHERE mg.cluster_id != 'c_noise'
-        ORDER BY mg.n_papers + mg.n_patents DESC
+            COALESCE(pc.n_papers, 0)                                    AS n_papers,
+            COALESCE(cpt.n_patents, 0)                                  AS n_patents,
+            CASE WHEN COALESCE(cpt.resolved_patents, 0) >= 10 THEN h.hhi_raw END
+                                                                         AS hhi,
+            COALESCE(cpt.resolved_patents, 0) >= 10                     AS hhi_reportable,
+            COALESCE(pc.n_research_orgs, 0)                             AS n_research_orgs,
+            COALESCE(h.n_assignees, 0)                                  AS n_assignees,
+            CASE WHEN COALESCE(nl.npl_n_links, 0) >= 20 THEN nl.npl_median_lag_years END
+                                                                         AS npl_median_lag_years,
+            COALESCE(nl.npl_n_links, 0)                                 AS npl_n_links,
+            COALESCE(nl.npl_n_links, 0) >= 20                           AS npl_reportable,
+            sp.family_ids                                               AS spillover_family_ids
+        FROM family_clusters fc
+        JOIN main_marts.dim_technology_cluster dtc ON dtc.cluster_id = fc.cluster_id
+        LEFT JOIN cluster_patent_totals cpt ON cpt.cluster_id = fc.cluster_id
+        LEFT JOIN hhi_calc h               ON h.cluster_id   = fc.cluster_id
+        LEFT JOIN paper_counts pc          ON pc.cluster_id  = fc.cluster_id
+        LEFT JOIN npl_lag nl               ON nl.cluster_id  = fc.cluster_id
+        LEFT JOIN spillover sp             ON sp.cluster_id  = fc.cluster_id
+        ORDER BY COALESCE(pc.n_papers, 0) + COALESCE(cpt.n_patents, 0) DESC
         """,
-        [family_id, family_id],
+        [family_id, family_id, family_id],
     )
 
 
@@ -636,37 +749,36 @@ def load_dataset_totals(
     family_ids/cluster_ids, if given, narrow this to the Organisation Profile
     page's active filter scope -- this is the denominator behind the "% of all
     patents/papers" metric cards, so it must match the same scope those cards'
-    numerators are computed over. The scoped branch queries fact_patent_filing/
-    fact_publication directly (not mart_gap, which has no family dimension and
-    whose cluster_id values can't be filtered by a 5-way family_id anyway).
+    numerators are computed over. Always queries fact_patent_filing/fact_publication
+    directly (not mart_family, which only sums the 5-way-resolvable families and
+    excludes 'unattributed' documents) -- the numerator (load_org_output_by_family /
+    load_org_paper_output_by_family) includes an org's own 'unattributed' documents
+    via mart_competitive's family_id_key, so the denominator must include the
+    'unattributed' population too, or the percentage is numerator-not-subset-of-
+    denominator even in the unfiltered (no family/cluster filter) case. With no
+    filters, _scope_clause returns "" and this simply counts every patent/paper.
     """
-    if not family_ids and not cluster_ids:
-        df = _query("""
-            SELECT SUM(n_papers) AS total_papers, SUM(n_patents) AS total_patents
-            FROM main_marts.mart_family
-        """)
-    else:
-        patent_scope = _scope_clause(
-            "COALESCE(fpf.family_id, 'unattributed')", "fpf.cluster_id", family_ids, cluster_ids
+    patent_scope = _scope_clause(
+        "COALESCE(fpf.family_id, 'unattributed')", "fpf.cluster_id", family_ids, cluster_ids
+    )
+    paper_scope = _scope_clause(
+        "COALESCE(fp.family_id, 'unattributed')", "fp.cluster_id", family_ids, cluster_ids
+    )
+    df = _query(f"""
+        WITH patents AS (
+            SELECT DISTINCT fpf.patent_id
+            FROM main_marts.fact_patent_filing fpf
+            WHERE 1=1 {patent_scope}
+        ),
+        papers AS (
+            SELECT DISTINCT fp.work_id
+            FROM main_marts.fact_publication fp
+            WHERE 1=1 {paper_scope}
         )
-        paper_scope = _scope_clause(
-            "COALESCE(fp.family_id, 'unattributed')", "fp.cluster_id", family_ids, cluster_ids
-        )
-        df = _query(f"""
-            WITH patents AS (
-                SELECT DISTINCT fpf.patent_id
-                FROM main_marts.fact_patent_filing fpf
-                WHERE 1=1 {patent_scope}
-            ),
-            papers AS (
-                SELECT DISTINCT fp.work_id
-                FROM main_marts.fact_publication fp
-                WHERE 1=1 {paper_scope}
-            )
-            SELECT
-                (SELECT COUNT(*) FROM papers)  AS total_papers,
-                (SELECT COUNT(*) FROM patents) AS total_patents
-        """)
+        SELECT
+            (SELECT COUNT(*) FROM papers)  AS total_papers,
+            (SELECT COUNT(*) FROM patents) AS total_patents
+    """)
     row = df.row(0, named=True)
     return {
         "total_papers":  int(row["total_papers"]  or 0),
@@ -772,6 +884,9 @@ def load_org_intake(
 
     family_ids/cluster_ids restrict which of this org's own patents are considered
     (the patent side of the NPL link), scoping the Organisation Profile filter.
+    Does not exclude the org's own papers from its patents' citations -- symmetric
+    with load_org_influence, which also includes self-citation; an org building
+    its patents on its own prior research is a real, disclosed signal.
     """
     scope = _scope_clause(
         "COALESCE(fpf.family_id, 'unattributed')", "fpf.cluster_id", family_ids, cluster_ids
@@ -805,6 +920,9 @@ def load_org_influence(
 
     family_ids/cluster_ids restrict which of this org's own papers are considered
     (the paper side of the NPL link), scoping the Organisation Profile filter.
+    Does not exclude the org citing its own papers -- symmetric with load_org_intake,
+    which never excluded self-citation either; an org building on its own prior
+    research is a real, disclosed signal, not a data artifact to hide.
     """
     scope = _scope_clause(
         "COALESCE(fp.family_id, 'unattributed')", "fp.cluster_id", family_ids, cluster_ids
@@ -819,13 +937,12 @@ def load_org_influence(
         JOIN main_marts.fact_npl_link fnl ON fnl.work_id = fp.work_id
         JOIN main_marts.fact_patent_filing fpf ON fpf.patent_id = fnl.patent_id
         JOIN main_marts.dim_organization do2 ON do2.org_id = fpf.org_id
-        WHERE fp.org_id = ?
-          AND fpf.org_id != ? {scope}
+        WHERE fp.org_id = ? {scope}
         GROUP BY fpf.org_id, do2.canonical_name
         ORDER BY n_patents DESC
         LIMIT 10
         """,
-        [org_id, org_id],
+        [org_id],
     )
 
 
@@ -893,7 +1010,12 @@ def load_org_flagship_patent(
 
 @st.cache_data(ttl=3600)
 def load_trace_paper(work_id: str) -> pl.DataFrame:
-    """Paper card for trace-one-idea: title, abstract, pub_date, topic, primary org, family.
+    """Paper card for trace-one-idea: title, abstract, pub_date, topic, orgs, family.
+
+    org_name is every distinct organisation associated with the paper, comma-joined --
+    a paper with several affiliated orgs would otherwise have one arbitrarily picked
+    and the others silently hidden. NULL (not "Multiple institutions") when the paper
+    genuinely has zero resolved organisations.
 
     family_id is the paper's OWN direct (5-way) family from fact_publication.family_id --
     not the cluster-label join through seed_cluster_family (3-way), since it feeds
@@ -901,11 +1023,16 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
     """
     return _query(
         """
-        WITH primary_org AS (
-            SELECT DISTINCT ON (fp.work_id) fp.work_id, fp.org_id
+        WITH orgs AS (
+            SELECT DISTINCT fp.work_id, dorg.canonical_name
             FROM main_marts.fact_publication fp
+            JOIN main_marts.dim_organization dorg ON dorg.org_id = fp.org_id
             WHERE fp.work_id = ?
-            ORDER BY fp.work_id, fp.org_id
+        ),
+        org_agg AS (
+            SELECT work_id, STRING_AGG(canonical_name, ', ' ORDER BY canonical_name) AS org_names
+            FROM orgs
+            GROUP BY work_id
         ),
         paper_family AS (
             SELECT DISTINCT work_id, family_id
@@ -917,11 +1044,10 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
             dp.publication_date,
             dp.abstract,
             dp.primary_topic_name,
-            dorg.canonical_name AS org_name,
+            oa.org_names AS org_name,
             pf.family_id
         FROM main_marts.dim_paper dp
-        LEFT JOIN primary_org po ON po.work_id = dp.work_id
-        LEFT JOIN main_marts.dim_organization dorg ON dorg.org_id = po.org_id
+        LEFT JOIN org_agg oa ON oa.work_id = dp.work_id
         LEFT JOIN paper_family pf ON pf.work_id = dp.work_id
         WHERE dp.work_id = ?
         """,
@@ -931,9 +1057,13 @@ def load_trace_paper(work_id: str) -> pl.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_trace_links(work_id: str) -> pl.DataFrame:
-    """Citing patents for a paper — one row per patent with primary assignee, lag,
+    """Citing patents for a paper — one row per patent with all assignees, lag,
     and NPL link provenance (confidence + link_source: 'marx_fuegi' gold citation
     vs. our own 'doi' / 'fuzzy_title' matcher — see the hybrid NPL linkage rule).
+
+    assignee is every co-assignee on the patent, comma-joined in assignee_sequence
+    order -- patents can have multiple assignees, and picking just one (even the
+    "primary") would misrepresent who actually holds the patent.
     """
     return _query(
         """
@@ -947,11 +1077,16 @@ def load_trace_links(work_id: str) -> pl.DataFrame:
                 citation_lag_years ASC NULLS LAST
         ),
         assignee AS (
-            SELECT DISTINCT ON (fpf.patent_id)
-                fpf.patent_id, dorg.canonical_name AS assignee
+            SELECT
+                fpf.patent_id,
+                STRING_AGG(dorg.canonical_name, ', ' ORDER BY
+                    CASE WHEN fpf.assignee_sequence IS NULL THEN 1 ELSE 0 END,
+                    fpf.assignee_sequence
+                ) AS assignee
             FROM main_marts.fact_patent_filing fpf
             JOIN main_marts.dim_organization dorg ON dorg.org_id = fpf.org_id
-            ORDER BY fpf.patent_id
+            WHERE fpf.patent_id IN (SELECT patent_id FROM npl)
+            GROUP BY fpf.patent_id
         )
         SELECT
             n.patent_id,

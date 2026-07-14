@@ -42,7 +42,7 @@ from render import (
 )
 
 st.set_page_config(
-    page_title="Family Deepdive — The Chips Behind AI",
+    page_title="Family Deepdive | The Chips Behind AI",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -66,7 +66,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 render_nav("Family Deepdive", filter_sidebar=True)
-render_tour_banner(2)
+render_tour_banner(1)
 
 # Explicit 5-way keys (document-level grain), not derived from FAMILY_LABELS.items() --
 # that dict also carries the 3-way cluster-label keys (Technology Landscape map only).
@@ -81,7 +81,7 @@ _HEADLINE_FAMILIES = {
 # pattern in this file, not deduplicated here to keep this change surgical).
 _FAMILY_DESC: dict[str, str] = {
     "euv": (
-        "Extreme-UV optics that print transistors smaller than a virus — "
+        "Extreme-UV optics that print transistors smaller than a virus: "
         "the bottleneck of the entire chip industry."
     ),
     "lasers": (
@@ -90,14 +90,14 @@ _FAMILY_DESC: dict[str, str] = {
     ),
     "si_photonics": (
         "Silicon waveguides and modulators that route light-encoded data "
-        "across a chip — cutting latency and power inside AI data centres."
+        "across a chip, cutting latency and power inside AI data centres."
     ),
     "neuromorphic": (
-        "Chips that compute the way neurons do — spiking, event-driven "
+        "Chips that compute the way neurons do: spiking, event-driven "
         "circuits trading raw clock speed for energy efficiency."
     ),
     "in_memory": (
-        "Memory that computes where data lives — resistive and phase-change "
+        "Memory that computes where data lives: resistive and phase-change "
         "cells that skip the slow trip to a separate processor."
     ),
 }
@@ -115,6 +115,16 @@ def _hex_rgba(hex_color: str, alpha: float) -> str:
     h = hex_color.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return f"rgba({r},{g},{b},{alpha})"
+
+
+def _spillover_display(ids: pl.Series | list[str] | None) -> str:
+    # map_elements passes each row of a List column as a polars.Series, not a
+    # plain list -- bool(Series) is ambiguous, so convert before any truthiness
+    # check.
+    values = ids.to_list() if isinstance(ids, pl.Series) else ids
+    if not values:
+        return "—"
+    return ", ".join(FAMILY_LABELS.get(f, f) for f in values)
 
 
 # ── Determine active family ────────────────────────────────────────────────────
@@ -192,7 +202,7 @@ st.markdown(
     ".fpill-off:hover { opacity:1; }"
     "</style>"
     f"<div class='fpill-row'>{_pills_html}</div>"
-    f"<p style='color:#888888;font-size:15px;margin-top:0;margin-bottom:1.4rem;'>"
+    f"<p style='color:#555555;font-size:15px;margin-top:0;margin-bottom:1.4rem;'>"
     f"{family_desc}</p>",
     unsafe_allow_html=True,
 )
@@ -207,7 +217,7 @@ n_links   = frow["total_npl_links"] or 0
 lag_tooltip = (
     f"Based on {n_links:,} NPL-linked citations"
     if lag is not None
-    else "Fewer than 20 NPL-linked citations — not reportable"
+    else "Fewer than 20 NPL-linked citations, not reportable"
 )
 
 m1, m2, m3, m4 = st.columns(4)
@@ -224,7 +234,7 @@ for col, value, label, tooltip in [
             f"style='margin-bottom:1rem;--accent:{family_color};'>"
             f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
             f"font-weight:800;line-height:1;'>{value}</div>"
-            f"<div style='font-size:12px;color:#888888;margin-top:6px;"
+            f"<div style='font-size:12px;color:#707070;margin-top:6px;"
             f"white-space:nowrap;'>{label}</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -312,6 +322,18 @@ if len(vel_df) > 0:
     years   = [int(y) for y in vel_df["year"].to_list()]
     papers  = [int(v) for v in vel_df["paper_count"].to_list()]
     patents = [int(v) for v in vel_df["patent_count"].to_list()]
+
+    # Clip to filing-year 2014+ so both series span the same years. Papers go back to
+    # 2012 but the patent corpus starts at 2014 (scope contract); showing 2012-2013
+    # would draw a paper line over an empty patent axis and read as "no patenting
+    # before 2014" rather than "outside our window". The 2012-2013 papers stay in
+    # scope everywhere else -- they're only omitted from this comparison chart.
+    _VELOCITY_START_YEAR = 2014
+    _keep   = [i for i, y in enumerate(years) if y >= _VELOCITY_START_YEAR]
+    years   = [years[i] for i in _keep]
+    papers  = [papers[i] for i in _keep]
+    patents = [patents[i] for i in _keep]
+
     max_year = max(years)
 
     _grant_lag = frow["avg_grant_lag_years"]
@@ -334,7 +356,9 @@ if len(vel_df) > 0:
         f"Annual research papers (by publication year) and granted US patents "
         f"(by filing year) in {family_name}{_vel_scope_note}. "
         f"The shaded years are within this family's average USPTO grant lag "
-        f"({_lag_str}) and likely undercount real patenting — not a decline."
+        f"({_lag_str}) and likely undercount real patenting, not a decline. "
+        f"Starts at 2014 to match the patent filing window; 2012–2013 papers are in "
+        f"scope but omitted here so both lines span the same years."
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -353,7 +377,7 @@ if len(vel_df) > 0:
         hovertemplate="%{x}<br>%{y:,} patents<extra></extra>",
     ))
     fig_vel.add_trace(go.Scatter(
-        x=years, y=pat_prov, name="Patents — filings still pending",
+        x=years, y=pat_prov, name="Patents (still pending)",
         mode="lines+markers", line=dict(color=col_patents, width=2.5, dash="dot"),
         marker=dict(size=5, color=col_patents), opacity=0.35, connectgaps=False,
         hovertemplate="%{x}<br>%{y:,} patents (incomplete)<extra></extra>",
@@ -367,7 +391,7 @@ if len(vel_df) > 0:
         plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         font=dict(size=12, color="#111111"),
         margin=dict(l=10, r=20, t=10, b=40),
-        xaxis=dict(dtick=2, showgrid=False, zeroline=False,
+        xaxis=dict(dtick=2, tick0=2014, showgrid=False, zeroline=False,
                    showline=True, linecolor="#e6e6e6", tickfont=dict(size=11),
                    showspikes=False),
         yaxis=dict(gridcolor="#f0f0f0", zeroline=False, rangemode="tozero",
@@ -396,8 +420,11 @@ if len(_clusters_filtered) > 0:
             f"<div style='font-family:{_FONT};font-size:14px;font-weight:700;"
             f"color:#111111;margin-bottom:4px;'>{count_label} touched by {family_name}</div>"
             f"<div style='font-size:12px;color:#888888;margin-bottom:10px;'>"
-            f"Sorted by number of patents. A cluster can span more than one family — its "
-            f"Lag and HHI describe the cluster as a whole, not just this family's share of it. "
+            f"Sorted by number of patents. A cluster can span more than one family, so it may "
+            f"appear under more than one pill -- every number below (Papers, Patents, Lag, HHI) "
+            f"is this family's own slice of the cluster, not the cluster's overall total. "
+            f"Selecting a cluster with the sidebar filter narrows the metric cards above to "
+            f"match this row exactly. "
             f"Hover over 'Lag (yr)' and 'HHI' columns for definitions."
             f"</div>",
             unsafe_allow_html=True,
@@ -428,6 +455,10 @@ if len(_clusters_filtered) > 0:
               .cast(pl.Float64)
               .alias("hhi_display"),
             pl.col("top_terms").list.join(", ").alias("top_terms_display"),
+            pl.col("spillover_family_ids")
+              .map_elements(_spillover_display, return_dtype=pl.Utf8)
+              .fill_null("—")
+              .alias("spillover_display"),
         ])
         .select([
             pl.col("tagline").alias("Cluster"),
@@ -438,6 +469,7 @@ if len(_clusters_filtered) > 0:
             pl.col("n_research_orgs").alias("# of Researchers"),
             pl.col("n_assignees").alias("# of Patenters"),
             pl.col("top_terms_display").alias("Top Terms"),
+            pl.col("spillover_display").alias("Other Families"),
         ])
     )
 
@@ -445,8 +477,21 @@ if len(_clusters_filtered) > 0:
         _display,
         hide_index=True,
         use_container_width=True,
+        column_order=[
+            "Cluster", "Papers", "Patents", "Lag (yr)", "HHI",
+            "# of Researchers", "# of Patenters", "Top Terms", "Other Families",
+        ],
         column_config={
             "Cluster": st.column_config.TextColumn(width="large"),
+            "Other Families": st.column_config.TextColumn(
+                width="medium",
+                help=(
+                    "Other technology families that also have at least one document in "
+                    "this cluster, ordered by document count. This cluster's Papers/"
+                    "Patents/Lag/HHI numbers here only count this pill's family -- these "
+                    "are the other families you'd see it under if you switched pills."
+                ),
+            ),
             "Papers": st.column_config.NumberColumn(format="%d"),
             "Patents": st.column_config.NumberColumn(format="%d"),
             "Lag (yr)": st.column_config.NumberColumn(
@@ -454,7 +499,7 @@ if len(_clusters_filtered) > 0:
                 width="small",
                 help=(
                     "NPL = Non-Patent Literature. When a patent is filed it may cite "
-                    "scientific papers as prior art — those are NPL citations. "
+                    "scientific papers as prior art: those are NPL citations. "
                     "This is the median time (years) between a paper publication date "
                     "and the filing date of a patent that cited it. "
                     "Shown only when ≥20 NPL citations exist for this cluster."
@@ -464,7 +509,7 @@ if len(_clusters_filtered) > 0:
                 format="%.2f",
                 width="small",
                 help=(
-                    "Herfindahl-Hirschman Index — measures how concentrated patent "
+                    "Herfindahl-Hirschman Index: measures how concentrated patent "
                     "ownership is in this cluster. "
                     "0 = many assignees each with a tiny share. "
                     "1 = one assignee holds everything. "
@@ -472,8 +517,8 @@ if len(_clusters_filtered) > 0:
                     "Shown only when ≥10 resolved patents exist."
                 ),
             ),
-            "# of Researchers": st.column_config.NumberColumn(format="%d", width="small"),
-            "# of Patenters": st.column_config.NumberColumn(format="%d", width="small"),
+            "# of Researchers": st.column_config.NumberColumn(format="%d", width=110),
+            "# of Patenters": st.column_config.NumberColumn(format="%d", width=110),
             "Top Terms": st.column_config.TextColumn(
                 width="large",
                 help=(
@@ -487,11 +532,14 @@ if len(_clusters_filtered) > 0:
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown(
-    "<span style='font-size:11px;color:#888888;'>"
+    "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
+    "font-size:11px;color:#707070;line-height:1.6;'>"
     "Granted US patents only (PatentsView / USPTO). "
     "Papers from OpenAlex (2012–2025). "
-    "Lag = paper publication date → citing patent filing date via NPL citations. "
+    "Lag = paper publication date → citing patent filing date via NPL citations "
+    "(patents before 2014 aren't captured, so lag for the earliest paper years "
+    "skews slightly long). "
     "Org counts exclude 'Unresolved' entries."
-    "</span>",
+    "</div>",
     unsafe_allow_html=True,
 )

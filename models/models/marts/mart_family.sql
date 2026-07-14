@@ -56,7 +56,7 @@ with family_meta (family_id, family_name, family_sort_order) as (
         ('euv',          'EUV Lithography',        1),
         ('lasers',       'Lasers',                  2),
         ('si_photonics', 'Silicon Photonics',       3),
-        ('neuromorphic', 'Neuromorphic Computing',  4),
+        ('neuromorphic', 'Neuromorphic',            4),
         ('in_memory',    'In-Memory Compute',       5)
 ),
 

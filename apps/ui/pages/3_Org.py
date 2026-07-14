@@ -16,6 +16,7 @@ Source: dim_organization, fact_patent_filing, fact_publication, fact_npl_link,
 """
 from __future__ import annotations
 
+import html
 import pathlib
 import sys
 
@@ -46,7 +47,6 @@ from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
     confidence_badge,
-    method_badge,
     render_chip_multiselect,
     render_nav,
     render_tour_banner,
@@ -55,7 +55,7 @@ from render import (
 _SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
 
 st.set_page_config(
-    page_title="Organisation Profile — The Chips Behind AI",
+    page_title="Organisation Profile | The Chips Behind AI",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -117,20 +117,34 @@ def _spacer() -> None:
 
 
 def _cluster_list(clusters: list[dict], min_rows: int = 5) -> None:
-    """Render cluster rows: white background, grey border, family-color text, fixed row height.
+    """Render cluster rows: white background, grey border, fixed row height.
+
+    Cluster name (left) is a fixed grey; the pooled family name (right) is
+    colored in that family's own accent color (fam_color), with a matching dot
+    beside it.
 
     Always renders min_rows rows — real rows first, then invisible spacers — so both
     columns stay vertically aligned regardless of how many clusters each side has.
     """
     for row in clusters:
         pct = (row["share"] or 0) * 100
-        fam_color = FAMILY_COLORS.get(row.get("family_id") or "", "#888888")
+        fam_id = row.get("family_id") or ""
+        fam_color = FAMILY_COLORS.get(fam_id, "#888888")
+        fam_label = FAMILY_LABELS.get(fam_id, fam_id)
         st.markdown(
-            f"<div class='card card--row' style='--accent:{fam_color};'>"
-            f"<div class='card-stat' style='font-size:12px;font-weight:600;"
+            f"<div class='card card--row'>"
+            f"<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;'>"
+            f"<div style='flex:1;min-width:0;font-size:12px;font-weight:600;color:#555555;"
             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-            f"{row['tagline']}</div>"
-            f"<div style='font-size:11px;color:#888888;margin-top:2px;'>"
+            f"{html.escape(row['tagline'])}</div>"
+            f"<div style='flex-shrink:0;display:flex;align-items:center;gap:6px;'>"
+            f"<span style='font-size:11px;font-weight:400;color:{fam_color};"
+            f"white-space:nowrap;'>{fam_label}</span>"
+            f"<span style='width:8px;height:8px;border-radius:50%;"
+            f"background:{fam_color};display:inline-block;flex-shrink:0;'></span>"
+            f"</div>"
+            f"</div>"
+            f"<div style='font-size:11px;color:#555555;margin-top:2px;'>"
             f"{row['doc_count']:,} · {pct:.1f}% cluster share"
             f"</div></div>",
             unsafe_allow_html=True,
@@ -145,7 +159,7 @@ def _cluster_list(clusters: list[dict], min_rows: int = 5) -> None:
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown(
     "<p style='color:#888888;margin-top:0;margin-bottom:1rem;font-size:15px;'>"
-    "Search any organisation in the dataset — academic, corporate, or government. "
+    "Search any organisation in the dataset: academic, corporate, or government. "
     "The ledger shows what they research and what they patent."
     "</p>",
     unsafe_allow_html=True,
@@ -175,7 +189,6 @@ if len(profile_df) == 0:
 
 profile    = profile_df.row(0, named=True)
 org_name   = profile["canonical_name"]
-match_meth = profile["primary_match_method"]
 confidence = profile["primary_confidence"]
 
 # ── Sidebar filters — scoped to this org's own activity ───────────────────────
@@ -194,14 +207,6 @@ _family_scope: list[tuple[str, str]] = sorted(
 )
 
 
-def _drop_org_clusters_of_family(fid: str) -> None:
-    """Cascade: dropping a family chip also drops any of its clusters from the cluster filter."""
-    gone = {r["cluster_id"] for r in _scope_df.filter(pl.col("family_id") == fid).to_dicts()}
-    st.session_state["_org_sel_clusters"] = [
-        c for c in st.session_state.get("_org_sel_clusters", []) if c not in gone
-    ]
-
-
 with st.sidebar:
     st.markdown("#### Filters")
     _raw_families = render_chip_multiselect(
@@ -210,7 +215,6 @@ with st.sidebar:
         _family_scope,
         placeholder="Add family…",
         search_key="org_family_sb",
-        on_remove=_drop_org_clusters_of_family,
     )
     _cluster_universe = (
         _scope_df.filter(pl.col("family_id").is_in(_raw_families)) if _raw_families else _scope_df
@@ -255,18 +259,6 @@ total_papers_ds  = dataset_totals["total_papers"]
 pct_patents = (n_patents_total / total_patents_ds * 100) if total_patents_ds > 0 else 0.0
 pct_papers  = (n_papers_total  / total_papers_ds  * 100) if total_papers_ds  > 0 else 0.0
 
-# ── Dominant family color ─────────────────────────────────────────────────────
-_family_counts: dict[str, int] = {}
-for r in output_by_family.to_dicts():
-    _family_counts[r["family_id"]] = _family_counts.get(r["family_id"], 0) + int(r["n_patents"])
-for r in paper_by_family.to_dicts():
-    _family_counts[r["family_id"]] = _family_counts.get(r["family_id"], 0) + int(r["n_papers"])
-
-dominant_family = (
-    max(_family_counts, key=lambda k: _family_counts[k]) if _family_counts else "noise"
-)
-org_color = FAMILY_COLORS.get(dominant_family, "#888888")
-
 # ── Role descriptor ───────────────────────────────────────────────────────────
 if n_papers_total == 0 and n_patents_total > 0:
     role_label = "Primarily an IP holder"
@@ -282,15 +274,15 @@ else:
         role_label = "Both researcher and IP holder"
 
 # ── Org identity header ───────────────────────────────────────────────────────
-# match_meth/confidence come from dim_organization.primary_match_method/
-# primary_confidence -- how this org's identity was resolved into the crosswalk
-# (rule: every match carries provenance and confidence, and the UI shows it).
+# confidence comes from dim_organization.primary_confidence -- how confidently
+# this org's identity was resolved into the crosswalk (rule: every match carries
+# provenance and confidence, and the UI shows it; the match_method itself is no
+# longer surfaced here, just the confidence level).
 st.markdown(
     f"<div style='margin-top:1rem;margin-bottom:1.2rem;'>"
     f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:4px;'>"
     f"<div style='font-family:{_FONT};font-size:28px;font-weight:800;"
-    f"color:#111111;line-height:1.2;'>{org_name}</div>"
-    f"{method_badge(match_meth)}"
+    f"color:#111111;line-height:1.2;'>{html.escape(org_name)}</div>"
     f"</div>"
     f"<div style='font-size:12px;color:#888888;'>{role_label} &middot; "
     f"{confidence_badge(confidence)} match confidence</div>"
@@ -314,7 +306,7 @@ for _col, _val, _lbl in [
             f"<div class='card card--metric' style='margin-bottom:1rem;'>"
             f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
             f"font-weight:800;line-height:1;'>{_val}</div>"
-            f"<div style='font-size:12px;color:#888888;margin-top:6px;"
+            f"<div style='font-size:12px;color:#707070;margin-top:6px;"
             f"white-space:nowrap;'>{_lbl}</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -377,8 +369,11 @@ with col_patent:
         if len(top_pat_clusters) > 0:
             _spacer()
             st.markdown(
-                "<div style='font-size:11px;color:#888888;"
-                "margin-bottom:8px;'>Top patent clusters</div>",
+                "<div style='font-size:12px;font-weight:700;color:#888888;'>"
+                "Top patent clusters</div>"
+                "<div style='font-size:12px;color:#707070;margin-bottom:8px;'>"
+                "How present this org is in each cluster: its share of that "
+                "cluster's total patents, not the cluster's overall size.</div>",
                 unsafe_allow_html=True,
             )
             _cluster_list(top_pat_clusters.to_dicts())
@@ -409,7 +404,7 @@ with col_patent:
                             key="org_pat_years")
             st.markdown(
                 "<span style='font-size:10px;color:#888888;'>"
-                "Counts after 2019 are understated — recent filings take 2–4 years to be granted."
+                "Counts after 2019 are understated: recent filings take 2–4 years to be granted."
                 "</span>",
                 unsafe_allow_html=True,
             )
@@ -462,8 +457,11 @@ with col_research:
         if len(top_res_clusters) > 0:
             _spacer()
             st.markdown(
-                "<div style='font-size:11px;color:#888888;"
-                "margin-bottom:8px;'>Top research clusters</div>",
+                "<div style='font-size:12px;font-weight:700;color:#888888;'>"
+                "Top research clusters</div>"
+                "<div style='font-size:12px;color:#707070;margin-bottom:8px;'>"
+                "How present this org is in each cluster: its share of that "
+                "cluster's total papers, not the cluster's overall size.</div>",
                 unsafe_allow_html=True,
             )
             _cluster_list(top_res_clusters.to_dicts())
@@ -512,9 +510,9 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
             f"text-transform:uppercase;color:#aaaaaa;margin-bottom:8px;'>"
             f"Most NPL-citing patent</div>"
             f"<div style='font-size:14px;font-weight:700;color:#111111;"
-            f"line-height:1.45;margin-bottom:10px;'>{fpt['title']}</div>"
+            f"line-height:1.45;margin-bottom:10px;'>{html.escape(fpt['title'])}</div>"
             f"<div style='font-size:11px;color:#888888;'>"
-            f"Filed {filing_yr} &nbsp;&middot;&nbsp; US{fpt['patent_id']}</div>"
+            f"Filed {filing_yr} &nbsp;&middot;&nbsp; US{html.escape(str(fpt['patent_id']))}</div>"
             f"</div>"
             f"</div>"
         )
@@ -523,8 +521,13 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
     if len(flagship_paper) > 0:
         fp = flagship_paper.row(0, named=True)
         pub_yr = fp["publication_date"].year if fp["publication_date"] else "—"
-        abstract = (fp["abstract"] or "")[:280]
-        if len(fp["abstract"] or "") > 280:
+        # Slice the raw text first, then escape -- escaping first would let a
+        # multi-character entity (e.g. an embedded "<sup>" tag from OpenAlex's
+        # abstract reconstruction) get counted as one "character" toward the
+        # 280 limit, or get cut mid-entity into a malformed one.
+        abstract_raw = fp["abstract"] or ""
+        abstract = html.escape(abstract_raw[:280])
+        if len(abstract_raw) > 280:
             abstract += "…"
         paper_html = (
             f"<div style='flex:1;min-width:0;display:flex;gap:16px;align-items:flex-start;'>"
@@ -538,7 +541,7 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
             f"<div style='font-size:9px;font-weight:700;letter-spacing:.1em;"
             f"text-transform:uppercase;color:#aaaaaa;margin-bottom:8px;'>Most-cited paper</div>"
             f"<div style='font-size:14px;font-weight:700;color:#111111;"
-            f"line-height:1.45;margin-bottom:6px;'>{fp['title']}</div>"
+            f"line-height:1.45;margin-bottom:6px;'>{html.escape(fp['title'])}</div>"
             f"<div style='font-size:11px;color:#888888;margin-bottom:10px;'>"
             f"Published {pub_yr}</div>"
             f"<div style='font-size:11px;color:#555555;line-height:1.6;'>"
@@ -569,7 +572,7 @@ if has_intake or has_influence:
         "<div style='text-align:center;'>"
         "<div style='font-size:10px;font-weight:700;letter-spacing:.08em;"
         "text-transform:uppercase;color:#888888;margin-bottom:4px;'>"
-        "The citation bridge — via NPL links</div>"
+        "The citation bridge (via NPL links)</div>"
         "<div style='font-size:12px;color:#888888;margin-bottom:1.5rem;'>"
         "Who feeds this org's patents with research, and whose patents build on its work."
         "</div></div>",
@@ -690,7 +693,8 @@ _pct_scope_note = (
     else "the total across all five technology families"
 )
 st.markdown(
-    "<span style='font-size:11px;color:#888888;'>"
+    "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
+    "font-size:11px;color:#707070;line-height:1.6;'>"
     "<strong>Data quality:</strong> "
     "Org matches use the crosswalk (seed → ROR → fuzzy). "
     "Intake and influence panels are based on NPL citation links only "
@@ -699,6 +703,6 @@ st.markdown(
     "Papers from OpenAlex (2012–2025). "
     f"Percentage shares are relative to {_pct_scope_note} "
     "(resolved documents only; unresolved orgs excluded)."
-    "</span>",
+    "</div>",
     unsafe_allow_html=True,
 )

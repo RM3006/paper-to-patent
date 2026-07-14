@@ -13,6 +13,7 @@ Source: dim_paper, fact_npl_link, dim_patent, fact_patent_filing,
 
 from __future__ import annotations
 
+import html
 import pathlib
 import sys
 
@@ -28,7 +29,6 @@ from data import load_trace_family_stat, load_trace_links, load_trace_paper, sea
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
-    confidence_badge,
     render_nav,
     render_tour_banner,
 )
@@ -40,7 +40,7 @@ _LINK_SOURCE_LABEL: dict[str, str] = {
 }
 
 st.set_page_config(
-    page_title="Trace a Paper — The Chips Behind AI",
+    page_title="Trace a Paper | The Chips Behind AI",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -79,7 +79,7 @@ def _hex_rgba(hex_color: str, alpha: float) -> str:
 st.markdown(
     "<p style='color:#888888;margin-top:0;margin-bottom:1.4rem;font-size:15px;'>"
     "Pick a research paper and follow it into the US patents that cited it. "
-    "The horizontal distance on the timeline is the <strong>citation lag</strong> — "
+    "The horizontal distance on the timeline is the <strong>citation lag</strong>: "
     "time between publication and when industry filed a patent referencing it."
     "</p>",
     unsafe_allow_html=True,
@@ -115,12 +115,10 @@ if pub_date is None:
     st.stop()
 assert pub_date is not None  # dim_paper.publication_date is not_null; narrows for pyright
 pub_year = int(str(pub_date)[:4]) if pub_date else 2014
-pub_decimal = pub_year + ((pub_date.month - 1) / 12.0 if pub_date else 0.0)
 
 family_id    = paper.get("family_id") or ""
 family_color = FAMILY_COLORS.get(family_id, "#888888")
 family_label = FAMILY_LABELS.get(family_id, family_id or "Research Paper")
-paper_color  = _hex_rgba(family_color, 0.45)
 
 # ── Load family stats (needs family_id resolved above) ────────────────────────
 family_df = load_trace_family_stat(family_id)
@@ -142,30 +140,41 @@ fastest = min(lags_known) if lags_known else None
 fastest_str = f"{fastest:.1f} yr" if fastest is not None else "—"
 fam_med_str = f"{fam_med:.1f} yr" if fam_med is not None else "—"
 fam_med_tooltip = (
-    f"Based on {fam_links:,} NPL-linked citations"
+    f"Median citation lag across all {family_label} papers, based on {fam_links:,} "
+    f"NPL-linked citations in this family (not just this paper)."
     if fam_med is not None
-    else "Fewer than 20 NPL-linked citations — not reportable"
+    else (
+        "This paper has no family, not reportable"
+        if not family_id
+        else f"Fewer than 20 NPL-linked citations in the {family_label} family, not reportable"
+    )
 )
 
 # ── Paper card + stat (single flex row → equal height guaranteed) ─────────────
+# Slice the raw text first, then escape -- escaping first would let a
+# multi-character entity (e.g. an embedded "<sup>" tag from OpenAlex's
+# abstract reconstruction) get counted as one "character" toward the
+# 320 limit, or get cut mid-entity into a malformed one.
 abstract_raw = paper.get("abstract") or ""
-abstract_snippet = abstract_raw[:320] + ("…" if len(abstract_raw) > 320 else "")
-org_name = paper.get("org_name") or "Multiple institutions"
-topic = paper.get("primary_topic_name") or ""
-topic_html = f"<span style='color:#aaaaaa;margin-left:8px;'>· {topic}</span>" if topic else ""
+abstract_snippet = html.escape(abstract_raw[:320])
+if len(abstract_raw) > 320:
+    abstract_snippet += "…"
+org_name = html.escape(paper.get("org_name") or "No affiliation")
+topic = html.escape(paper.get("primary_topic_name") or "")
+topic_html = f"<span style='color:#888888;margin-left:8px;'>· {topic}</span>" if topic else ""
 
 # ── Paper description card (full width) ──────────────────────────────────────
 st.markdown(
     f"<div class='card card--identity' "
     f"style='--accent:{family_color};--accent-border:{family_color}55;'>"
-    f"<div class='card-tag' style='font-size:9px;font-weight:700;letter-spacing:.08em;"
+    f"<div class='card-tag' style='font-size:16px;font-weight:700;letter-spacing:.08em;"
     f"text-transform:uppercase;margin-bottom:6px;'>"
     f"Research Paper · {pub_year} · {family_label}</div>"
-    f"<div style='font-family:{_FONT};font-size:15px;font-weight:700;color:#111111;"
-    f"line-height:1.4;margin-bottom:8px;'>{paper['title']}</div>"
-    f"<div style='font-size:12px;color:#555555;margin-bottom:10px;'>"
+    f"<div style='font-family:{_FONT};font-size:16px;font-weight:700;color:#111111;"
+    f"line-height:1.4;margin-bottom:8px;'>{html.escape(paper['title'])}</div>"
+    f"<div style='font-size:12px;color:#707070;margin-bottom:10px;'>"
     f"{org_name}{topic_html}</div>"
-    f"<div style='font-size:12px;color:#444444;line-height:1.6;'>{abstract_snippet}</div>"
+    f"<div style='font-size:14px;color:#555555;line-height:1.6;'>{abstract_snippet}</div>"
     f"</div>",
     unsafe_allow_html=True,
 )
@@ -173,8 +182,12 @@ st.markdown(
 # ── Metrics cards (3 columns) ─────────────────────────────────────────────────
 _m1, _m2, _m3 = st.columns(3)
 for _col, _val, _lbl, _tooltip in [
-    (_m1, str(n_citing), "Patents citing this paper", None),
-    (_m2, fastest_str,   "Fastest citation lag", None),
+    (_m1, str(n_citing), "Patents citing this paper",
+     "Count of US patents with a verified NPL (non-patent-literature) citation link to this "
+     "paper."),
+    (_m2, fastest_str,   "Fastest citation lag",
+     "Shortest interval between this papers publication date and a citing patents filing date, "
+     "among the patents shown here."),
     (_m3, fam_med_str,   "Family median lag", fam_med_tooltip),
 ]:
     with _col:
@@ -184,7 +197,7 @@ for _col, _val, _lbl, _tooltip in [
             f"style='margin-bottom:1.5rem;--accent:{family_color};'>"
             f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
             f"font-weight:800;line-height:1;'>{_val}</div>"
-            f"<div style='font-size:12px;color:#888888;margin-top:6px;"
+            f"<div style='font-size:12px;color:#707070;margin-top:6px;"
             f"white-space:nowrap;'>{_lbl}</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -194,7 +207,7 @@ for _col, _val, _lbl, _tooltip in [
 st.markdown("<div style='margin-top:1.5rem;'></div>", unsafe_allow_html=True)
 st.markdown(
     f"<div style='font-family:{_FONT};font-size:14px;font-weight:700;"
-    f"color:#111111;margin-bottom:4px;'>The Journey — publication to patent filing</div>"
+    f"color:#111111;margin-bottom:4px;'>The Journey: publication to patent filing</div>"
     f"<div style='font-size:12px;color:#888888;margin-bottom:12px;'>"
     f"Each marker is a US patent that cited this paper, plotted by how many years after "
     f"publication it was filed. The dashed line shows the family median citation lag."
@@ -269,8 +282,9 @@ else:
     # pattern (rule: every match carries provenance and confidence, shown in the UI).
     def _hover_text(row: dict) -> str:
         lag_str   = f"{row['citation_lag_years']:.1f} yr"
-        title     = (row["patent_title"] or "Untitled")[:60]
-        assignee  = row["assignee"] or "Unresolved"
+        title_raw = row["patent_title"] or "Untitled"
+        title     = html.escape(title_raw[:60]) + ("…" if len(title_raw) > 60 else "")
+        assignee  = html.escape(row["assignee"] or "Unresolved")
         filed_str = row["filing_date"].strftime("%d/%m/%Y")
         source    = _LINK_SOURCE_LABEL.get(row["link_source"], row["link_source"] or "unknown")
         return (
@@ -278,40 +292,27 @@ else:
             f"Assignee: {assignee}<br>"
             f"Filed: {filed_str}<br>"
             f"Lag: {lag_str}<br>"
-            f"Patent: US{row['patent_id']}<br>"
-            f"{row['confidence'].title()} confidence — {source}"
+            f"Patent: US{html.escape(str(row['patent_id']))}<br>"
+            f"{row['confidence'].title()} confidence ({source})"
         )
 
-    # Solid marker = high confidence, hollow = medium -- the visual encoding for
-    # the "hard link vs soft link" distinction the confidence pattern requires.
-    high_idx   = [i for i, r in enumerate(links_with_lag) if r["confidence"] == "high"]
-    medium_idx = [i for i, r in enumerate(links_with_lag) if r["confidence"] != "high"]
-
-    _high_style = (
-        "circle", dict(color="#ffffff", width=1.5), "Citing patents — high confidence",
-    )
-    _medium_style = (
-        "circle-open", dict(color=family_color, width=2), "Citing patents — medium confidence",
-    )
-    for idxs, (symbol, marker_line, trace_name) in (
-        (high_idx, _high_style),
-        (medium_idx, _medium_style),
-    ):
-        if not idxs:
-            continue
-        rows = [links_with_lag[i] for i in idxs]
-        fig.add_trace(go.Scatter(
-            x=[r["filing_date"].isoformat() for r in rows],
-            y=[y_positions[i] for i in idxs],
-            mode="markers+text",
-            marker=dict(color=family_color, size=12, symbol=symbol, line=marker_line),
-            text=[f"  {(r['assignee'] or 'Unresolved')[:22]}" for r in rows],
-            textposition="middle right",
-            textfont=dict(size=10, color="#555555"),
-            hovertext=[_hover_text(r) for r in rows],
-            hoverinfo="text",
-            name=trace_name,
-        ))
+    # All markers share one style regardless of match confidence -- the solid/hollow
+    # distinction was technical noise for the reader. Confidence is still disclosed
+    # per-patent on hover, and the matching-method variation is noted in the footer.
+    fig.add_trace(go.Scatter(
+        x=[r["filing_date"].isoformat() for r in links_with_lag],
+        y=y_positions,
+        mode="markers+text",
+        marker=dict(
+            color=family_color, size=12, symbol="circle", line=dict(color="#ffffff", width=1.5),
+        ),
+        text=[f"  {html.escape((r['assignee'] or 'Unresolved')[:22])}" for r in links_with_lag],
+        textposition="middle right",
+        textfont=dict(size=10, color="#555555"),
+        hovertext=[_hover_text(r) for r in links_with_lag],
+        hoverinfo="text",
+        name="Citing patents",
+    ))
 
     fig.update_layout(
         height=max(260, n * 36 + 80),
@@ -344,27 +345,20 @@ else:
         config={"displayModeBar": False, "displaylogo": False}, key="trace_timeline",
     )
 
-    st.markdown(
-        f"<div style='font-size:11px;color:#888888;margin-top:-4px;'>"
-        f"&#9679; Solid marker = {confidence_badge('high')} link (Marx &amp; Fuegi gold citation "
-        f"or DOI match) &nbsp;&nbsp; "
-        f"&#9675; Hollow marker = {confidence_badge('medium')} link (fuzzy title match)"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
     if links_no_lag:
-        st.caption(f"{len(links_no_lag)} patent(s) not shown — citation lag not available.")
+        st.caption(f"{len(links_no_lag)} patent(s) not shown: citation lag not available.")
 
 # ── Methodology caption ───────────────────────────────────────────────────────
-st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 st.markdown(
-    "<span style='font-size:11px;color:#888888;'>"
+    "<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
+    "font-size:11px;color:#707070;line-height:1.6;'>"
     "<strong>Citation lag</strong> is the interval between a paper's publication date and a "
     "patent's filing date, measured only where a verified NPL reference link exists. "
     "It is not R&D-to-market time and does not imply causation. "
+    "Links are matched via a Marx &amp; Fuegi gold citation, a DOI match, or a fuzzy title "
+    "match (shown per-patent on hover); the chart does not distinguish these visually. "
     "Patents are US-only (PatentsView)."
-    "</span>",
+    "</div>",
     unsafe_allow_html=True,
 )
 

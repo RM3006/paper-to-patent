@@ -29,7 +29,7 @@ from render import (
 )
 
 st.set_page_config(
-    page_title="Technology Landscape — The Chips Behind AI",
+    page_title="Technology Landscape | The Chips Behind AI",
     page_icon="🔵",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -66,7 +66,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 render_nav("Technology Landscape", filter_sidebar=True)
-render_tour_banner(1)
+render_tour_banner(2)
+
+st.markdown(
+    "<div style='border:1px solid #e6e6e6;"
+    "border-radius:8px;padding:10px 14px;margin-bottom:1rem;"
+    "background:#ffffff;font-size:13px;color:#555555;line-height:1.5;'>"
+    "<strong style='color:#111111;'>Why this map uses 4 families, not 5:</strong> "
+    "each dot is colored by its cluster's dominant family, not by each document's own family. "
+    "Measuring cluster purity against every document's own topic/CPC tag showed that splitting "
+    "Silicon Photonics from Lasers, or Neuromorphic from In-Memory, cut through research that is "
+    "genuinely the same work (on-chip lasers and photonic integration; memristors that are "
+    "natively both a neuromorphic synapse and a resistive memory cell). So at the cluster "
+    "level those pairs are pooled into <strong style='color:#111111;'>Silicon Photonics "
+    "&amp; Lasers</strong> and <strong style='color:#111111;'>Neuromorphic &amp; In-Memory "
+    "Compute</strong>, each shown in a new color blended from its two source family colors. "
+    "This pooling is display-only for this map: patent-share, HHI, and leaderboard numbers "
+    "elsewhere in the app still use each document's own 5-way family."
+    "</div>",
+    unsafe_allow_html=True,
+)
 
 FAMILY_ORDER = ["euv", "silicon_photonics", "neuromorphic_in_memory", "mixed"]
 # 'noise' (c_noise / HDBSCAN's no-cluster bucket) is deliberately not a filter
@@ -113,12 +132,16 @@ with st.sidebar:
 
 # ── Header ───────────────────────────────────────────────────────────────────────────
 st.markdown(
-    "<p style='color:#888888;margin-top:0;margin-bottom:1.2rem;font-size:15px;'>"
+    "<p style='color:#555555;margin-top:0;margin-bottom:1.2rem;font-size:15px;'>"
     "Each dot is a technology cluster. Position shows the balance between research output (Y) "
     "and patent capture (X). "
     "<strong>Click any dot</strong> to see the cluster detail card."
     "</p>",
     unsafe_allow_html=True,
+)
+st.caption(
+    "Both axes use a log scale: equal spacing represents equal multiples (10x), "
+    "not equal differences."
 )
 
 df = df_all.filter(pl.col("family_id").is_in(selected_families))
@@ -136,11 +159,11 @@ if selected_clusters:
             _npa = _r["n_papers"] or 0
             if _np == 0 or _npa == 0:
                 if _np == 0 and _npa == 0:
-                    _reason = "0 patents and 0 papers — cannot be plotted on either axis"
+                    _reason = "0 patents and 0 papers: cannot be plotted on either axis"
                 elif _np == 0:
-                    _reason = f"0 patents — cannot be plotted on the log X axis ({_npa:,} papers)"
+                    _reason = f"0 patents: cannot be plotted on the log X axis ({_npa:,} papers)"
                 else:
-                    _reason = f"0 papers — cannot be plotted on the log Y axis ({_np:,} patents)"
+                    _reason = f"0 papers: cannot be plotted on the log Y axis ({_np:,} patents)"
                 _hidden.append(f"{_r['tagline']}: {_reason}")
 
 # ── Build bubble chart ────────────────────────────────────────────────────────────────
@@ -223,7 +246,7 @@ if _hidden:
         f"<div style='border:1px solid #f0c040;border-left:4px solid #f0c040;"
         f"border-radius:6px;padding:10px 14px;margin-bottom:0.75rem;"
         f"background:#fffdf0;font-size:13px;color:#555555;'>"
-        f"<strong style='color:#111111;'>Not visible on chart</strong> — "
+        f"<strong style='color:#111111;'>Not visible on chart</strong>: "
         f"<ul style='margin:4px 0 0 16px;'>{_items_html}</ul>"
         f"</div>",
         unsafe_allow_html=True,
@@ -270,7 +293,7 @@ if selected_cluster_id:
         elif crow["cohort_lag_years"] is not None:
             lag_str = f"~{crow['cohort_lag_years']:.1f} yr"
             lag_tooltip = (
-                "Soft cohort estimate (median filing year minus median publication year) — "
+                "Soft cohort estimate (median filing year minus median publication year); "
                 "fewer than 20 direct NPL-linked citations in this cluster"
             )
         else:
@@ -288,13 +311,17 @@ if selected_cluster_id:
                 f"display:inline-block;'>{t}</span>"
                 for t in top_terms
             )
-            terms_block = f"<div style='margin-top:10px;'>{_chips}</div>"
+            terms_block = (
+                f"<div style='margin-top:10px;'>"
+                f"<div style='font-size:11px;color:#707070;margin-bottom:4px;'>"
+                f"Top cluster terms</div>"
+                f"{_chips}</div>"
+            )
 
         # ── Header card ──────────────────────────────────────────────────────────────
         st.markdown(
-            f"<div class='card' style='margin-top:1rem;display:flex;"
-            f"justify-content:space-between;align-items:flex-start;--accent:{family_color};'>"
-            f"<div style='flex:1;min-width:0;padding-right:32px;'>"
+            f"<div class='card' style='margin-top:1rem;--accent:{family_color};'>"
+            f"<div style='flex:1;min-width:0;'>"
             f"<div class='card-tag' style='font-size:10px;font-weight:700;letter-spacing:.07em;"
             f"text-transform:uppercase;margin-bottom:6px;'>"
             f"{family_label}</div>"
@@ -305,9 +332,6 @@ if selected_cluster_id:
             f"<div style='font-size:13px;color:#555555;line-height:1.6;'>{summary}</div>"
             f"{terms_block}"
             f"</div>"
-            f"<a href='/Family?family={family_id}' target='_self'"
-            f" class='family-explore' style='flex-shrink:0;'>"
-            f"Explore family →</a>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -316,7 +340,10 @@ if selected_cluster_id:
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         _metrics = [
             (m1, f"{pct_patents_all:.1f}%",    "of all patents", None),
-            (m2, f"{pct_patents_family:.1f}%", "patents in family", None),
+            (m2, f"{pct_patents_family:.1f}%", "patents in family group",
+                 "Share of the family group total patents contributed by this cluster "
+                 "(pooled family, e.g. Silicon Photonics & Lasers combined), not the "
+                 "document-level 5-way family."),
             (m3, f"{n_patents:,}",             "US patents", None),
             (m4, f"{pct_papers_all:.1f}%",     "of all papers", None),
             (m5, f"{n_papers:,}",              "papers", None),
@@ -329,7 +356,7 @@ if selected_cluster_id:
                     f"<div{_title_attr} class='card card--metric' style='--accent:{family_color};'>"
                     f"<div class='card-stat' style='font-family:{_FONT};font-size:28px;"
                     f"font-weight:800;line-height:1;'>{value}</div>"
-                    f"<div style='font-size:12px;color:#888888;margin-top:6px;"
+                    f"<div style='font-size:12px;color:#707070;margin-top:6px;"
                     f"white-space:nowrap;'>{label}</div>"
                     f"</div>",
                     unsafe_allow_html=True,
@@ -383,7 +410,7 @@ if selected_cluster_id:
             if len(pat_df) > 0:
                 with st.container(height=_scroll_h, key="cluster_pat_scroll"):
                     _pat_ev = st.plotly_chart(
-                        _bar_chart(pat_df, "TOP PATENTERS — by granted US patents", family_color),
+                        _bar_chart(pat_df, "TOP PATENTERS (by granted US patents)", family_color),
                         use_container_width=True,
                         config={
                             "displayModeBar": False, "displaylogo": False, "doubleClick": False,
@@ -408,7 +435,7 @@ if selected_cluster_id:
             if len(res_df) > 0:
                 with st.container(height=_scroll_h, key="cluster_res_scroll"):
                     _res_ev = st.plotly_chart(
-                        _bar_chart(res_df, "TOP RESEARCHERS — by papers", family_color),
+                        _bar_chart(res_df, "TOP RESEARCHERS (by papers)", family_color),
                         use_container_width=True,
                         config={
                             "displayModeBar": False, "displaylogo": False, "doubleClick": False,
@@ -438,14 +465,15 @@ _scope_label = (
 )
 _unclustered = load_unclustered_counts()
 st.markdown(
-    f"<span style='font-size:11px;color:#888888;'>"
+    f"<div style='border-top:1px solid #e6e6e6;margin-top:2rem;padding-top:1rem;"
+    f"font-size:11px;color:#707070;line-height:1.6;'>"
     f"{_scope_label} "
     f"Lag: NPL-linked median where ≥20 citations; ~ prefix = cohort estimate (soft). "
     f"Granted US patents only (PatentsView). Papers from OpenAlex (2012–2025). "
     f"{_unclustered['unclustered_patents']:,} granted US patents and "
     f"{_unclustered['unclustered_papers']:,} research papers are in scope but don't appear "
-    f"on this map — HDBSCAN found no technology cluster densely-connected enough around "
+    f"on this map: HDBSCAN found no technology cluster densely-connected enough around "
     f"them, so we don't force them into one. They remain part of the full corpus."
-    f"</span>",
+    f"</div>",
     unsafe_allow_html=True,
 )

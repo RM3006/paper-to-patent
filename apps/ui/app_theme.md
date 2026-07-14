@@ -47,7 +47,7 @@ These are **not** defined in `app.py`; they are imported from `render.py` and us
 
 ### Technology families
 
-Two grains coexist in `FAMILY_COLORS`/`FAMILY_LABELS` (revised 2026-07-12). The 5-way
+Two grains coexist in `FAMILY_COLORS`/`FAMILY_LABELS` (revised 2026-07-13). The 5-way
 **document-level family** (each paper/patent's own direct family) is used on the Overview
 scorecard, Family Deepdive, and Organisation Profile. The 3-way **cluster-label family**
 (a cluster's majority-vote display label, `seed_cluster_family`) is used only on the
@@ -59,18 +59,18 @@ see `seed_cluster_family.sql` for why clusters stay 3-way while documents are 5-
 | Family | `FAMILY_COLORS` key | HEX | RGB | Rationale |
 |---|---|---|---|---|
 | EUV Lithography | `"euv"` | `#3a4a6b` | `rgb(58, 74, 107)` | Deep navy — cool, technical, industrial |
-| Lasers | `"lasers"` | `#4a7f96` | `rgb(74, 127, 150)` | Darker steel blue — shade of Silicon Photonics |
+| Lasers | `"lasers"` | `#c1666b` | `rgb(193, 102, 107)` | Dusty rose — coherent light, warm without danger-red |
 | Silicon Photonics | `"si_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Steel blue — light through glass and silicon |
-| Neuromorphic Computing | `"neuromorphic"` | `#7a6c91` | `rgb(122, 108, 145)` | Slate purple — neural/biological-digital bridge |
-| In-Memory Compute | `"in_memory"` | `#5f4f75` | `rgb(95, 79, 117)` | Darker slate purple — shade of Neuromorphic |
+| Neuromorphic | `"neuromorphic"` | `#7a6c91` | `rgb(122, 108, 145)` | Slate purple — neural/biological-digital bridge |
+| In-Memory Compute | `"in_memory"` | `#6a9c89` | `rgb(106, 156, 137)` | Sage green — storage, data, growth |
 
 **Cluster-label family (3-way, Technology Landscape map only):**
 
 | Family | `FAMILY_COLORS` key | HEX | RGB | Rationale |
 |---|---|---|---|---|
-| Silicon Photonics & Lasers | `"silicon_photonics"` | `#5a8fa8` | `rgb(90, 143, 168)` | Same hue as document-level Silicon Photonics |
-| Neuromorphic & In-Memory Compute | `"neuromorphic_in_memory"` | `#7a6c91` | `rgb(122, 108, 145)` | Same hue as document-level Neuromorphic |
-| Mixed | `"mixed"` | `#94a3b8` | `rgb(148, 163, 184)` | Slate — muted, no single family dominates the cluster |
+| Silicon Photonics & Lasers | `"silicon_photonics"` | `#8e7a8a` | `rgb(142, 122, 138)` | Blend of Silicon Photonics `#5a8fa8` + Lasers `#c1666b` |
+| Neuromorphic & In-Memory Compute | `"neuromorphic_in_memory"` | `#72848d` | `rgb(114, 132, 141)` | Blend of Neuromorphic `#7a6c91` + In-Memory `#6a9c89` |
+| Mixed | `"mixed"` | `#8f8f8f` | `rgb(143, 143, 143)` | Neutral grey (zero saturation) — reads as "no dominant family," distinct from the 3 hued colors |
 | Frontier / Unclustered | `"noise"` | `#d1d5db` | `rgb(209, 213, 219)` | Light grey — unclustered / frontier documents |
 
 Constant: `render.FAMILY_COLORS: dict[str, str]`.

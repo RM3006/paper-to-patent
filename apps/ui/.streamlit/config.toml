@@ -12,3 +12,7 @@ font = "sans serif"
 [client]
 # Hide the developer toolbar (hamburger / "Deploy"), matching the human-protein-atlas app.
 toolbarMode = "minimal"
+# Suppress the auto-generated pages/ sidebar nav at the config level, before the frontend
+# ever renders it -- render.py's CSS hid it after the fact, which let it flash visibly on
+# load and on page navigation. This app's only navigation is the tab strip in render_nav().
+showSidebarNavigation = false

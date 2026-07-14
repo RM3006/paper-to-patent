@@ -48,7 +48,7 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
             ('euv', 'EUV Lithography', 1, 100, 40, 0.40, 20, 10, 3.5, 60, 2.35),
             ('lasers', 'Lasers', 2, 50, 10, 0.17, 8, 4, 4.5, 25, 2.32),
             ('si_photonics', 'Silicon Photonics', 3, 80, 20, 0.25, 15, 8, 4.1, 30, 2.13),
-            ('neuromorphic', 'Neuromorphic Computing', 4, 60, 15, 0.20, 12, 6, 3.0, 22, 3.37),
+            ('neuromorphic', 'Neuromorphic', 4, 60, 15, 0.20, 12, 6, 3.0, 22, 3.37),
             ('in_memory', 'In-Memory Compute', 5, 70, 18, 0.20, 14, 7, 2.8, 28, 1.84)
     """)
 
@@ -76,6 +76,7 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
             ('c1', 60, 25, 3.2, true, 34, 2.8, 0.35, true, 20, 10),
             ('c2', 40, 15, 4.0, true, 22, 3.5, 0.20, true, 15, 8),
             ('c3', 10, 5, 5.0, true, 21, 4.5, NULL, false, 5, 2),
+            ('c4', 5, 3, NULL, false, 0, NULL, NULL, false, 3, 2),
             ('c_noise', 500, 500, NULL, false, 0, NULL, NULL, false, 200, 150)
     """)
 
@@ -93,6 +94,8 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
              ['waveguide', 'silicon photonics', 'modulator']),
             ('c3', 'Unmapped Cluster', 'A small cluster of laser-related work.',
              ['laser', 'diode']),
+            ('c4', 'Mixed Laser Cluster', 'Lasers plurality with a euv minority.',
+             ['laser', 'euv']),
             ('c_noise', 'Unclustered', '', [])
     """)
 
@@ -121,17 +124,21 @@ def fixture_db(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     con.execute("""
         CREATE TABLE main_marts.fact_patent_filing (
-            patent_id VARCHAR, org_id VARCHAR, family_id VARCHAR, cluster_id VARCHAR
+            patent_id VARCHAR, org_id VARCHAR, family_id VARCHAR, cluster_id VARCHAR,
+            assignee_sequence INTEGER
         )
     """)
     con.execute("""
         INSERT INTO main_marts.fact_patent_filing VALUES
-            ('p1', 'org_a', 'euv', 'c1'),
-            ('p2', 'org_b', 'euv', 'c1'),
-            ('p3', 'org_a', NULL, 'c1'),
-            ('p4', 'org_b', NULL, 'c2'),
-            ('p5', 'org_a', 'lasers', 'c3'),
-            ('p6', 'org_a', NULL, 'c_noise')
+            ('p1', 'org_a', 'euv', 'c1', 0),
+            ('p2', 'org_b', 'euv', 'c1', 0),
+            ('p3', 'org_a', NULL, 'c1', 0),
+            ('p4', 'org_b', NULL, 'c2', 0),
+            ('p5', 'org_a', 'lasers', 'c3', 0),
+            ('p6', 'org_a', NULL, 'c_noise', 0),
+            ('p7', 'org_a', 'lasers', 'c4', 0),
+            ('p8', 'org_b', 'lasers', 'c4', 0),
+            ('p9', 'org_a', 'euv', 'c4', 0)
     """)
 
     con.execute("""
