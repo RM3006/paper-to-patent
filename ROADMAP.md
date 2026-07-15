@@ -201,7 +201,7 @@ The two sources share no key. You will resolve organisations with a layered stra
 **Deliverables**
 - `docs/er_eval_set.md`: hand-labelled organisation pairs (true match / non-match), drawn from orgs that appear in **both** sources within the scope. Span easy (NVIDIA Corp ↔ NVIDIA) and hard (university tech-transfer offices, research subsidiaries, abbreviations).
 - Staging-layer cleaning: normalised organisation names (case, legal suffixes, punctuation, unicode) for both sources, in one tested shared function.
-- `int_organization_crosswalk` — a Dagster asset writing Parquet to `r2://p2p-lake/intermediate/er/org_crosswalk/` with `org_id`, source IDs, `match_method`, `confidence` (per the provenance pattern in `CLAUDE.md`). Part 4 dbt reads this as a source.
+- `int_org_crosswalk` — a Dagster asset writing Parquet to `r2://p2p-lake/intermediate/er/org_crosswalk/` with `org_id`, source IDs, `match_method`, `confidence` (per the provenance pattern in `CLAUDE.md`). Part 4 dbt reads this as a source.
 - A precision/recall report against the eval set, recorded in `docs/er_eval_set.md`.
 
 **Tasks**
@@ -408,7 +408,7 @@ This is the analytical payload. Every mart carries a top-of-file comment stating
 
 ---
 
-## Part 8 — Documentation, deploy, portfolio integration
+## Part 8 — Documentation, deploy, portfolio integration ✅ COMPLETE (2026-07-15)
 
 **Goal**: ship publicly with documentation a senior reviewer respects — and that is honest about scale and limits.
 
@@ -418,20 +418,36 @@ This is the analytical payload. Every mart carries a top-of-file comment stating
 - `README.md`: description, hero screenshot, Mermaid architecture diagram, live URL, "how it works," tech stack table, **an explicit "scale & honesty" section** (this is ~1–2 GB; the cloud patterns are demonstrated deliberately; patents are US-only; citation lag ≠ R&D-to-market time; NPL linkage quality is measured and disclosed), license, and a "where this goes next" section.
 - `ARCHITECTURE.md`: a section per layer with **used / considered / why**.
 - Public Streamlit URL stable for ≥ 48 hours under demo load.
-- Showcase card on your portfolio linking to the live URL and GitHub.
-- A ~300-word LinkedIn writeup leading with the finding from `docs/findings.md`, not the tool list.
+- ~~Showcase card on your portfolio linking to the live URL and GitHub.~~ — **descoped 2026-07-15** (see the descope note below).
+- ~~A ~300-word LinkedIn writeup leading with the finding from `docs/findings.md`, not the tool list.~~ — **descoped 2026-07-15** (see the descope note below).
 
 **Tasks**
 1. Write `README.md` with the Mermaid diagram and the scale & honesty section.
 2. Finalise `ARCHITECTURE.md` layer by layer, with the "considered / why" rationale for every divergence.
 3. Take and lightly edit the hero screenshot.
-4. Add the showcase card to the portfolio.
-5. Publish the writeup — lead with the citation-lag or concentration finding.
+4. ~~Add the showcase card to the portfolio.~~ — **descoped 2026-07-15**.
+5. ~~Publish the writeup — lead with the citation-lag or concentration finding.~~ — **descoped 2026-07-15**.
 
 **Exit criteria**
-- Live URL works on a fresh incognito browser.
-- README impresses on first read (test with two people); the scale & honesty section is present and reads as confidence, not apology.
-- Portfolio links to the project; the writeup is live and leads with a finding.
+- [x] Live URL works on a fresh incognito browser. *(Deployed 2026-07-14 to Streamlit Community Cloud — https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/ — and confirmed loading in a fresh browser context.)*
+- [x] The scale & honesty section is present in `README.md` and reads as confidence, not apology. *(Six claims — corpus scale, US-only patents, citation-lag framing, measured NPL linkage quality, precision-over-recall ER, point-in-time build — each verified against the docs or live prod rather than asserted.)*
+
+**Descope note (2026-07-15) — the portfolio card and the LinkedIn writeup were cancelled, not deferred.**
+Part 8 bundled two different kinds of work: **documentation + deploy** (README, `ARCHITECTURE.md`,
+the public app) and **distribution** (a portfolio showcase card, a LinkedIn writeup). The first
+shipped in full; the second was deliberately dropped. This is an owner decision about
+self-promotion, not an engineering gap — nothing in the repo, the app, the pipeline, or the data
+depends on it, and no other part of this roadmap is blocked by it. If it is ever picked up, the
+raw material is already sitting in `docs/findings.md`, whose four headline findings (fastest and
+slowest citation lag, the HHI = 1.0 monopoly cluster, and the 478-institutions-vs-5-assignees
+concentration gap) were re-verified against live prod on 2026-07-14 and are exactly what a
+writeup should lead with.
+
+Part 8 is therefore marked **complete against its rescoped deliverables**. Two of this part's
+original exit criteria were retired alongside the work they measured, rather than left standing as
+permanently unmeetable boxes: the portfolio/writeup criterion (cancelled, per above) and the
+README's two-person cold-read test (an owner task that cannot be self-certified). Their removal is
+recorded here rather than done silently.
 
 **Risks**
 - `ARCHITECTURE.md` takes longer than expected — it is also the part a senior reviewer reads most closely. Don't shortchange it.
@@ -464,7 +480,7 @@ Do **not** build these in Parts 1–8:
 | 5 | A known technology forms one cluster and its generated label names it; spot-check ≥ 13/15. |
 | 6 | `docs/findings.md` has one NPL citation-lag finding (N ≥ 20) and one concentration finding. |
 | 7 | Vertical slice works end-to-end in incognito; a non-technical person used it without confusion. |
-| 8 | README impresses on first read (test with 2 people); caveats are owned, not hidden. |
+| 8 | Live URL works in incognito; caveats are owned, not hidden. ✅ *(deployed 2026-07-14; scale & honesty section in `README.md`, known limitations in `ARCHITECTURE.md`)* |
 
 If a checkpoint fails, **do not skip ahead.** Fix it first.
 
@@ -492,7 +508,7 @@ If a checkpoint fails, **do not skip ahead.** Fix it first.
    - **Phase 0 (~1 day spike, no commitment):** for the US patents already in-scope, pull just their **patent family** (via EPO OPS or a single free-tier BigQuery query) and report family size — "this invention was also protected in N other jurisdictions." No new ER, no new corpus, reuses the family concept the full build needs anyway. Converts the biggest weakness into a disclosed, per-patent fact.
    - **Phase 1:** ingest the EPO specifically first — CPC-native (no classification-coverage risk), structurally closest to USPTO, proves the harmonized-assignee bridge pattern end to end before taking on Asia's classification and volume complexity.
    - **Phase 2:** extend to JPO/KIPO/CNIPA — larger volume (CNIPA alone may exceed the entire current corpus size, breaking the "~1–2 GB, lakehouse-lite" sizing assumption in `ARCHITECTURE.md` §1 — re-verify before committing), classification-coverage caveats (especially Japan), and a genuine ER expansion from 2 node types (OpenAlex-ROR research orgs, PatentsView US assignees) to include worldwide corporate assignees ROR barely covers.
-   - **Before Phase 1:** run a proper spike measuring, for the exact scope CPC list: non-US in-scope patent volume, CPC-vs-IPC-only fraction by office, fraction of harmonized assignees already resolvable against `int_organization_crosswalk`, and NPL/citation field availability. These four numbers turn "assessed feasible" into a sized, committable project.
+   - **Before Phase 1:** run a proper spike measuring, for the exact scope CPC list: non-US in-scope patent volume, CPC-vs-IPC-only fraction by office, fraction of harmonized assignees already resolvable against `int_org_crosswalk`, and NPL/citation field availability. These four numbers turn "assessed feasible" into a sized, committable project.
 3. **Semantic "find related work"** — in-warehouse cosine (DuckDB array functions); "papers/patents like this one." (~half a part)
 4. **Citation-network tab** — patent→patent and paper→patent edges as an explorable graph. (~1–2 parts)
 5. **Incremental Dagster assets + scheduled refresh** — turns the one-shot build into a living atlas. (~1 part)

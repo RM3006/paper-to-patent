@@ -375,7 +375,7 @@ LIMIT 20;
 | `match_method` | String | `fuzzy_high` only (no `fuzzy_review` band at score=100 threshold) |
 | `confidence` | String | `high` |
 
-**`org_crosswalk`** — final `int_organization_crosswalk` (R2: `intermediate/er/org_crosswalk/`)
+**`org_crosswalk`** — final `int_org_crosswalk` (R2: `intermediate/er/org_crosswalk/`)
 
 One row per (source, source_id). Every org in both sources gets exactly one row. Cross-source links share an `org_id`; unlinked orgs get a unique slug.
 

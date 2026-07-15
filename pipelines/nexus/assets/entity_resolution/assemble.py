@@ -1,4 +1,4 @@
-"""Entity resolution — final assembly: int_organization_crosswalk.
+"""Entity resolution — final assembly: int_org_crosswalk.
 
 Combines all ER layers into a single long-format crosswalk table. Each row
 maps one (source, source_id) pair to an org_id with provenance metadata.
@@ -58,7 +58,7 @@ def build_org_crosswalk(
     pv_staging: pl.DataFrame,
     oa_staging: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Assemble int_organization_crosswalk from all ER layers.
+    """Assemble int_org_crosswalk from all ER layers.
 
     Priority:
       1. seed_crosswalk_matched    → PV rows with known org_ids
@@ -220,7 +220,7 @@ def build_org_crosswalk(
         "openalex_institutions_staging",
     ],
     description=(
-        "Final ER assembly: int_organization_crosswalk. Unions seed crosswalk (PV+OA), "
+        "Final ER assembly: int_org_crosswalk. Unions seed crosswalk (PV+OA), "
         "ROR bridge (API-matched OA rows), fuzzy bridge (name-similarity OA rows), "
         "and fallback rows for unmatched entities. "
         "Long format: one row per (source, source_id) with org_id, canonical_name, "

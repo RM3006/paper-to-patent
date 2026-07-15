@@ -1,0 +1,29 @@
+name: Keep app alive
+
+# Loads the Streamlit app in headless Chromium every 10 hours.
+# A plain HTTP ping doesn't count as activity — Streamlit Community Cloud
+# tracks WebSocket sessions (real browser connections). Playwright establishes
+# one, which resets the sleep timer.
+#
+# The actual ping logic lives in ping-app.yml (a reusable workflow) so it can
+# run twice here. GitHub sometimes queues a scheduled run and never hands it a
+# runner at all ("The job was not acquired by Runner of type hosted even after
+# multiple attempts") — a GitHub-side capacity issue, not a bug in our steps.
+# Retrying inside the same job can't fix that, since the job itself never
+# started; only a second, independent job gets a fresh shot at runner
+# allocation. `retry` runs when `attempt` failed OR was cancelled — a
+# runner-acquisition failure surfaces as a cancelled job, not a failed one.
+
+on:
+  schedule:
+    - cron: "0 */10 * * *"  # every 10 hours
+  workflow_dispatch:
+
+jobs:
+  attempt:
+    uses: ./.github/workflows/ping-app.yml
+
+  retry:
+    needs: attempt
+    if: always() && (needs.attempt.result == 'failure' || needs.attempt.result == 'cancelled')
+    uses: ./.github/workflows/ping-app.yml
