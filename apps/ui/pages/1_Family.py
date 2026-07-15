@@ -36,6 +36,7 @@ from data import (
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
+    embed_url,
     render_chip_multiselect,
     render_nav,
     render_tour_banner,
@@ -182,12 +183,14 @@ for _fid, _flbl in _HEADLINE_FAMILIES.items():
     _fc = FAMILY_COLORS.get(_fid, "#888888")
     if _fid == family_id:
         _pills_html += (
-            f"<a href='/Family?family={_fid}' target='_self' class='fpill fpill-on'"
+            f"<a href='{embed_url(f'/Family?family={_fid}')}' target='_self'"
+            f" class='fpill fpill-on'"
             f" style='background:{_fc};color:#ffffff;border-color:{_fc};'>{_flbl}</a>"
         )
     else:
         _pills_html += (
-            f"<a href='/Family?family={_fid}' target='_self' class='fpill fpill-off'"
+            f"<a href='{embed_url(f'/Family?family={_fid}')}' target='_self'"
+            f" class='fpill fpill-off'"
             f" style='color:{_fc};border-color:{_fc};'>{_flbl}</a>"
         )
 
@@ -432,7 +435,7 @@ if len(_clusters_filtered) > 0:
     with _link_col:
         st.markdown(
             "<div style='text-align:right;padding-top:6px;'>"
-            "<a href='/Map' target='_self' style='font-size:13px;color:#111111;"
+            f"<a href='{embed_url('/Map')}' target='_self' style='font-size:13px;color:#111111;"
             "text-decoration:underline;text-underline-offset:3px;'>"
             "See all clusters on the map →</a>"
             "</div>",

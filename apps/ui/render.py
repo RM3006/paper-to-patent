@@ -52,6 +52,26 @@ CONFIDENCE_MEDIUM = "#94a3b8"  # slate
 CONFIDENCE_LOW = "#ef4444"     # red
 
 
+def embed_url(path: str) -> str:
+    """Build an <a href> that survives being clicked inside an embedding iframe.
+
+    The nav tabs and family pills are plain anchors, so clicking one is a full
+    browser navigation: whatever query string the frame was loaded with is lost.
+    Losing `embed=true` lands the frame on Community Cloud's non-embed host page,
+    which starts a login redirect that cannot complete cross-site -- the frame
+    then bounces /Family -> app?redirect_uri= -> login?payload= until the browser
+    gives up with ERR_TOO_MANY_REDIRECTS.
+
+    Streamlit reserves `embed` and withholds it from st.query_params, so the app
+    cannot read it back to know it is embedded. The iframe therefore passes a
+    non-reserved `e=1` alongside it, which st.query_params does expose.
+    """
+    if st.query_params.get("e") != "1":
+        return path
+    sep = "&" if "?" in path else "?"
+    return f"{path}{sep}embed=true&e=1"
+
+
 def confidence_color(level: str) -> str:
     """Map 'high' / 'medium' / 'low' to the confidence color constants."""
     return {
@@ -276,7 +296,7 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
     tabs_html = ""
     for label, href in _tabs:
         cls = ' class="chip-active"' if label == active else ""
-        tabs_html += f"<a href='{href}' target='_self'{cls}>{label}</a>"
+        tabs_html += f"<a href='{embed_url(href)}' target='_self'{cls}>{label}</a>"
 
     st.markdown(
         "<style>"
