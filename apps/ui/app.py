@@ -13,7 +13,7 @@ from __future__ import annotations
 import streamlit as st
 
 from data import load_family_scorecard, load_family_top_orgs, load_unattributed_counts
-from render import FAMILY_COLORS, embed_url, render_nav, render_tour_banner
+from render import FAMILY_COLORS, render_nav, render_tour_banner
 
 st.set_page_config(
     page_title="The Chips Behind AI",
@@ -231,9 +231,15 @@ def _html_family_card(
         f"text-transform:uppercase;color:#707070;'>Top researchers</div>"
         f"{res_html}</div>"
         f"</div>"
+        # An invisible spacer, not a hole. This cell is sized by its own text and
+        # is what reserves the card's right-edge slot; empty it and the stat tiles
+        # and org columns spread out to fill the slack. The real link is an
+        # st.page_link floated over this gap from main() -- it cannot live in here,
+        # because a Streamlit widget cannot be nested inside a hand-built HTML
+        # string. visibility:hidden keeps the exact width without rendering the
+        # text or exposing it to the accessibility tree.
         f"<div style='flex:0 0 auto;display:flex;align-items:center;padding:0 32px 0 16px;'>"
-        f"<a href='{embed_url(f'/Family?family={fid}')}' target='_self'"
-        f" class='family-explore'>Explore family →</a>"
+        f"<span class='family-explore' style='visibility:hidden;'>Explore family →</span>"
         f"</div>"
         f"</div>"
     )
@@ -251,9 +257,44 @@ def _org_rows(names: list[str], color: str) -> str:
     )
 
 
+# ── "Explore family →" overlay ────────────────────────────────────────────────────
+# The link is a real st.page_link floated over the invisible spacer inside the
+# family card (see _html_family_card and main()). It is a sibling of the card, not
+# a child, so it cannot inherit the card's inline --accent -- its family colour is
+# generated here instead.
+#
+# COUPLED TO THE CARD BY CSS: right:32px matches the spacer cell's right padding,
+# and the link is centred against the card's own height. Change .card--family's
+# height or that cell's padding and the link drifts, silently -- no test catches it.
+_EXPLORE_CSS = "<style>" + "".join(
+    # Card and link share one positioned container, so the offsets below are
+    # relative to this card rather than to the page.
+    f".st-key-famrow_{_fid} {{ position:relative; margin-bottom:1rem; }}"
+    # The card's own bottom margin would sit inside the container and drag the
+    # 50% centre line below the card's true middle.
+    f".st-key-famrow_{_fid} .card.card--family {{ margin-bottom:0 !important; }}"
+    f".st-key-famrow_{_fid} [data-testid='stVerticalBlock'] {{ gap:0 !important; }}"
+    f".st-key-famlink_{_fid} {{"
+    f"  position:absolute; right:32px; top:50%; transform:translateY(-50%);"
+    f"  z-index:2; width:auto;"
+    f"}}"
+    f".st-key-famlink_{_fid} a {{ padding:0 !important; background:transparent !important; }}"
+    f".st-key-famlink_{_fid} a p {{"
+    f"  font-size:13px !important; font-weight:600 !important; margin:0 !important;"
+    f"  color:{FAMILY_COLORS.get(_fid, '#111111')} !important;"
+    f"  text-decoration:underline; text-underline-offset:3px; white-space:nowrap;"
+    f"  transition:opacity .18s;"
+    f"}}"
+    f".st-key-famlink_{_fid} a:hover p {{ opacity:0.55; }}"
+    for _fid in _FAMILY_IDS
+) + "</style>"
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────────
 def main() -> None:
-    st.markdown(_CSS, unsafe_allow_html=True)
+    # Concatenated, not two st.markdown calls: a block holding only a <style> tag
+    # still takes a slot -- and its gap -- in Streamlit's vertical stack.
+    st.markdown(_CSS + _EXPLORE_CSS, unsafe_allow_html=True)
     render_nav("Overview")
     render_tour_banner(0)
 
@@ -280,11 +321,23 @@ def main() -> None:
     )
 
     for row in rows:
-        top_orgs = top_map.get(row["family_id"], {"patent": [], "paper": []})
-        st.markdown(
-            _html_family_card(row, top_orgs, False),
-            unsafe_allow_html=True,
-        )
+        fid = row["family_id"]
+        top_orgs = top_map.get(fid, {"patent": [], "paper": []})
+        # st.page_link, never <a href>: an anchor is a browser navigation, which
+        # reboots the app -- and inside an embedding iframe Community Cloud
+        # re-frames that reboot, leaving a nested live copy per click. It sits
+        # over the card's invisible spacer; see _EXPLORE_CSS for the coupling.
+        with st.container(key=f"famrow_{fid}"):
+            st.markdown(
+                _html_family_card(row, top_orgs, False),
+                unsafe_allow_html=True,
+            )
+            with st.container(key=f"famlink_{fid}"):
+                st.page_link(
+                    "pages/1_Family.py",
+                    label="Explore family →",
+                    query_params={"family": fid},
+                )
 
     unattributed = load_unattributed_counts()
     st.markdown(

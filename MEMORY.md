@@ -550,17 +550,22 @@ tagline drift on `c_147`). Rebuilt the family table from live prod. Note the "To
 **Streamlit Community Cloud serves the app inside an iframe — browser automation needs frame-aware locators.**
 The real app lives at `<app-url>/~/+/`, not the top-level page, so `page.waitForSelector('[data-testid=
 "stAppViewContainer"]')` against the top frame times out even though the app renders perfectly. Use
-`page.frames().find(f => f.url().includes('/~/+/'))`. Two follow-on gotchas: (1) the nav tabs are plain
+`page.frames().find(f => f.url().includes('/~/+/'))`. Two follow-on gotchas: (1) ~~the nav tabs are plain
 `<a href>` anchors, so clicking one does a **full browser navigation that detaches the frame handle** — it must
-be re-acquired after every tab click; (2) `page.title()` on the *top* frame does work and returns
+be re-acquired after every tab click~~ **obsolete 2026-07-15**: the tabs are `st.page_link` now, so a click no
+longer navigates the browser and the frame handle survives (re-acquiring is harmless, just unnecessary);
+(2) `page.title()` on the *top* frame does work and returns
 `"The Chips Behind AI · Streamlit"`, which is what `ping-app.yml`'s liveness check relies on.
 
-**Known cosmetic issue, accepted not fixed: two console 404s per page navigation.** Every tab click emits
-`404 /<Page>/_stcore/health` and `/<Page>/_stcore/host-config`. Cause: `render_nav`'s tab links are plain
-anchors → full reload onto a sub-path → Streamlit's frontend resolves its own internal health-check calls
-relative to that sub-path instead of the app root. Invisible to users, no functional impact, reproduced on
-both local and live. Left alone deliberately (plain anchors vs `st.page_link` is a design choice, not a
-regression).
+**~~Known cosmetic issue, accepted not fixed~~: two console 404s per page navigation — FIXED 2026-07-15.**
+Every tab click emitted `404 /<Page>/_stcore/health` and `/<Page>/_stcore/host-config`. Cause: `render_nav`'s
+tab links were plain anchors → full reload onto a sub-path → Streamlit's frontend resolved its own internal
+health-check calls relative to that sub-path instead of the app root. **The judgement recorded here — "plain
+anchors vs `st.page_link` is a design choice, not a regression" — was wrong**, and these 404s were the early
+warning that got dismissed. They were not cosmetic: they were the visible edge of a full app reboot on every
+click, which is benign standalone and destructive embedded (see below). Fixed by converting all navigation to
+`st.page_link`. Lesson: a "harmless" symptom that only reproduces in one deployment mode has not been
+understood, only tolerated.
 
 **Added the sibling project's two liveness workflows (ported from `human-protein-atlas`, 2026-07-15):**
 `keep-app-alive.yml` (10-hourly) + its reusable `ping-app.yml`, and `repo-heartbeat.yml` (daily). They are a
@@ -571,26 +576,50 @@ heartbeat exists to protect the keep-alive. Its `[skip ci]` commit message matte
 an unfiltered `push:`, so without it every heartbeat commit would fire a full CI run. Scheduled workflows only
 run from the **default branch**, so these are inert until merged to `main`.
 
-**Embedding the app in a third-party iframe needs the embed flag re-attached to every link (fixed
-2026-07-15).** `?embed=true` tells Community Cloud to skip its login/host wrapper. `render_nav`'s plain
-anchors navigate to bare sub-paths (`/Family`), dropping it — the frame then lands on the *non-embed* host
-page, whose login redirect cannot complete cross-site (browsers withhold the `SameSite=Lax` session cookie
-from a third-party frame), so it bounces `/Family → app?redirect_uri= → login?payload=` until
-`ERR_TOO_MANY_REDIRECTS`. **Only reproduces embedded**; standalone the same redirect resolves against
-first-party cookies, which is why the live app never showed it. Fix: `render.embed_url()` re-attaches the
-flags at all five anchors (nav tabs, Overview "Explore family", both family pills, Family→Map). Streamlit
-**reserves `embed` and withholds it from `st.query_params`**, so the app cannot detect its own embed state —
-hence the companion non-reserved `e=1`, which it *can* read. **The iframe src must therefore be
-`?embed=true&e=1`, not `?embed=true`** (documented in `SETUP.md` F2).
+**No in-app navigation may be an `<a href>`. All of it is `st.page_link` / `st.button` (2026-07-15).**
+This supersedes the `render.embed_url()` + `e=1` sentinel patch of the same day, which is **deleted** — it
+treated the symptom. The iframe `src` is plain `?embed=true` again (`SETUP.md` F2).
 
-This is the **same root cause as the accepted 404s above**, so "plain anchors vs `st.page_link` is a design
-choice, not a regression" is now only half true: the anchors have a functional cost, not just a cosmetic one.
-`st.navigation` + `st.Page` + `st.page_link` (all present on the pinned Streamlit 1.58, and `page_link` /
-`switch_page` both take `query_params`, so the pills' `?family=` survives) would delete the bug class *and*
-the full-reload lag on every tab click. Deliberately **not** bundled into this fix — it restructures the
-entrypoint and all 5 pages on a live app, and the 20-line patch unblocks the iframe today. Left unverified:
-whether `st.page_link` keeps the flags in the address bar, which decides whether a mid-session refresh inside
-the frame survives — the one place the anchor approach is *stronger*, since the flags stay in the URL.
+The bug chain, in order of discovery: `?embed=true` tells Community Cloud to skip its login/host wrapper. A
+plain anchor navigates to a bare sub-path (`/Family`) and drops it, so the frame lands on the *non-embed* host
+page, whose login redirect cannot complete cross-site (browsers withhold the `SameSite=Lax` session cookie
+from a third-party frame) → `ERR_TOO_MANY_REDIRECTS`. Re-attaching the flag fixed *that*, and exposed the real
+problem underneath: **an anchor reboots the whole app, and Community Cloud re-frames the reboot inside the
+current frame — nesting one still-running copy of the app per click.** User-visible as "Built with Streamlit"
+badges stacking up (one per live copy, class `_hostedName_*`) and, in the console, one `INITIAL -> RUNNING`
+per click. Unbounded memory growth. `st.page_link` swaps the page inside the running app: no browser
+navigation → no reboot → nothing to nest.
+
+**Diagnosis notes.** The badge count *is* the live-app-instance count — a useful probe. Nesting is confirmed
+from the frame count in DevTools; the reboot alone is confirmed locally with no iframe at all, by watching for
+new `INITIAL -> RUNNING` lines while clicking tabs (this needs no deploy, contrary to what was assumed for
+most of the session).
+
+**Implementation, all on Streamlit 1.58 — no `st.navigation` router, no restructure, no `pages/` rename**
+(all of which were planned and turned out unnecessary): `st.page_link` accepts a page *file path* relative to
+the entrypoint, exactly like the `st.switch_page` calls already in `2_Map.py`. So the fix was five
+`st.page_link`s in `render_nav` (`NAV_TABS`, module-level and covered by `apps/ui/tests/test_render.py`), the
+family pills as `st.button` + `on_click` (they filter one page — they were never navigation, and `on_click`
+runs *before* the rerun, avoiding both a wasted data load and the `st.rerun()` + keyed-widget hazard), and the
+Family→Map link. `page_link` does take `query_params`, so `?family=` deep links survive.
+
+**Overview "Explore family →" is a positional illusion — read before touching that card.** The link is inside
+a single f-string that builds the whole 144px card, and a Streamlit widget cannot be nested inside hand-built
+HTML. Rather than rebuild the card (rejected: highest-risk conversion, hero component), the card keeps an
+invisible `visibility:hidden` spacer where the link was — it reserves the exact width, so nothing reflows —
+and a real `st.page_link` is absolutely positioned over that gap by `_EXPLORE_CSS`. **The two are coupled only
+by CSS**: `right:32px` mirrors the spacer's padding, and the link is centred on the card's height (which meant
+zeroing the card's bottom margin inside the container). Change the card's height or right padding and the link
+drifts silently — no test catches "looks wrong".
+
+**Streamlit layout gotcha, cost two rounds:** an `st.markdown` holding *only* a `<style>` tag still occupies a
+slot — and its gap — in the vertical stack, showing up as unexplained white space. Inject CSS by concatenating
+it onto markup that already exists (or into the page's existing `<style>` block); never emit a style-only
+block. Also: prefer `st.container(horizontal=True, vertical_alignment=..., gap=...)` (native in 1.58) over
+hand-written `flex-direction:row` CSS, and scope CSS to `.st-key-<key>` containers matching plain `a`/`button`
+rather than Streamlit's internal `data-testid`s — those are build details that rot (cf. `_hostedName_1upux_12`,
+whose hash changes on every Streamlit frontend release).
+
 Sibling `human-protein-atlas` is not a usable template here: it is smooth because it never navigates (one
 1296-line `app.py`, no `pages/`, `st.tabs` as a widget), and `st.tabs` executes *every* tab body per run —
 fine for its four tabs rendering one cached `card`, wrong for 5 pages each querying different marts.
