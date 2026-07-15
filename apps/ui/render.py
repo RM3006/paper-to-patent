@@ -93,6 +93,24 @@ def hhi_color(t: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def truncate_at_word(text: str, limit: int) -> tuple[str, bool]:
+    """Cut `text` to at most `limit` characters without splitting a word.
+
+    Returns the snippet and whether anything was removed -- callers need the flag
+    both to append an ellipsis and to decide whether a "show the rest" affordance
+    is worth rendering at all.
+
+    Looking one character past the limit lets a cut that already lands on a space
+    keep its last whole word. A limit-length run containing no space (one very
+    long token) falls back to the hard cut: backing up would leave nothing to show.
+    """
+    if len(text) <= limit:
+        return text, False
+    boundary = text[: limit + 1].rfind(" ")
+    snippet = text[:limit] if boundary == -1 else text[:boundary]
+    return snippet.rstrip(), True
+
+
 def render_tour_banner(page_step: int) -> None:
     """Show the guided tour banner if the active tour step matches this page.
 
