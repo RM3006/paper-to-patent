@@ -13,7 +13,7 @@ from __future__ import annotations
 import streamlit as st
 
 from data import load_family_scorecard, load_family_top_orgs, load_unattributed_counts
-from render import FAMILY_COLORS, render_nav, render_tour_banner
+from render import FAMILY_COLORS, embed_url, render_nav, render_tour_banner
 
 st.set_page_config(
     page_title="The Chips Behind AI",
@@ -232,7 +232,7 @@ def _html_family_card(
         f"{res_html}</div>"
         f"</div>"
         f"<div style='flex:0 0 auto;display:flex;align-items:center;padding:0 32px 0 16px;'>"
-        f"<a href='/Family?family={fid}' target='_self'"
+        f"<a href='{embed_url(f'/Family?family={fid}')}' target='_self'"
         f" class='family-explore'>Explore family →</a>"
         f"</div>"
         f"</div>"

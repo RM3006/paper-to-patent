@@ -571,6 +571,30 @@ heartbeat exists to protect the keep-alive. Its `[skip ci]` commit message matte
 an unfiltered `push:`, so without it every heartbeat commit would fire a full CI run. Scheduled workflows only
 run from the **default branch**, so these are inert until merged to `main`.
 
+**Embedding the app in a third-party iframe needs the embed flag re-attached to every link (fixed
+2026-07-15).** `?embed=true` tells Community Cloud to skip its login/host wrapper. `render_nav`'s plain
+anchors navigate to bare sub-paths (`/Family`), dropping it — the frame then lands on the *non-embed* host
+page, whose login redirect cannot complete cross-site (browsers withhold the `SameSite=Lax` session cookie
+from a third-party frame), so it bounces `/Family → app?redirect_uri= → login?payload=` until
+`ERR_TOO_MANY_REDIRECTS`. **Only reproduces embedded**; standalone the same redirect resolves against
+first-party cookies, which is why the live app never showed it. Fix: `render.embed_url()` re-attaches the
+flags at all five anchors (nav tabs, Overview "Explore family", both family pills, Family→Map). Streamlit
+**reserves `embed` and withholds it from `st.query_params`**, so the app cannot detect its own embed state —
+hence the companion non-reserved `e=1`, which it *can* read. **The iframe src must therefore be
+`?embed=true&e=1`, not `?embed=true`** (documented in `SETUP.md` F2).
+
+This is the **same root cause as the accepted 404s above**, so "plain anchors vs `st.page_link` is a design
+choice, not a regression" is now only half true: the anchors have a functional cost, not just a cosmetic one.
+`st.navigation` + `st.Page` + `st.page_link` (all present on the pinned Streamlit 1.58, and `page_link` /
+`switch_page` both take `query_params`, so the pills' `?family=` survives) would delete the bug class *and*
+the full-reload lag on every tab click. Deliberately **not** bundled into this fix — it restructures the
+entrypoint and all 5 pages on a live app, and the 20-line patch unblocks the iframe today. Left unverified:
+whether `st.page_link` keeps the flags in the address bar, which decides whether a mid-session refresh inside
+the frame survives — the one place the anchor approach is *stronger*, since the flags stay in the URL.
+Sibling `human-protein-atlas` is not a usable template here: it is smooth because it never navigates (one
+1296-line `app.py`, no `pages/`, `st.tabs` as a widget), and `st.tabs` executes *every* tab body per run —
+fine for its four tabs rendering one cached `card`, wrong for 5 pages each querying different marts.
+
 **Part 8 descope (user decision):** the portfolio showcase card and the ~300-word LinkedIn writeup were
 **cancelled, not deferred** — documentation + deploy shipped, distribution did not. Two exit criteria were
 removed rather than left as permanently-unmeetable boxes (the portfolio/writeup one, and the README's

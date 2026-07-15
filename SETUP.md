@@ -179,6 +179,16 @@ One-time install on the development machine.
   3. Add the read-write `MOTHERDUCK_TOKEN` and `MOTHERDUCK_DATABASE=paper_to_patent` to Streamlit Cloud's **Secrets** UI. MotherDuck's free tier cannot issue a read-scaling (read-only) token, so the public app knowingly runs on the same read-write token as the build pipeline (Part 8, accepted risk — see `ARCHITECTURE.md` §9 and Known Limitations): the warehouse is fully derived from R2 and rebuilt by `dbt build --target prod` in about a minute, so a leaked token means downtime, not data loss. Rotate the token + redeploy if it ever leaks. Switch to a genuine read-only token the moment the MotherDuck account is upgraded.
 - **Secrets**: configured in the Streamlit Cloud UI, not in `.env.local`.
 
+### F2. Embedding the app in another site (iframe)
+The iframe `src` must carry **both** flags — dropping either sends the frame into a redirect loop that dead-ends at `ERR_TOO_MANY_REDIRECTS`:
+
+```html
+<iframe src="https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/?embed=true&e=1"></iframe>
+```
+
+- `embed=true` — Community Cloud's own flag. Without it the frame loads the non-embed host page, which starts a login redirect that cannot complete cross-site (browsers withhold the `SameSite=Lax` session cookie from a third-party frame), so it retries forever.
+- `e=1` — our companion marker. Streamlit **reserves `embed` and withholds it from `st.query_params`**, so the app cannot detect its own embed state; `e=1` is non-reserved and readable, which is how `render.embed_url()` knows to re-attach both flags to every in-app link. The nav tabs and family pills are plain `<a href>` anchors, so each click is a full browser navigation that would otherwise drop the flags and trigger the loop mid-session.
+
 ---
 
 ## Public data sources
