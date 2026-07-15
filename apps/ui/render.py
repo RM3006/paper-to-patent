@@ -52,24 +52,17 @@ CONFIDENCE_MEDIUM = "#94a3b8"  # slate
 CONFIDENCE_LOW = "#ef4444"     # red
 
 
-def embed_url(path: str) -> str:
-    """Build an <a href> that survives being clicked inside an embedding iframe.
-
-    The nav tabs and family pills are plain anchors, so clicking one is a full
-    browser navigation: whatever query string the frame was loaded with is lost.
-    Losing `embed=true` lands the frame on Community Cloud's non-embed host page,
-    which starts a login redirect that cannot complete cross-site -- the frame
-    then bounces /Family -> app?redirect_uri= -> login?payload= until the browser
-    gives up with ERR_TOO_MANY_REDIRECTS.
-
-    Streamlit reserves `embed` and withholds it from st.query_params, so the app
-    cannot read it back to know it is embedded. The iframe therefore passes a
-    non-reserved `e=1` alongside it, which st.query_params does expose.
-    """
-    if st.query_params.get("e") != "1":
-        return path
-    sep = "&" if "?" in path else "?"
-    return f"{path}{sep}embed=true&e=1"
+# The five pages, in tab order. Targets are script paths relative to the
+# entrypoint (app.py), which is what st.page_link and st.switch_page both take.
+# Module-level so a test can assert every target still resolves to a real file:
+# renaming a page would otherwise break navigation silently at runtime.
+NAV_TABS: list[tuple[str, str]] = [
+    ("Overview",             "app.py"),
+    ("Family Deepdive",      "pages/1_Family.py"),
+    ("Technology Landscape", "pages/2_Map.py"),
+    ("Organisation Profile", "pages/3_Org.py"),
+    ("Trace a Paper",        "pages/4_Trace.py"),
+]
 
 
 def confidence_color(level: str) -> str:
@@ -189,6 +182,11 @@ def render_tour_banner(page_step: int) -> None:
         )
 
 
+def _chip_key(label: str) -> str:
+    """Container key for one tab -- also its CSS hook, as `.st-key-<key>`."""
+    return "chip_" + label.lower().replace(" ", "_")
+
+
 def render_nav(active: str, filter_sidebar: bool = False) -> None:
     """Persistent site header rendered at the top of every page.
 
@@ -247,6 +245,51 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
         "  border-radius:6px;padding:16px 18px;"
         "  border-color:var(--accent-border, #e6e6e6);"
         "}"
+        # ── Tab strip ─────────────────────────────────────────────────────────
+        # Rides along with this block rather than its own st.markdown: a block
+        # holding only a <style> tag still takes a slot -- and its gap -- in
+        # Streamlit's vertical stack, which reads as stray white space.
+        # Scoped to .st-key-chipnav and matched on plain `a`, never on
+        # st.page_link's internal data-testid: those are Streamlit build details
+        # and rot silently across releases. The only anchors here are the tabs.
+        #
+        # The row is a native horizontal container (below); CSS owns only the
+        # 40px gap, which st.container's `gap` vocabulary has no exact term for.
+        ".st-key-chipnav {"
+        "  border-bottom:1px solid #e6e6e6;"
+        "  margin-top:1rem; margin-bottom:1.5rem;"
+        "  gap:40px !important;"
+        "}"
+        # Every wrapper between the anchor and the strip's bottom edge has to be
+        # flush, or the active tab's 2px underline floats above the 1px grey rule
+        # instead of landing on it. Scoped to the strip, so nothing else moves.
+        ".st-key-chipnav [class*='st-key-chip_'],"
+        ".st-key-chipnav [data-testid='stVerticalBlock'],"
+        ".st-key-chipnav [data-testid='stElementContainer'],"
+        ".st-key-chipnav [data-testid='stPageLink'] {"
+        "  margin-bottom:0 !important; padding-bottom:0 !important;"
+        "  gap:0 !important; min-height:0 !important;"
+        "}"
+        # Strip st.page_link's stock chrome back to a bare, underline-on-active
+        # label. margin-bottom:-1px pulls the 2px underline down over the 1px
+        # grey rule so the two overlap -- the trick the old .chip-nav a used.
+        ".st-key-chipnav a {"
+        "  padding:0 0 6px 0 !important; margin-bottom:-1px !important;"
+        "  border-bottom:2px solid transparent; border-radius:0 !important;"
+        "  background:transparent !important; text-decoration:none !important;"
+        "  transition:border-color .15s;"
+        "}"
+        ".st-key-chipnav a:hover { background:transparent !important; }"
+        ".st-key-chipnav a p {"
+        "  font-size:14px !important; font-weight:400 !important;"
+        "  color:#888888 !important; margin:0 !important;"
+        "  white-space:nowrap; transition:color .15s;"
+        "}"
+        ".st-key-chipnav a:hover p { color:#555555 !important; }"
+        f".st-key-{_chip_key(active)} a {{ border-bottom-color:#111111; }}"
+        f".st-key-{_chip_key(active)} a p {{"
+        f"  font-weight:700 !important; color:#111111 !important;"
+        f"}}"
         "</style>",
         unsafe_allow_html=True,
     )
@@ -286,42 +329,19 @@ def render_nav(active: str, filter_sidebar: bool = False) -> None:
                     st.rerun()
 
     # ── Tab strip ──────────────────────────────────────────────────────────────
-    _tabs = [
-        ("Overview",             "/"),
-        ("Family Deepdive",      "/Family"),
-        ("Technology Landscape", "/Map"),
-        ("Organisation Profile", "/Org"),
-        ("Trace a Paper",        "/Trace"),
-    ]
-    tabs_html = ""
-    for label, href in _tabs:
-        cls = ' class="chip-active"' if label == active else ""
-        tabs_html += f"<a href='{embed_url(href)}' target='_self'{cls}>{label}</a>"
-
-    st.markdown(
-        "<style>"
-        ".chip-nav {"
-        "  display:flex; gap:40px; padding:0;"
-        "  border-bottom:1px solid #e6e6e6;"
-        "  margin-top:1rem; margin-bottom:1.5rem;"
-        "}"
-        ".chip-nav a {"
-        "  font-size:14px; font-weight:400; color:#888888 !important;"
-        "  text-decoration:none !important;"
-        "  padding-bottom:6px; margin-bottom:-1px;"
-        "  border-bottom:2px solid transparent;"
-        "  white-space:nowrap; display:inline-block;"
-        "  transition:color .15s, border-color .15s;"
-        "}"
-        ".chip-nav a:hover { color:#555555 !important; }"
-        ".chip-nav a.chip-active {"
-        "  font-weight:700; color:#111111 !important;"
-        "  border-bottom-color:#111111;"
-        "}"
-        "</style>"
-        f"<div class='chip-nav'>{tabs_html}</div>",
-        unsafe_allow_html=True,
-    )
+    # st.page_link, never <a href>: a tab click must swap the page inside the
+    # running app. A plain anchor is a browser navigation, which reboots the app
+    # -- and inside an embedding iframe Community Cloud re-frames that reboot in
+    # the current frame, leaving one nested, still-running copy of the app per
+    # click (stacked "Built with Streamlit" badges, 404s on /<page>/_stcore/*).
+    with st.container(
+        key="chipnav", horizontal=True, vertical_alignment="bottom", gap="medium"
+    ):
+        for label, target in NAV_TABS:
+            # One keyed container per tab: st.page_link takes no key, so this
+            # wrapper is the only CSS hook for the active tab's underline.
+            with st.container(key=_chip_key(label), width="content"):
+                st.page_link(target, label=label)
 
 
 def render_chip_multiselect(

@@ -36,7 +36,6 @@ from data import (
 from render import (
     FAMILY_COLORS,
     FAMILY_LABELS,
-    embed_url,
     render_chip_multiselect,
     render_nav,
     render_tour_banner,
@@ -63,6 +62,25 @@ st.markdown("""
 }
 .js-plotly-plot .plotly .cursor-crosshair { cursor: default !important; }
 .js-plotly-plot .cartesianlayer .spikeline { display: none !important; }
+
+/* Family pill switcher and map link -- the static half. Their per-family
+   colours depend on the active pill, so that half is generated below and rides
+   along with the description paragraph. Nothing emits a style-only st.markdown:
+   a block holding just a <style> tag still takes a slot -- and its gap -- in
+   Streamlit's vertical stack, which shows up as stray white space. */
+.st-key-fpillrow { gap: 10px !important; margin-bottom: 1rem; }
+.st-key-fpillrow button {
+    text-align: center; white-space: nowrap;
+    padding: 16px 20px; border-radius: 10px; border: 1.5px solid;
+    transition: opacity .15s;
+}
+.st-key-fpillrow button p { font-size: 19px !important; font-weight: inherit !important; }
+.st-key-maplink { padding-top: 6px; }
+.st-key-maplink a { padding: 0 !important; background: transparent !important; }
+.st-key-maplink a p {
+    font-size: 13px !important; color: #111111 !important; margin: 0 !important;
+    text-decoration: underline; text-underline-offset: 3px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -178,33 +196,43 @@ _clusters_filtered = (
 )
 
 # ── Family pill switcher — single line, max size ──────────────────────────────
-_pills_html = ""
-for _fid, _flbl in _HEADLINE_FAMILIES.items():
-    _fc = FAMILY_COLORS.get(_fid, "#888888")
-    if _fid == family_id:
-        _pills_html += (
-            f"<a href='{embed_url(f'/Family?family={_fid}')}' target='_self'"
-            f" class='fpill fpill-on'"
-            f" style='background:{_fc};color:#ffffff;border-color:{_fc};'>{_flbl}</a>"
-        )
-    else:
-        _pills_html += (
-            f"<a href='{embed_url(f'/Family?family={_fid}')}' target='_self'"
-            f" class='fpill fpill-off'"
-            f" style='color:{_fc};border-color:{_fc};'>{_flbl}</a>"
-        )
+# st.button, never <a href>: the pills filter this same page, so a click has to
+# rerun in place. An anchor is a browser navigation, which reboots the app -- and
+# inside an embedding iframe Community Cloud re-frames that reboot, leaving one
+# nested live copy per click. Same reason the nav tabs use st.page_link.
+def _select_family(fid: str) -> None:
+    """Pill click. on_click runs before the rerun, so `family_id` reads this above."""
+    st.query_params["family"] = fid          # keeps the URL shareable
+    st.session_state["selected_family"] = fid
+
+
+_pill_css = "".join(
+    f".st-key-fpill_{_fid} button {{"
+    f"  border-color:{FAMILY_COLORS.get(_fid, '#888888')} !important;"
+    f"  color:{'#ffffff' if _fid == family_id else FAMILY_COLORS.get(_fid, '#888888')}"
+    f"    !important;"
+    f"  background:{FAMILY_COLORS.get(_fid, '#888888') if _fid == family_id else '#ffffff'}"
+    f"    !important;"
+    f"  opacity:{1 if _fid == family_id else 0.6};"
+    f"  font-weight:{700 if _fid == family_id else 600} !important;"
+    f"}}"
+    f".st-key-fpill_{_fid} button:hover {{ opacity:1; }}"
+    for _fid in _HEADLINE_FAMILIES
+)
+
+with st.container(key="fpillrow", horizontal=True, gap="small"):
+    for _fid, _flbl in _HEADLINE_FAMILIES.items():
+        with st.container(key=f"fpill_{_fid}", width="stretch"):
+            st.button(
+                _flbl,
+                key=f"_fam_pill_{_fid}",
+                on_click=_select_family,
+                args=(_fid,),
+                width="stretch",
+            )
 
 st.markdown(
-    "<style>"
-    ".fpill-row { display:flex; flex-wrap:nowrap; gap:10px; margin-bottom:1rem; width:100%; }"
-    ".fpill { flex:1 1 0; text-align:center; font-size:19px; font-weight:600; white-space:nowrap;"
-    "  padding:16px 20px; border-radius:10px; border:1.5px solid;"
-    "  text-decoration:none !important; transition:opacity .15s; }"
-    ".fpill-on  { font-weight:700; }"
-    ".fpill-off { background:#ffffff; opacity:0.6; }"
-    ".fpill-off:hover { opacity:1; }"
-    "</style>"
-    f"<div class='fpill-row'>{_pills_html}</div>"
+    f"<style>{_pill_css}</style>"
     f"<p style='color:#555555;font-size:15px;margin-top:0;margin-bottom:1.4rem;'>"
     f"{family_desc}</p>",
     unsafe_allow_html=True,
@@ -433,14 +461,9 @@ if len(_clusters_filtered) > 0:
             unsafe_allow_html=True,
         )
     with _link_col:
-        st.markdown(
-            "<div style='text-align:right;padding-top:6px;'>"
-            f"<a href='{embed_url('/Map')}' target='_self' style='font-size:13px;color:#111111;"
-            "text-decoration:underline;text-underline-offset:3px;'>"
-            "See all clusters on the map →</a>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        # st.page_link, not <a href> -- see the pill switcher above for why.
+        with st.container(key="maplink", horizontal=True, horizontal_alignment="right"):
+            st.page_link("pages/2_Map.py", label="See all clusters on the map →")
 
     _sorted = _clusters_filtered.sort("n_patents", descending=True)
 

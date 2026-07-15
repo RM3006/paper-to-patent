@@ -180,14 +180,17 @@ One-time install on the development machine.
 - **Secrets**: configured in the Streamlit Cloud UI, not in `.env.local`.
 
 ### F2. Embedding the app in another site (iframe)
-The iframe `src` must carry **both** flags — dropping either sends the frame into a redirect loop that dead-ends at `ERR_TOO_MANY_REDIRECTS`:
+The iframe `src` carries one flag:
 
 ```html
-<iframe src="https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/?embed=true&e=1"></iframe>
+<iframe src="https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/?embed=true"></iframe>
 ```
 
-- `embed=true` — Community Cloud's own flag. Without it the frame loads the non-embed host page, which starts a login redirect that cannot complete cross-site (browsers withhold the `SameSite=Lax` session cookie from a third-party frame), so it retries forever.
-- `e=1` — our companion marker. Streamlit **reserves `embed` and withholds it from `st.query_params`**, so the app cannot detect its own embed state; `e=1` is non-reserved and readable, which is how `render.embed_url()` knows to re-attach both flags to every in-app link. The nav tabs and family pills are plain `<a href>` anchors, so each click is a full browser navigation that would otherwise drop the flags and trigger the loop mid-session.
+`embed=true` is Community Cloud's own flag. Without it the frame loads the non-embed host page, which starts a login redirect that cannot complete cross-site (browsers withhold the `SameSite=Lax` session cookie from a third-party frame), so it retries forever and dead-ends at `ERR_TOO_MANY_REDIRECTS`.
+
+**No companion `e=1` marker is needed** (an earlier revision required one; drop it if it is still in the `src`). It existed because every in-app link was a plain `<a href>`, so each click was a full browser navigation that dropped the flag mid-session and re-entered the loop. All navigation now goes through `st.page_link` / `st.button`, which swap pages inside the running app without a browser navigation — the flag is never dropped, so there is nothing to re-attach.
+
+**Never link to another page with `<a href>`.** Beyond the redirect loop, an anchor reboots the whole app, and Community Cloud re-frames that reboot *inside the current frame* — leaving one nested, still-running copy of the app per click. The visible symptoms are stacked "Built with Streamlit" badges piling up at the bottom of the frame and 404s on `/<page>/_stcore/health`. `apps/ui/tests/test_render.py` guards the tab strip's targets; the family pills, the map link and the Overview's "Explore family →" follow the same rule and are commented in place.
 
 ---
 
