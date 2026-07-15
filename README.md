@@ -3,7 +3,7 @@
 > Tracing science-adjacent microchip hardware — EUV lithography, silicon photonics, neuromorphic & in-memory compute — from research paper to US patent.
 
 <!-- MAINTAINED: links -->
-[Architecture](./ARCHITECTURE.md) · [Roadmap](./ROADMAP.md) · [Setup](./SETUP.md) · [dbt docs](https://rm3006.github.io/paper-to-patent/) · **Status**: Part 8 in progress
+[Architecture](./ARCHITECTURE.md) · [Roadmap](./ROADMAP.md) · [Setup](./SETUP.md) · [dbt docs](https://rm3006.github.io/paper-to-patent/) · **Status**: Part 8 complete — v1 shipped
 <!-- /MAINTAINED -->
 
 <!-- MAINTAINED: hero -->
@@ -68,7 +68,7 @@ Full layer-by-layer rationale — what was used, what was considered, and why �
 | 5 | Embeddings, clustering, and interpretable labels | ✅ Done |
 | 6 | Citation-lag & competitive-intelligence analytics | ✅ Done |
 | 7 | Streamlit app + polish | ✅ Done |
-| 8 | Documentation, deploy, portfolio integration | ⬜ Pending |
+| 8 | Documentation, deploy, portfolio integration | ✅ Done |
 <!-- /MAINTAINED -->
 
 ---

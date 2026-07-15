@@ -495,3 +495,85 @@ Full analytics-quality audit of the Streamlit atlas (`apps/ui/`). Every fix ship
 **New column: "Other Families".** Lists every other (of the 5) family with >=1 doc in that cluster, ordered by doc count — lets a reader see where the rest of a spillover cluster's documents actually live (e.g. `c_77` under EUV shows "Neuromorphic, In-Memory Compute, Lasers, Silicon Photonics"). Computed live in the same query via an unfiltered per-cluster family vote, joined back in. Implementation gotcha: `pl.col(...).map_elements()` on a `List`-dtype column passes each row as a `polars.Series`, not a plain list (`if not ids` raises "truth value of a Series is ambiguous") — and separately, `map_elements` skips calling the function on null rows entirely (returns null straight through), so the "pure cluster, no spillover" case needed `.fill_null("—")` chained after `map_elements`, not just an in-function `None` check.
 
 **Nav reorder:** swapped Family Deepdive before Technology Landscape (user judged it the more logical entry point). Renamed `1_Map.py`→`2_Map.py` and `2_Family.py`→`1_Family.py` via `git mv` (worked fine despite uncommitted in-flight edits on both files). The tab strip order lives in `render.py::render_nav`'s `_tabs` list — independent of file-prefix numbers, since links are hrefs (`/Map`, `/Family`), not `st.page_link` — but the hidden native Streamlit sidebar nav and `TOUR_STEPS` order (`tour.py`) both DO depend on file naming/list order, so both needed updating too: swapped the two `TourStep` entries and their `page_file` paths, and each page's `render_tour_banner(N)` call (Family is now step 1, Map step 2). `render_nav`'s `_nav_labels` list (used to resolve the tour's return page) updated to match.
+
+---
+
+## Part 8 — Documentation, deploy, portfolio integration ✅ COMPLETE (2026-07-15)
+
+**The app is live and public**: https://paper-to-patent-a7iiegantbeucyxxwegpyz.streamlit.app/ (deployed
+2026-07-14, Streamlit Community Cloud, from `main`, entrypoint `apps/ui/app.py`). dbt docs are live at
+https://rm3006.github.io/paper-to-patent/. Repo was already public — Part 0's "flip to public in Part 8"
+had been done earlier.
+
+**`apps/ui/requirements.txt` is a SECOND, independent dependency manifest — and it was missing a dep that
+would have crashed the first deploy.** `streamlit-searchbox` is imported in 3 UI files
+(`render.py`, `pages/3_Org.py`, `pages/4_Trace.py`) and pinned in `pyproject.toml`, but was absent from
+`apps/ui/requirements.txt`. **Streamlit Community Cloud builds its container from `requirements.txt`, not
+`pyproject.toml`** — so local runs (which use the uv env) were fine and CI was green, while the very first
+cloud deploy would have died on import. Found by grepping every runtime import in `apps/ui/` against the
+file rather than trusting either manifest. **Rule: any new UI dependency must be added in BOTH
+`pyproject.toml` and `apps/ui/requirements.txt`.** Nothing enforces this — no test, no CI check covers it.
+
+**`int_organization_crosswalk` never existed — the real model is `int_org_crosswalk`.** The wrong name was
+in 12 places across 9 files, including **CLAUDE.md hard rule #1**, ARCHITECTURE.md (×2), ROADMAP.md (×2),
+the data manifest, ui_story, workflow.md, this file, and 3 docstrings in `assemble.py`. Every one of them
+had been copied forward from a name that was never real. Caught only by running a live query
+(`main_intermediate.int_organization_crosswalk` → `CatalogException: Did you mean "int_org_crosswalk"?`)
+while trying to verify the crosswalk row count. **Lesson: a name repeated across nine documents is not
+evidence it exists — the warehouse is the only authority.** Fixed everywhere 2026-07-15.
+
+**The "prod (MotherDuck) still NOT rebuilt" notes above (2026-07-10 / 07-11 / 07-12) are SUPERSEDED — do not
+act on them.** They were true when written, but `dbt-docs.yml`'s `deploy-prod` job rebuilds prod on every
+push to `main` touching `models/**`, so the PR merges (#9/#11/#12/#13/#15) each promoted prod automatically.
+Verified live 2026-07-14: prod carries the 5-way `mart_family` with `avg_grant_lag_years`, `mart_competitive`
+with `family_id`/`family_id_key`, `seed_cluster_family` with `mixed` (not `adjacent`), and matching corpus
+counts (153,362 papers / 23,397 patents / 228 clusters / 9,025 NPL links). **The generalizable lesson: once
+an automation starts doing a manual step, the memory notes tracking that manual step silently rot.** Check
+the live system before believing a "still pending" note.
+
+**`dbt-docs.yml` couples prod promotion to docs publishing — including for pure doc edits.** One workflow,
+three sequential jobs: `deploy-prod` (`dbt build --target prod` → rebuilds the live MotherDuck warehouse the
+app reads) → `docs-build` (`dbt docs generate --target prod`) → `deploy` (GitHub Pages). It fires on push to
+`main` under `models/**`. **Consequence worth knowing: editing only a comment in `models/**/_schema.yml` or
+`_docs.md` triggers a full production warehouse rebuild.** Cheap (~3 min, warehouse fully derived from R2)
+and deliberate, but surprising. Changes outside `models/**` (e.g. README, `apps/ui/`) do not trigger it at all.
+
+**`findings.md`'s family table had gone stale against its own mart.** PR #11 (2026-07-12) rebuilt `mart_family`
+onto the 5-way document-level `family_id` grain and redefined `patent_share` as a share of the total US patent
+pool — but `findings.md` still carried the old 3-way + Mixed table and the old
+`n_pat/(n_pat+n_pap)` definition. The cluster-level Findings 1–4 were fine (they read `mart_gap`, whose
+formulas and frozen clustering hadn't changed — re-verified live, all four still hold, only a cosmetic Haiku
+tagline drift on `c_147`). Rebuilt the family table from live prod. Note the "Top assignee" column is **not** a
+`mart_family` column — it has to be derived from `fact_patent_filing` ⋈ `dim_organization`. Detecting the
+`patent_share` redefinition was easy from the data itself: the 5 shares now sum to ~1.0.
+
+**Streamlit Community Cloud serves the app inside an iframe — browser automation needs frame-aware locators.**
+The real app lives at `<app-url>/~/+/`, not the top-level page, so `page.waitForSelector('[data-testid=
+"stAppViewContainer"]')` against the top frame times out even though the app renders perfectly. Use
+`page.frames().find(f => f.url().includes('/~/+/'))`. Two follow-on gotchas: (1) the nav tabs are plain
+`<a href>` anchors, so clicking one does a **full browser navigation that detaches the frame handle** — it must
+be re-acquired after every tab click; (2) `page.title()` on the *top* frame does work and returns
+`"The Chips Behind AI · Streamlit"`, which is what `ping-app.yml`'s liveness check relies on.
+
+**Known cosmetic issue, accepted not fixed: two console 404s per page navigation.** Every tab click emits
+`404 /<Page>/_stcore/health` and `/<Page>/_stcore/host-config`. Cause: `render_nav`'s tab links are plain
+anchors → full reload onto a sub-path → Streamlit's frontend resolves its own internal health-check calls
+relative to that sub-path instead of the app root. Invisible to users, no functional impact, reproduced on
+both local and live. Left alone deliberately (plain anchors vs `st.page_link` is a design choice, not a
+regression).
+
+**Added the sibling project's two liveness workflows (ported from `human-protein-atlas`, 2026-07-15):**
+`keep-app-alive.yml` (10-hourly) + its reusable `ping-app.yml`, and `repo-heartbeat.yml` (daily). They are a
+**matched pair, and the dependency runs the non-obvious way**: Streamlit Cloud sleeps idle apps and only counts
+real WebSocket sessions (an HTTP ping does *not* reset the timer — hence headless Chromium), while GitHub
+disables scheduled workflows after 60 days of no pushes, which would silently kill the keep-alive cron. The
+heartbeat exists to protect the keep-alive. Its `[skip ci]` commit message matters here: `ci.yml` triggers on
+an unfiltered `push:`, so without it every heartbeat commit would fire a full CI run. Scheduled workflows only
+run from the **default branch**, so these are inert until merged to `main`.
+
+**Part 8 descope (user decision):** the portfolio showcase card and the ~300-word LinkedIn writeup were
+**cancelled, not deferred** — documentation + deploy shipped, distribution did not. Two exit criteria were
+removed rather than left as permanently-unmeetable boxes (the portfolio/writeup one, and the README's
+two-person cold-read test, which can't be self-certified). Recorded in `ROADMAP.md`'s Part 8 descope note.
+The og:image was also skipped: Streamlit Cloud injects its own social card and a custom one needs a fragile
+`<head>` meta hack.
