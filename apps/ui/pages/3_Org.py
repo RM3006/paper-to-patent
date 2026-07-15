@@ -50,6 +50,7 @@ from render import (
     render_chip_multiselect,
     render_nav,
     render_tour_banner,
+    truncate_at_word,
 )
 
 _SEARCHBOX_STYLE: StyleOverrides = {"searchbox": {"option": {"highlightColor": "#f0f0f0"}}}
@@ -524,10 +525,11 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
         # Slice the raw text first, then escape -- escaping first would let a
         # multi-character entity (e.g. an embedded "<sup>" tag from OpenAlex's
         # abstract reconstruction) get counted as one "character" toward the
-        # 280 limit, or get cut mid-entity into a malformed one.
+        # 320 limit, or get cut mid-entity into a malformed one.
         abstract_raw = fp["abstract"] or ""
-        abstract = html.escape(abstract_raw[:280])
-        if len(abstract_raw) > 280:
+        _snippet, abstract_truncated = truncate_at_word(abstract_raw, 320)
+        abstract = html.escape(_snippet)
+        if abstract_truncated:
             abstract += "…"
         paper_html = (
             f"<div style='flex:1;min-width:0;display:flex;gap:16px;align-items:flex-start;'>"
@@ -543,7 +545,8 @@ if len(flagship_patent) > 0 or len(flagship_paper) > 0:
             f"<div style='font-size:14px;font-weight:700;color:#111111;"
             f"line-height:1.45;margin-bottom:6px;'>{html.escape(fp['title'])}</div>"
             f"<div style='font-size:11px;color:#888888;margin-bottom:10px;'>"
-            f"Published {pub_yr}</div>"
+            f"Published {pub_yr} &nbsp;&middot;&nbsp; explore the Trace a Paper page "
+            f"to get paper's details</div>"
             f"<div style='font-size:11px;color:#555555;line-height:1.6;'>"
             f"{abstract}</div>"
             f"</div>"

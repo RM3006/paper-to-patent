@@ -31,6 +31,7 @@ from render import (
     FAMILY_LABELS,
     render_nav,
     render_tour_banner,
+    truncate_at_word,
 )
 
 _LINK_SOURCE_LABEL: dict[str, str] = {
@@ -154,10 +155,11 @@ fam_med_tooltip = (
 # Slice the raw text first, then escape -- escaping first would let a
 # multi-character entity (e.g. an embedded "<sup>" tag from OpenAlex's
 # abstract reconstruction) get counted as one "character" toward the
-# 320 limit, or get cut mid-entity into a malformed one.
+# 960 limit, or get cut mid-entity into a malformed one.
 abstract_raw = paper.get("abstract") or ""
-abstract_snippet = html.escape(abstract_raw[:320])
-if len(abstract_raw) > 320:
+_snippet, abstract_truncated = truncate_at_word(abstract_raw, 960)
+abstract_snippet = html.escape(_snippet)
+if abstract_truncated:
     abstract_snippet += "…"
 org_name = html.escape(paper.get("org_name") or "No affiliation")
 topic = html.escape(paper.get("primary_topic_name") or "")
@@ -178,6 +180,17 @@ st.markdown(
     f"</div>",
     unsafe_allow_html=True,
 )
+
+# Only when the card actually cut something -- an abstract of 960 characters or
+# fewer is already shown whole above, and an expander repeating it verbatim is
+# noise.
+if abstract_truncated:
+    with st.expander("Show full abstract"):
+        st.markdown(
+            f"<div style='font-size:14px;color:#555555;line-height:1.6;'>"
+            f"{html.escape(abstract_raw)}</div>",
+            unsafe_allow_html=True,
+        )
 
 # ── Metrics cards (3 columns) ─────────────────────────────────────────────────
 _m1, _m2, _m3 = st.columns(3)
